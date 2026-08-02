@@ -32,6 +32,8 @@ Status: Active
 ```text
 /
 ├── docs/                  # ドキュメント
+│   ├── ReferenceIndex.md  # 全文書の索引・正本一覧
+│   │
 │   ├── project/           # プロジェクト運営
 │   │   ├── governance/
 │   │   ├── planning/
@@ -41,7 +43,12 @@ Status: Active
 │   │
 │   └── ai/                # AI関連文書
 │
-├── src/                   # アプリケーション
+├── src/                   # フロントエンドアプリケーション
+│
+├── supabase/              # バックエンド資産
+│   ├── functions/         # Edge Functions
+│   ├── migrations/        # Database Migration
+│   └── seed/              # 初期データ
 │
 ├── tests/                 # テスト
 │
@@ -141,26 +148,45 @@ AIへの入力仕様・運用ルールを管理する。
 
 # 5. src/
 
-アプリケーション本体を配置する。
+フロントエンドアプリケーション本体を配置する。
 
 責務ごとにディレクトリを分割する。
 
-例
-
 ```text
 src/
-├── app/
-├── features/
-├── components/
-├── shared/
-├── hooks/
-├── services/
-├── lib/
-├── types/
-└── assets/
+├── app/          # アプリケーション初期化・Provider
+├── routes/       # ルート定義（TanStack Router）
+├── features/     # 機能単位のモジュール
+├── components/   # 共通UIコンポーネント
+├── hooks/        # 共通フック
+├── stores/       # クライアント状態（Zustand）
+├── services/     # バックエンド通信クライアント
+├── lib/          # 外部ライブラリのラッパー
+├── types/        # 共通型定義
+├── utils/        # 純粋関数ユーティリティ
+└── assets/       # 画像・フォント等
 ```
 
-各ディレクトリの責務は別途設計書で定義する。
+各ディレクトリの責務は `05_Frontend.md` で定義する。
+
+本構成は ADR-019 により確定したものであり、`05_Frontend.md`・`12_TechnologyStack.md` と一致していなければならない。
+
+---
+
+# 5.1 supabase/
+
+バックエンド資産を配置する。
+
+```text
+supabase/
+├── functions/    # Edge Functions（Deno / TypeScript）
+├── migrations/   # Database Migration（追加方式）
+└── seed/         # 初期データ
+```
+
+Edge Functions およびMigrationは本ディレクトリ以外へ配置しない。
+
+Migrationは追加方式とし、適用済みのMigrationを編集しない。
 
 ---
 

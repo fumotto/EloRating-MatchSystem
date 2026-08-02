@@ -58,11 +58,11 @@ Status: Active
 ### 対象
 
 * Bun環境
-* React/Vite
-* Supabase
+* React / Vite / TanStack Router
+* Supabase（Local含む）
 * GitHub Actions
-* Vitest
-* Playwright
+* Vitest / Deno Test / pgTAP / Playwright
+* 認証プロバイダのPoC（ADR-015）
 
 ### 関連設計書
 
@@ -97,8 +97,10 @@ Status: Active
 
 ### 完了条件
 
-* チーム作成・編集・招待・脱退が利用可能である。
+* チーム作成・招待発行・招待参加・脱退・リーダー移譲が利用可能である。
 * 関連テストが成功する。
+
+チーム名変更・チーム削除はMVP対象外である（`13_FutureFeatures.md`）。
 
 ---
 
@@ -110,9 +112,9 @@ Status: Active
 
 ### 対象
 
-* Queue
-* Match
-* Match Result
+* Matching Queue
+* Match（申告・承認・拒否）
+* 自動解決（タイムアウト）
 
 ### 関連設計書
 
@@ -122,8 +124,9 @@ Status: Active
 
 ### 完了条件
 
-* マッチングが成立する。
-* 試合結果を登録できる。
+* マッチングが成立し、試合が `PLAYING` で作成される。
+* 勝利申告・承認・拒否が利用可能である。
+* 期限切れの試合が自動的に解決される。
 
 ---
 

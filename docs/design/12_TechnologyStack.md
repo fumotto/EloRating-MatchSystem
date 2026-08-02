@@ -33,8 +33,10 @@
 | Styling       | Tailwind CSS    | ユーティリティファーストで保守しやすいため         |
 | Routing       | TanStack Router | 型安全なルーティングを実現するため             |
 | Data Fetching | TanStack Query  | サーバー状態管理を効率化するため              |
+| Client State  | Zustand         | UI状態を軽量に管理でき、サーバー状態と責務を分離できるため  |
 | Form          | React Hook Form | フォーム管理とバリデーションを簡潔に実装できるため     |
 | Validation    | Zod             | TypeScriptとの親和性が高いため          |
+| Icons         | Lucide React    | shadcn/ui との親和性が高いため           |
 
 ---
 
@@ -53,11 +55,15 @@
 
 # 5. テスト
 
-| 項目             | 採用技術                  | 採用理由                        |
-| -------------- | --------------------- | --------------------------- |
-| Unit Test      | Vitest                | Viteとの親和性が高く高速なため           |
-| Component Test | React Testing Library | ユーザー視点でUIを検証するため            |
-| E2E Test       | Playwright            | 主要ブラウザを対象に一貫したE2Eテストを実現するため |
+テストはすべてTypeScriptで記述する（ADR-012）。Python および pytest は採用しない。
+
+| 項目               | 採用技術                  | 採用理由                                |
+| ---------------- | --------------------- | ----------------------------------- |
+| Unit Test        | Vitest                | Viteとの親和性が高く高速なため                   |
+| Component Test   | React Testing Library | ユーザー視点でUIを検証するため                    |
+| Integration Test | Deno Test             | Edge Functions が Deno 上で動作するため       |
+| Database Test    | pgTAP                 | RLSポリシーと制約をSQLレベルで検証できるため           |
+| E2E Test         | Playwright            | 主要ブラウザを対象に一貫したE2Eテストを実現するため         |
 
 ---
 
@@ -84,20 +90,23 @@
 
 # 8. ディレクトリ構成（概要）
 
+構成の正本は `00_DirectoryStructure.md` である（ADR-019）。本節は参照用の抜粋とする。
+
 ```text
 /
 ├── docs/
 ├── src/
 │   ├── app/
-│   ├── components/
-│   ├── features/
-│   ├── hooks/
-│   ├── lib/
 │   ├── routes/
-│   ├── services/
+│   ├── features/
+│   ├── components/
+│   ├── hooks/
 │   ├── stores/
+│   ├── services/
+│   ├── lib/
 │   ├── types/
-│   └── utils/
+│   ├── utils/
+│   └── assets/
 ├── supabase/
 │   ├── functions/
 │   ├── migrations/
@@ -105,8 +114,13 @@
 ├── tests/
 │   ├── unit/
 │   ├── integration/
-│   └── e2e/
-└── public/
+│   ├── database/
+│   ├── e2e/
+│   ├── fixtures/
+│   └── mocks/
+├── scripts/
+├── public/
+└── .github/
 ```
 
 ---
@@ -132,9 +146,12 @@
 
 # 11. 採用しない技術
 
-* Redux（TanStack Query と React Context を優先するため）
+* Redux（サーバー状態は TanStack Query、UI状態は Zustand で管理するため）
+* React Router（TanStack Router を採用するため。ADR-006）
 * CSS Modules（Tailwind CSS を採用するため）
 * JavaScript（TypeScriptへ統一するため）
+* Python / pytest（テストをTypeScriptへ統一するため。ADR-012）
+* PL/pgSQL によるビジネスロジック実装（単体テストが困難なため。ADR-016）
 
 ---
 
@@ -143,4 +160,4 @@
 * 本書に記載された技術以外を採用する場合は、設計変更として DecisionLog に記録する。
 * ライブラリ追加時は採用理由を明記する。
 * バージョンアップ時は互換性を確認し、関連ドキュメントを更新する。
-* 技術選定に迷った場合は、本書を優先して判断する。
+* 技術選定に迷った場合は本書を参照する。ただし文書間に矛盾がある場合は、Project Constitution 第9条の優先順位に従う。

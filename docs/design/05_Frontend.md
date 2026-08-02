@@ -2,7 +2,10 @@
 
 # Frontend Design Specification
 
-Version 1.0
+Version: 2.0
+Status: Active
+Last Updated: 2026-08-03
+準拠ADR: ADR-006, ADR-011, ADR-012, ADR-018, ADR-019
 
 ---
 
@@ -10,17 +13,22 @@ Version 1.0
 
 本書はフロントエンドの設計方針を定義する。
 
-対象は以下とする。
+対象は React SPA（GitHub Pages 配信、Supabase Backend）とする。
 
-* React SPA
-* GitHub Pages
-* Supabase Backend
+フロントエンドは `04_BackendInterface.md` に定義されたインターフェースを唯一のバックエンド接続点とする。
 
-フロントエンドは Backend Interface を唯一のバックエンド接続点とする。
+本書は以下の正本である。
+
+* 画面構成とルーティング
+* レイヤ責務
+* 状態管理方針
+* UIガイドライン
 
 ---
 
 # 2. 技術スタック
+
+技術選定の正本は `12_TechnologyStack.md` である。本表は参照用の抜粋とする。
 
 | カテゴリ                      | 採用技術                    |
 | ------------------------- | ----------------------- |
@@ -28,18 +36,21 @@ Version 1.0
 | Language                  | TypeScript              |
 | Framework                 | React（最新安定版）            |
 | Build                     | Vite                    |
-| Router                    | React Router            |
+| Router                    | **TanStack Router**     |
 | Server State              | TanStack Query          |
 | Client State              | Zustand                 |
 | Form                      | React Hook Form         |
 | Validation                | Zod                     |
+| UI Components             | shadcn/ui               |
 | CSS                       | Tailwind CSS            |
+| Icons                     | Lucide React            |
 | Backend SDK               | Supabase JavaScript SDK |
 | Formatter                 | oxfmt                   |
 | Linter                    | oxlint                  |
-| Unit Test                 | Vitest                  |
-| Component Test            | React Testing Library   |
+| Unit / Component Test     | Vitest ＋ React Testing Library |
 | E2E Test                  | Playwright              |
+
+ルーターは **TanStack Router** である（ADR-006）。React Router は採用しない。
 
 ---
 
@@ -47,1428 +58,478 @@ Version 1.0
 
 Feature First Architecture を採用する。
 
+## 3.1 レイヤ構成
+
 ```text
-UI
-
-↓
-
-Feature
-
-↓
-
-Hooks
-
-↓
-
-Client
-
-↓
-
-Backend Interface
-
-↓
-
-Supabase
+Route（ルート定義・Guard）
+  ↓
+Page（画面構成）
+  ↓
+ViewModel Hook（画面表示ロジック・UIイベント）
+  ↓
+Feature Hook（データ取得・更新／TanStack Query）
+  ↓
+Backend Client（Supabase SDK 呼び出し）
+  ↓
+Backend Interface（Edge Function / Query / Realtime）
 ```
 
-責務を明確に分離する。
+各レイヤは1つ下のレイヤのみを呼び出す。レイヤを飛び越えてはならない。
+
+## 3.2 レイヤ責務
+
+| レイヤ            | 責務                              | 禁止事項                    |
+| -------------- | ------------------------------- | ----------------------- |
+| Route          | パス定義、認証・権限ガード                   | 業務ロジック                  |
+| Page           | 画面の構成（コンポーネントの配置）               | データ取得、業務ロジック            |
+| ViewModel Hook | UIイベント処理、表示データ整形、フィルタ・ソート・ダイアログ制御 | API呼び出し、業務ルールの判定        |
+| Feature Hook   | Query / Mutation、キャッシュ制御、Realtime購読 | UI状態の保持                 |
+| Backend Client | Backend Interface の呼び出し、DTO変換   | UI処理、状態管理、画面用データ加工      |
+| Component      | 描画、イベント通知                       | API呼び出し、業務ロジック          |
+
+「Client」「Backend Client」は同一のものを指す。本書では **Backend Client** に統一する。
 
 ---
 
 # 4. ディレクトリ構成
 
+ADR-019により、構成は `00_DirectoryStructure.md`・`12_TechnologyStack.md` と一致させる。
+
 ```text
 src/
-
-app/
-├── router/
-├── providers/
-├── layouts/
-
-features/
-├── auth/
-├── profile/
-├── team/
-├── matchmaking/
-├── match/
-├── ranking/
-├── admin/
-
-shared/
-├── components/
-├── hooks/
-├── lib/
-├── services/
-├── types/
-├── utils/
-
-assets/
-
-styles/
+├── app/            # アプリケーション初期化・Provider・エラー境界
+├── routes/         # ルート定義（TanStack Router）
+├── features/       # 機能単位のモジュール
+│   ├── auth/
+│   ├── profile/
+│   ├── team/
+│   ├── matchmaking/
+│   ├── match/
+│   ├── ranking/
+│   └── admin/
+├── components/     # 共通UIコンポーネント
+│   ├── ui/         # shadcn/ui のコンポーネント
+│   ├── form/
+│   ├── feedback/
+│   ├── layout/
+│   └── navigation/
+├── hooks/          # 共通フック
+├── stores/         # Zustand ストア
+├── services/       # Backend Client
+├── lib/            # 外部ライブラリのラッパー（supabase クライアント等）
+├── types/          # 共通型定義（Backend Interface の DTO）
+├── utils/          # 純粋関数ユーティリティ
+└── assets/
 ```
 
----
-
-# 5. Feature構成
-
-各Featureは以下の構造を持つ。
+## 4.1 Feature の内部構成
 
 ```text
-feature/
-
-components/
-
-hooks/
-
-client/
-
-schemas/
-
-types/
-
-pages/
-
-index.ts
+features/<name>/
+├── components/   # Feature固有のUI
+├── hooks/        # Feature Hook・ViewModel Hook
+├── schemas/      # Zod スキーマ
+└── index.ts      # 公開インターフェース
 ```
 
-Feature間の依存は禁止する。
+Feature間の直接依存を禁止する。共通化が必要な場合は `components/`・`hooks/`・`utils/` へ移動する。
 
-共通化が必要な場合は shared へ移動する。
-
----
-
-# 6. レイヤ責務
-
-## Components
-
-UIのみ。
-
-ロジックを書かない。
-
----
-
-## Hooks
-
-画面ロジックを担当する。
-
-例
-
-* useRanking
-* useMatch
-* useProfile
-
----
-
-## Client
-
-Backend Interface を呼び出す。
-
-Supabase SDK は Client のみ利用可能。
-
----
-
-## Shared
-
-複数Featureから利用される共通処理。
-
----
-
-# 7. 状態管理
-
-## TanStack Query
-
-サーバーデータを管理する。
-
-対象
-
-* ランキング
-* チーム
-* 試合
-* プロフィール
-
----
-
-## Zustand
-
-UI状態を管理する。
-
-対象
-
-* Dialog
-* Drawer
-* Theme
-* Notification
-* Loading
-
-サーバーデータは保持しない。
-
----
-
-# 8. データフロー
+Backend Client は Feature 配下ではなく `services/` へ集約する。
 
 ```text
-Page
-
-↓
-
-Hook
-
-↓
-
-Client
-
-↓
-
-Edge Function / Query
-
-↓
-
-DTO
-
-↓
-
-Hook
-
-↓
-
-Component
-```
-
-Componentは DTO を直接加工しない。
-
----
-
-# 9. DTO
-
-Backend Interface の DTO をそのまま利用する。
-
-フロント独自 DTO は原則作成しない。
-
-必要な場合は ViewModel を定義する。
-
----
-
-# 10. エラー処理
-
-エラーは共通ハンドラーで処理する。
-
-種類
-
-* Validation
-* Authorization
-* Business
-* Internal
-
-表示方法
-
-* Toast
-* Dialog
-* Error Page
-
----
-
-# 11. AI実装ルール
-
-AIは以下を遵守する。
-
-* Featureを跨いで実装しない。
-* Hooks以外へ状態管理を書かない。
-* Componentsに業務ロジックを書かない。
-* Client以外からSupabase SDKを利用しない。
-* DTOを直接変更しない。
-* Backend Interface以外へアクセスしない。
-
----
-
-# 12. 命名規則
-
-Components
-
-PascalCase
-
-例
-
-```text
-TeamCard
+services/
+├── profileClient.ts
+├── teamClient.ts
+├── matchClient.ts
+├── rankingClient.ts
+└── adminClient.ts
 ```
 
 ---
 
-Hooks
+# 5. ルーティング
 
-camelCase
+TanStack Router を採用する。すべての画面はRouter管理下で動作する。
 
-```text
-useMatch()
-```
-
----
-
-Client
-
-camelCase
-
-```text
-teamClient
-```
-
----
-
-型
-
-PascalCase
-
-```text
-TeamDto
-```
-
----
-
-定数
-
-UPPER_SNAKE_CASE
-
-```text
-MAX_TEAM_SIZE
-```
-
-# 05_Frontend.md
-
-## Part2
-
-# Router Design
-
----
-
-# 1. Router
-
-React Router Data Router を採用する。
-
-すべての画面は Router 管理下で動作する。
-
----
-
-## Router構成
+## 5.1 ルート構成
 
 ```text
 RootLayout
-
-├── PublicLayout
-│      ├── /
-│      └── /login
 │
-├── AppLayout
-│      ├── /dashboard
-│      ├── /team
-│      ├── /ranking
-│      ├── /matches
-│      ├── /matches/:id
-│      └── /profile
+├── PublicLayout（認証不要）
+│      ├── /                 Top
+│      ├── /login            Login
+│      └── /ranking          Ranking
 │
-└── AdminLayout
-       ├── /admin
-       ├── /admin/settings
-       └── /admin/teams
+├── AppLayout（認証必須）
+│      ├── /dashboard        Dashboard
+│      ├── /team             My Team
+│      ├── /team/:teamId     Team Detail
+│      ├── /matchmaking      Matchmaking（待機画面）
+│      ├── /matches          Match List
+│      ├── /matches/:matchId Match Detail
+│      ├── /profile          Profile
+│      └── /settings         Settings
+│
+├── AdminLayout（管理者のみ）
+│      ├── /admin            Admin Dashboard
+│      ├── /admin/teams      Team Management
+│      ├── /admin/settings   System Settings
+│      └── /admin/audit      Audit Log
+│
+└── /*                       Not Found（404）
 ```
 
----
+## 5.2 ランキングを公開ルートへ配置する理由
 
-# 2. Layout責務
+ADR-018により、ランキングは未認証でも閲覧できる。したがって `/ranking` は `PublicLayout` 配下に置く。
 
-## RootLayout
+認証済みユーザーにも同一のルートを使用する。`AppLayout` 側に重複したランキング画面を作らない。
 
-責務
+## 5.3 Route Guard
 
-* Theme
-* Provider
-* Error Boundary
-* Suspense
-* Toast
+TanStack Router の `beforeLoad` で実装する。
 
-Root Provider を配置する。
+| 種別        | 条件      | 未充足時の動作            |
+| --------- | ------- | ------------------ |
+| Public    | なし      | －                  |
+| Protected | ログイン済み  | `/login` へリダイレクト   |
+| Admin     | `isAdmin` が true | 403画面を表示           |
 
----
+管理者判定は `profiles.is_admin`（Profile Query の `isAdmin`）で行う。
 
-## PublicLayout
-
-責務
-
-未ログイン画面。
-
-認証不要。
-
-対象
-
-* Top
-* Login
+画面側のガードは利便性のためのものであり、認可の保証はバックエンドが行う。
 
 ---
 
-## AppLayout
+# 6. レイアウト責務
 
-責務
+| Layout       | 責務                                          |
+| ------------ | ------------------------------------------- |
+| RootLayout   | Provider、Theme、Error Boundary、Suspense、Toast |
+| PublicLayout | 未ログイン向けヘッダー、ログイン導線                          |
+| AppLayout    | 共通ヘッダー、ナビゲーション、通知、**Realtime購読の一括管理**       |
+| AdminLayout  | 管理画面のナビゲーション                                |
 
-ログイン必須画面。
-
-共通ヘッダー
-
-共通サイドバー
-
-通知
-
-Realtime購読
+Layout に業務ロジックを実装しない。
 
 ---
 
-## AdminLayout
-
-責務
-
-管理画面。
-
-管理者のみアクセス可能。
-
----
-
-# 3. Route Guard
-
-## Public
-
-認証不要
-
----
-
-## Protected
-
-ログイン必須
-
-未認証
-
-↓
-
-Loginへリダイレクト
-
----
-
-## Admin
-
-管理者のみ
-
-権限不足
-
-↓
-
-403画面
-
----
-
-# 4. 認証フロー
-
-Steam OAuth を利用する。
-
-フロー
+# 7. 認証フロー
 
 ```text
-Login
-
-↓
-
-Steam OAuth
-
-↓
-
-Supabase Auth
-
-↓
-
-JWT取得
-
-↓
-
-Profile取得
-
-↓
-
-Dashboard
+Login 画面
+  ↓
+外部OAuthプロバイダ（Steam または Discord）
+  ↓
+Supabase Auth がセッションを確立
+  ↓
+ensure-profile を呼び出す（プロフィール作成・同期）
+  ↓
+所属チーム・進行中の試合を取得
+  ↓
+Realtime購読を開始
+  ↓
+Dashboard へ遷移
 ```
 
----
+認証プロバイダは固定しない（ADR-015）。画面はプロバイダ名を `authProvider` から取得して表示する。
 
-# 5. Session
+## 7.1 Session
 
-Session は
-
-Supabase Auth が保持する。
-
-フロントで JWT を保存しない。
+Session は Supabase Auth が保持する。フロントエンドで JWT を保存しない。
 
 ---
 
-# 6. Profile Loading
+# 8. 状態管理
 
-ログイン後
+| 種類      | 管理方法           | 対象                              |
+| ------- | -------------- | ------------------------------- |
+| サーバーデータ | TanStack Query | プロフィール、チーム、ランキング、試合、待機状態、システム設定 |
+| UI状態    | Zustand        | Dialog、Drawer、Toast、Theme、一時的な画面状態 |
 
-以下を取得する。
+**Zustand にサーバーデータを保持しない。**
 
-```text
-Profile
+`02_BasicDesign.md` の「画面側は状態を保持しない」は**サーバーデータ**に関する方針である。UI状態の保持はこれに反しない。
 
-↓
-
-所属チーム
-
-↓
-
-未完了試合
-
-↓
-
-Realtime開始
-```
-
----
-
-# 7. Error Boundary
-
-配置
-
-RootLayout
-
-エラー時
-
-共通エラーページ表示
-
----
-
-# 8. Suspense
-
-以下を対象とする。
-
-* Ranking
-* Match List
-* Team Detail
-
-画面単位で利用する。
-
----
-
-# 9. Navigation
-
-画面遷移は
-
-React Router
-
-のみ利用する。
-
-window.location は利用しない。
-
----
-
-# 10. Scroll Restoration
-
-ページ遷移時
-
-スクロール位置を復元する。
-
----
-
-# 11. Breadcrumb
-
-AppLayout が生成する。
-
-例
-
-```text
-Dashboard
-
-↓
-
-Team
-
-↓
-
-Match Detail
-```
-
----
-
-# 12. Page一覧
-
-## Public
-
-Top
-
-Login
-
----
-
-## Player
-
-Dashboard
-
-Ranking
-
-Team
-
-Match List
-
-Match Detail
-
-Profile
-
----
-
-## Admin
-
-Dashboard
-
-Teams
-
-Settings
-
----
-
-# 13. Realtime開始タイミング
-
-AppLayout の初期化時に開始する。
-
-購読対象
-
-* ranking
-* match
-* team
-
-ログアウト時に購読解除する。
-
----
-
-# 14. AI実装ルール
-
-* Route は Data Router を利用する。
-* Layout に業務ロジックを書かない。
-* Route Guard は Loader または共通認証コンポーネントで実装する。
-* Realtime は AppLayout で一括管理する。
-* Error Boundary は RootLayout のみ配置する。
-* ページから直接 Supabase SDK を呼び出さない。
-
-# 05_Frontend.md
-
-## Part3
-
-# Data Access & State Management
-
----
-
-# 1. 基本方針
-
-フロントエンドの状態は以下の2種類に分類する。
-
-| 種類      | 管理方法           |
-| ------- | -------------- |
-| サーバーデータ | TanStack Query |
-| UI状態    | Zustand        |
-
-責務を明確に分離する。
-
----
-
-# 2. TanStack Query
-
-## 対象
-
-以下のデータを管理する。
-
-* プロフィール
-* チーム情報
-* ランキング
-* 試合一覧
-* 試合詳細
-* マッチング待機状態
-
----
-
-## Query Hook
-
-Query取得は Feature ごとに実装する。
-
-例
+## 8.1 Query Hook
 
 ```text
 useProfile()
-
 useMyTeam()
-
+useTeamDetail(teamId)
 useRanking()
-
 useMatchList()
-
-useMatchDetail()
+useMatchDetail(matchId)
+useQueueStatus()
+useSystemSettings()
+useAuditLogs()      // 管理者のみ
 ```
 
----
-
-## Mutation Hook
-
-更新処理は Mutation とする。
-
-例
+## 8.2 Mutation Hook
 
 ```text
 useCreateTeam()
-
 useCreateInvite()
-
 useAcceptInvite()
-
+useLeaveTeam()
+useTransferLeader()
 useQueueMatch()
-
 useCancelQueue()
-
 useReportMatch()
-
 useApproveMatch()
+useRejectMatch()
+useAdminBanTeam()
+useAdminUnbanTeam()
+useAdminUpdateSettings()
+useAdminResetRatings()
 ```
 
-Mutation 完了後は Query を invalidate する。
+Mutation 完了後は必要な Query のみ invalidate する。
 
----
+## 8.3 Query Key
 
-# 3. Query Key
-
-Query Key は Feature ごとに定義する。
-
-例
+Query Key は Feature ごとに専用モジュールで定義する。文字列を直接記述しない。
 
 ```typescript
 profileKeys.me()
-
 teamKeys.my()
-
 teamKeys.detail(teamId)
-
 rankingKeys.list()
-
-matchKeys.list()
-
+matchKeys.list(filter)
 matchKeys.detail(matchId)
+queueKeys.status(teamId)
+settingsKeys.current()
 ```
-
-Query Key の文字列を直接記述しない。
 
 ---
 
-# 4. Backend Client
+# 9. 楽観ロックの扱い
 
-Supabase SDK を直接利用するのは Client 層のみとする。
+`report-match`・`approve-match`・`reject-match` は `version` を送信する必要がある（`04_BackendInterface.md`）。
 
-構成例
+`version` は Match Detail Query（`match_detail_view`）から取得する。
+
+`MATCH-008`（競合）を受信した場合は、Match Detail を再取得して画面を更新し、ユーザーへ操作のやり直しを促す。楽観ロック値を自動で再送してはならない。
+
+---
+
+# 10. Realtime
+
+## 10.1 購読
+
+AppLayout の初期化時に開始し、ログアウト時に解除する。
+
+| Channel   | 購読する画面      |
+| --------- | ----------- |
+| `ranking` | 全画面（バッジ更新用） |
+| `match`   | 全画面         |
+| `team`    | 全画面         |
+| `system`  | 全画面         |
+
+`/ranking` は未認証でも表示されるため、未認証時は `ranking` チャンネルのみ購読する。
+
+## 10.2 受信時の動作
+
+Realtime イベント受信時は該当 Query を invalidate して再取得する。
 
 ```text
-clients/
-
-profileClient.ts
-
-teamClient.ts
-
-matchClient.ts
-
-adminClient.ts
+MATCH_COMPLETED / MATCH_DRAWN
+  ↓
+invalidate(matchKeys.list) / invalidate(matchKeys.detail)
+  ↓
+invalidate(rankingKeys.list)
 ```
 
-責務
+**受信データでキャッシュを直接書き換えてはならない。** 必ず再取得する。
 
-* Query
-* Edge Function 呼び出し
-* DTO 変換（必要最小限）
+イベント名の正本は `04_BackendInterface.md` 7章である。
 
 ---
 
-# 5. Client 利用ルール
+# 11. キャッシュ方針
 
-Page および Component から Supabase SDK を直接利用しない。
-
-Hook を経由して Client を呼び出す。
-
-```text
-Page
-
-↓
-
-Hook
-
-↓
-
-Client
-
-↓
-
-Backend Interface
-```
+| データ    | 方針                             |
+| ------ | ------------------------------ |
+| ランキング  | キャッシュ可。`RANKING_UPDATED` で再取得   |
+| チーム情報  | キャッシュ可。更新後に invalidate         |
+| 試合一覧   | キャッシュ可。`match` チャンネル受信で再取得     |
+| 試合詳細   | キャッシュ可。状態変更時に invalidate       |
+| プロフィール | ログイン中は保持。ログアウト時に破棄             |
+| システム設定 | キャッシュ可。`SYSTEM_SETTINGS_UPDATED` で再取得 |
 
 ---
 
-# 6. Zustand
+# 12. エラー処理
 
-Zustand は UI 状態のみ保持する。
+エラーコードの正本は `06_ErrorCode.md` である。
 
-管理対象
+## 12.1 表示方針
 
-* Dialog
-* Drawer
-* Toast
-* Theme
-* Notification
-* 一時的な画面状態
+| 種別                                | 表示方法       |
+| --------------------------------- | ---------- |
+| Validation Error（400番台の VALIDATION-*） | フォーム下部     |
+| Authorization Error（401 / 403）    | Toast またはリダイレクト |
+| Business Error（409）               | Toast      |
+| Network Error                     | Alert（再試行導線つき） |
+| System Error（500）                 | Error Page |
 
-サーバーデータは保持しない。
+## 12.2 実装方針
 
----
+* 画面は `error.code` から表示メッセージを生成する。バックエンドの `error.message` を直接表示しない。
+* エラーコードから表示文言への変換は共通モジュール（`utils/errorMessage.ts`）へ集約する。個々の画面で分岐を実装しない。
+* 共通 Error Handler を経由してToast等を表示する。
 
-# 7. Cache Policy
+「画面ではError Codeを解釈しない」わけではない。**個々の画面ではなく、共通モジュールで解釈する**という意味である。
 
-## ランキング
+## 12.3 Retry
 
-キャッシュ可。
-
-Realtime 通知で再取得。
-
----
-
-## チーム情報
-
-キャッシュ可。
-
-更新後に invalidate。
+| 種別            | Retry     |
+| ------------- | --------- |
+| Network Error | 3回まで      |
+| Business Error（409） | しない |
+| Authorization Error | しない  |
+| System Error（500） | しない   |
 
 ---
 
-## 試合一覧
-
-キャッシュ可。
-
-Realtime 通知で再取得。
-
----
-
-## 試合詳細
-
-キャッシュ可。
-
-状態変更時に invalidate。
-
----
-
-## プロフィール
-
-ログイン中は保持する。
-
-ログアウト時に破棄する。
-
----
-
-# 8. Realtime同期
-
-Realtime イベント受信時は Query を invalidate する。
-
-例
-
-```text
-MATCH_COMPLETED
-
-↓
-
-invalidate(matchList)
-
-↓
-
-invalidate(matchDetail)
-
-↓
-
-invalidate(ranking)
-```
-
-UI 状態は直接更新しない。
-
----
-
-# 9. Error Handling
-
-Query Error
-
-↓
-
-共通 Error Handler
-
-↓
-
-Toast 表示
-
-Business Error は Backend の Error Code を利用する。
-
----
-
-# 10. Loading
-
-Loading 状態は TanStack Query を利用する。
-
-独自 Loading Store は作成しない。
-
----
-
-# 11. Retry
-
-デフォルト
-
-3回
-
-Business Error は Retry しない。
-
-Network Error のみ Retry を行う。
-
----
-
-# 12. Pagination
+# 13. ページング
 
 ランキングおよび試合一覧は Limit / Offset を利用する。
 
 Infinite Scroll は MVP の対象外とする。
 
----
-
-# 13. AI実装ルール
-
-* Query は Query Hook に実装する。
-* 更新処理は Mutation Hook に実装する。
-* Client 以外で Supabase SDK を利用しない。
-* Query Key は専用モジュールで管理する。
-* Mutation 成功後は必要な Query のみ invalidate する。
-* Zustand にサーバーデータを保持しない。
-* Realtime 受信時は Query の再取得を基本とし、手動でキャッシュを書き換えない。
-
-# 05_Frontend.md
-
-## Part4
-
-# UI Design & Component Guidelines
+ランキングはレート更新により行の順序が変わるため、Offsetページングでは行の重複・欠落が起こりうる。`RANKING_UPDATED` を受信した場合は先頭ページから再取得する。
 
 ---
 
-# 1. 基本方針
+# 14. UI設計
 
-UIは以下の原則に従う。
+## 14.1 基本方針
 
 * シンプルで一貫したデザイン
-* レスポンシブ対応
+* レスポンシブ対応（モバイルファースト）
 * アクセシビリティを考慮する
-* ダークモード対応を前提とする
+* ダークモード対応
 * コンポーネントの再利用性を重視する
 
----
+ダークモードはMVPの対象である。Theme は Zustand で管理する。
 
-# 2. コンポーネント構成
+## 14.2 コンポーネントライブラリ
 
-共通コンポーネントは `shared/components` に配置する。
+**shadcn/ui** を標準コンポーネントライブラリとして採用する。
 
-```text
-shared/
-└── components/
-    ├── ui/
-    ├── form/
-    ├── feedback/
-    ├── layout/
-    └── navigation/
-```
+* 必要なコンポーネントのみ追加する。
+* 追加したコンポーネントは `components/ui/` でプロジェクト内管理する。
+* 共通デザインの変更は追加したコンポーネントを直接修正する。
+* Feature 固有のUIは shadcn/ui を組み合わせて実装する。
+* Atomic Design は採用しない。
 
----
+## 14.3 コンポーネント分類
 
-## ui
+| ディレクトリ                  | 内容                                          |
+| ----------------------- | ------------------------------------------- |
+| `components/ui/`        | shadcn/ui 由来の汎用部品（Button、Card、Badge、Avatar 等） |
+| `components/form/`      | 入力系（React Hook Form 対応）                     |
+| `components/feedback/`  | Toast、Alert、ConfirmDialog、EmptyState、Skeleton |
+| `components/layout/`    | Header、Sidebar、Container、PageTitle           |
+| `components/navigation/` | Breadcrumb、Pagination、Tabs                   |
 
-汎用UI部品。
+## 14.4 フォーム
 
-例
+React Hook Form と Zod を組み合わせる。
 
-* Button
-* Card
-* Badge
-* Avatar
-* Icon
-* Divider
-* Spinner
+Zod スキーマは Feature 配下の `schemas/` に置く。
 
----
+クライアント検証は入力形式（必須・文字数・数値範囲）を対象とし、業務ルール（チーム名重複・人数上限・試合状態）はサーバーが検証する。
 
-## form
+## 14.5 空状態
 
-入力系コンポーネント。
+データが存在しない場合は専用UIを表示する。空のテーブルを表示しない。
 
-例
+| 画面     | 空状態                     |
+| ------ | ----------------------- |
+| My Team | チーム未所属（作成・参加への導線を表示）    |
+| 試合一覧   | 試合履歴なし                  |
+| ランキング  | ランキングなし                 |
+| 待機画面   | 待機していない（マッチング開始ボタンを表示）  |
 
-* TextField
-* NumberField
-* Select
-* Checkbox
-* RadioGroup
-* TextArea
+## 14.6 ダイアログ
 
-React Hook Form に対応する。
+`ConfirmDialog` を共通利用する。
 
----
+| 用途       | 確認内容              |
+| -------- | ----------------- |
+| チーム作成    | －（フォーム）           |
+| 招待コード表示  | －（表示のみ）           |
+| 脱退       | 確認                |
+| 勝利申告     | 勝者の確認             |
+| 承認       | 結果の確認             |
+| **拒否**   | 拒否理由の注意喚起と残り回数の表示 |
+| BAN      | 確認と理由入力           |
+| レートリセット  | 確認（影響範囲の明示）       |
 
-## feedback
+## 14.7 期限の表示
 
-画面への通知。
+試合詳細画面では以下を表示する。
 
-例
+| 状態                | 表示内容                                     |
+| ----------------- | ---------------------------------------- |
+| `PLAYING`         | 申告期限（`reportDeadlineAt`）までの残り時間          |
+| `WINNER_REPORTED` | 承認期限（`approveDeadlineAt`）までの残り時間、拒否の残り回数 |
+| `DRAWN`           | 引き分け（時間切れまたは拒否上限）として解散した旨                |
 
-* Toast
-* Alert
-* ConfirmDialog
-* LoadingOverlay
-* EmptyState
+期限を過ぎた試合は自動的に解決されるため、残り時間の表示は利用者にとって重要である。
 
----
-
-## layout
-
-レイアウト部品。
-
-例
-
-* Header
-* Sidebar
-* Container
-* PageTitle
-* Section
-
----
-
-## navigation
-
-画面遷移関連。
-
-例
-
-* Breadcrumb
-* Pagination
-* Tabs
-* NavigationMenu
-
----
-
-# 3. Feature Components
-
-Feature固有のコンポーネントは Feature 配下へ配置する。
-
-例
-
-```text
-features/
-└── team/
-    └── components/
-        ├── TeamCard.tsx
-        ├── TeamMemberList.tsx
-        └── InviteDialog.tsx
-```
-
-他Featureから直接参照しない。
-
----
-
-# 4. フォーム設計
-
-フォームは React Hook Form を利用する。
-
-入力値検証は Zod によって実施する。
-
-すべてのフォームで同一のエラー表示ルールを適用する。
-
----
-
-# 5. バリデーション
-
-## クライアント
-
-入力形式の検証を行う。
-
-例
-
-* 必須
-* 文字数
-* 数値範囲
-
----
-
-## サーバー
-
-業務ルールを検証する。
-
-例
-
-* チーム名重複
-* 人数上限
-* 試合状態
-
----
-
-# 6. ローディング
-
-ローディング表示を統一する。
-
-種類
-
-* Spinner
-* Skeleton
-* LoadingOverlay
-
-画面全体をブロックするのは必要最小限とする。
-
----
-
-# 7. エラー表示
-
-Business Error
-
-→ Toast
-
-Validation Error
-
-→ フォーム下部
-
-Network Error
-
-→ Alert
-
-Fatal Error
-
-→ Error Page
-
----
-
-# 8. ダイアログ
-
-用途
-
-* チーム作成
-* 招待コード表示
-* 勝敗確認
-* BAN確認
-
-ダイアログは ConfirmDialog を共通利用する。
-
----
-
-# 9. 通知
-
-Toast を利用する。
-
-表示例
-
-* チームを作成しました。
-* 招待コードを発行しました。
-* マッチングしました。
-* 試合結果を登録しました。
-
----
-
-# 10. 空状態（Empty State）
-
-データが存在しない場合は専用UIを表示する。
-
-例
-
-* チーム未所属
-* 試合履歴なし
-* ランキングなし
-
-空テーブルは表示しない。
-
----
-
-# 11. Tailwind CSS 利用方針
-
-* Utility Class を基本とする。
-* インライン style は使用しない。
-* 共通デザインはコンポーネントへ切り出す。
-* 独自CSSは必要最小限とする。
-
----
-
-# 12. アクセシビリティ
-
-以下を必須とする。
+## 14.8 アクセシビリティ
 
 * キーボード操作対応
 * フォーカス表示
-* 適切な aria-* 属性
+* 適切な `aria-*` 属性
 * コントラスト比の確保
+* アイコンのみで意味を伝えず、必要に応じてラベルを併記する
 
 ---
 
-# 13. レスポンシブ対応
+# 15. 命名規則
 
-ブレークポイント
+| 対象             | 規則               | 例                 |
+| -------------- | ---------------- | ----------------- |
+| Component      | PascalCase       | `TeamCard`        |
+| Hook           | camelCase        | `useMatchDetail`  |
+| Backend Client | camelCase        | `teamClient`      |
+| 型              | PascalCase       | `TeamDetail`      |
+| 定数             | UPPER_SNAKE_CASE | `MAX_TEAM_SIZE`   |
 
-* Mobile
-* Tablet
-* Desktop
-
-モバイルファーストで設計する。
-
----
-
-# 14. アイコン
-
-Lucide React を利用する。
-
-アイコンのみで意味を伝えず、必要に応じてラベルを併記する。
+DTO の型名は `04_BackendInterface.md` の定義をそのまま使用する。フロント独自のDTOを作成しない。表示専用の整形が必要な場合は ViewModel Hook 内で行う。
 
 ---
 
-# 15. AI実装ルール
+# 16. テスト方針
 
-* 共通UIは `shared/components` に配置する。
-* Feature固有UIは各 Feature 配下に配置する。
-* Atomic Design は採用しない。
-* フォームは React Hook Form と Zod を組み合わせる。
-* 共通部品を優先し、重複実装を避ける。
-* アクセシビリティを考慮した実装を行う。
+テスト仕様の正本は `10_TestSpecification.md` である。
 
-## UI Component Library
+| 種別             | 対象                             | ツール                            |
+| -------------- | ------------------------------ | ------------------------------ |
+| Unit Test      | ViewModel Hook、Utility、Zod スキーマ | Vitest                         |
+| Component Test | 共通コンポーネント、Feature コンポーネント      | Vitest ＋ React Testing Library |
+| E2E Test       | 主要ユーザーフロー                      | Playwright                     |
 
-本プロジェクトでは **shadcn/ui** を標準コンポーネントライブラリとして採用する。
-
-採用方針は以下のとおりとする。
-
-- 必要なコンポーネントのみ追加する。
-- コンポーネントはプロジェクト内で管理する。
-- 共通デザインの変更は追加したコンポーネントを直接修正する。
-- Tailwind CSS を用いてデザインを調整する。
-- Feature 固有のUIは shadcn/ui を組み合わせて実装する。
-
-
-# 05_Frontend.md
-
-## Part5
-
-# Presentation Layer & Frontend Development Guidelines
+Backend Client はモック化し、UIロジックを独立して検証する。
 
 ---
 
-# 1. プレゼンテーション層
+# 17. AI実装ルール
 
-画面固有の表示ロジックは Presentation Layer に実装する。
-
-Presentation Layer は Backend Client を直接利用しない。
-
----
-
-# 2. ViewModel Hook
-
-画面ごとに ViewModel Hook を定義する。
-
-例
-
-```text
-useHomePage()
-
-useRankingPage()
-
-useTeamPage()
-
-useMatchDetailPage()
-
-useAdminSettingsPage()
-```
-
-責務
-
-* UIイベント処理
-* 表示データ整形
-* フィルタ
-* ソート
-* ページング
-* ダイアログ制御
-
----
-
-# 3. Data Hook
-
-データ取得・更新は Feature Hook が担当する。
-
-例
-
-```text
-useRanking()
-
-useMyTeam()
-
-useMatchList()
-
-useApproveMatch()
-
-useQueueMatch()
-```
-
-責務
-
-* TanStack Query
-* Mutation
-* Backend Client 呼び出し
-
----
-
-# 4. データフロー
-
-```text
-Page
-
-↓
-
-ViewModel Hook
-
-↓
-
-Feature Hook
-
-↓
-
-Backend Client
-
-↓
-
-Supabase
-```
-
-Page はデータ取得処理を持たない。
-
----
-
-# 5. ViewModel の責務
-
-ViewModel は以下を担当する。
-
-* 画面初期化
-* ボタンイベント
-* ダイアログ制御
-* 入力状態
-* 表示用データ生成
-
-業務ロジックは持たない。
-
----
-
-# 6. Feature Hook の責務
-
-Feature Hook は以下を担当する。
-
-* Query
-* Mutation
-* Cache 更新
-* Realtime 更新
-
-UI状態は保持しない。
-
----
-
-# 7. Backend Client の責務
-
-Backend Client は Backend Interface の呼び出しのみを担当する。
-
-以下は禁止する。
-
-* UI処理
-* 状態管理
-* 画面用データ加工
-
----
-
-# 8. Component の責務
-
-Component は以下のみ担当する。
-
-* 描画
-* イベント通知
-* Props 表示
-
-API呼び出しは禁止する。
-
----
-
-# 9. エラーハンドリング
-
-画面では Error Code を解釈しない。
-
-共通 Error Handler を利用する。
-
----
-
-# 10. テスト方針
-
-## Unit Test
-
-対象
-
-* ViewModel Hook
-* Utility
-* Zod Schema
-
----
-
-## Component Test
-
-対象
-
-* 共通コンポーネント
-* Feature コンポーネント
-
----
-
-## Integration Test
-
-対象
-
-* Feature Hook
-* Backend Client
-
----
-
-## E2E Test
-
-Playwright を利用する。
-
-対象
-
-* ログイン
-* チーム作成
-* マッチング
-* 勝敗報告
-* ランキング更新
-
----
-
-# 11. AI実装ガイドライン
-
-AI は以下を厳守する。
-
+* ルーターは TanStack Router を使用する。React Router を使用しない。
+* Route Guard は `beforeLoad` で実装する。
 * Component に API 呼び出しを書かない。
-* Page に業務ロジックを書かない。
-* Backend Client を直接 Page から利用しない。
-* Query は Feature Hook に集約する。
-* 表示ロジックは ViewModel Hook に集約する。
+* Page にデータ取得処理・業務ロジックを書かない。
+* Query は Feature Hook、表示ロジックは ViewModel Hook へ集約する。
+* Supabase SDK は Backend Client（`services/`）のみが利用する。
+* Zustand にサーバーデータを保持しない。
+* Realtime 受信時は Query を再取得する。キャッシュを直接書き換えない。
 * Feature を跨いだ依存を作らない。
-* 共通UIを優先して利用する。
-
----
-
-# 12. フロントエンド責務まとめ
-
-| レイヤ            | 責務              |
-| -------------- | --------------- |
-| Page           | 画面構成            |
-| ViewModel Hook | 画面表示ロジック・UIイベント |
-| Feature Hook   | データ取得・更新        |
-| Backend Client | バックエンド通信        |
-| Component      | UI描画            |
-| Shared         | 共通機能            |
-| Supabase       | 認証・DB・Realtime  |
+* DTO を変更しない。`04_BackendInterface.md` の定義に従う。
+* エラーコードから表示文言への変換は共通モジュールへ集約する。
+* 更新系操作では `version` を送信する。

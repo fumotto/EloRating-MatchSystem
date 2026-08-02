@@ -47,17 +47,15 @@ Status: Active
 対象
 
 * Bun
-* React
-* Vite
-* Supabase
+* React / Vite / TanStack Router
+* Supabase（Local 含む）
 * GitHub Actions
-* Vitest
-* Playwright
+* Vitest / Deno Test / pgTAP / Playwright
 
 完了条件
 
 * 開発環境が構築できる。
-* CIが正常に動作する。
+* CIが正常に動作する（Migration適用と全テスト種別を含む）。
 
 ---
 
@@ -85,18 +83,24 @@ Status: Active
 
 対象
 
-* Steam Login
-* Profile生成
+* 認証プロバイダのPoC（ADR-015）
+* 外部OAuthログイン
+* `ensure-profile` によるプロフィール生成
 * Session確認
 
 参照
 
-* Backend Interface
+* 04_BackendInterface.md（4章）
+* 15_DecisionLog.md（ADR-015）
 
 完了条件
 
-* ログイン可能
-* Profile自動作成
+* ログインできる
+* プロフィールが自動作成される
+
+本Phaseの冒頭でPoCを実施し、採用するプロバイダを確定する。Supabase Auth はSteamを標準プロバイダとして提供していないため、実現可否の検証が必要である。
+
+PoCの結論はADRとして記録する。データベーススキーマは既にプロバイダ非依存としているため、結論によらずスキーマ変更は発生しない。
 
 ---
 
@@ -104,19 +108,22 @@ Status: Active
 
 対象
 
-* Team API
-* Invite API
-* Queue API
-* Match API
-* Ranking API
+* Team API（作成・招待・参加・脱退・リーダー移譲）
+* Queue API（登録・解除・マッチング）
+* Match API（申告・承認・拒否）
+* 内部Function（自動解決・クリーンアップ）
+* Admin API（BAN・設定変更・レートリセット）
+* Query（ランキング・チーム・試合・監査ログ）
 
 参照
 
 * 04_BackendInterface.md
+* 07_APISequence.md
 
 完了条件
 
 * API仕様を満たす。
+* Edge Functions のトランザクション基盤（DB直結）が動作する。
 
 ---
 
@@ -171,17 +178,23 @@ Status: Active
 
 実装は以下の順序を推奨する。
 
-1. Database
-2. Authentication
-3. Team
-4. Invite
-5. Queue
-6. Match
-7. Rating
-8. Ranking
-9. Frontend
-10. Test
-11. Release
+1. Database（スキーマ・RLS・View・Seed）
+2. トランザクション基盤（DB直結・共通処理）
+3. Rating（純粋関数・単体テスト）
+4. Authentication（PoC → 実装）
+5. Team / Invite
+6. Queue / Matchmaking
+7. Match（申告・承認・拒否）
+8. 自動解決（Cron）
+9. Ranking
+10. Admin / 監査ログ
+11. Frontend
+12. Test（結合・E2E）
+13. Release
+
+Rating をMatchより先に実装するのは、`approve-match` がレート計算に依存するためである。
+
+トランザクション基盤を先に整えるのは、すべての更新系Functionがこれを前提とするためである。
 
 ---
 

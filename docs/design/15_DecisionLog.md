@@ -10,7 +10,9 @@
 
 設計変更が発生した場合は、本書を最初に更新し、その後に関連設計書を更新する。
 
-本書を設計判断の唯一の正本（Single Source of Truth）とする。
+本書を**設計判断**の唯一の正本（Single Source of Truth）とする。
+
+文書間の優先順位は Project Constitution 第9条に定めるものに従う（本書は同条において第2位に位置づけられる）。
 
 ---
 
@@ -135,6 +137,188 @@
 | 決定内容  | Bun、React、TypeScript、shadcn/ui、Tailwind CSS、TanStack Router、TanStack Query、React Hook Form、Zod を採用する。 |
 | 影響文書  | 05_Frontend.md、12_TechnologyStack.md                                                                  |
 | 備考    | フォーマッタは `oxfmt`、リンタは `oxlint` を採用する。                                                                  |
+
+---
+
+## ADR-007
+
+| 項目    | 内容                                                                                                                                                                                                                     |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 日付    | 2026-08-03                                                                                                                                                                                                             |
+| タイトル  | APIレスポンス形式とエラーコード体系の統一                                                                                                                                                                                                 |
+| ステータス | Accepted                                                                                                                                                                                                               |
+| 理由    | レスポンス形式が2種類、エラーコード命名が4種類併存しており、フロントエンド・テスト・AI実装のいずれもどちらへ従うべきか判断できない状態であったため。                                                                                                                                        |
+| 決定内容  | ADR-005を維持し、`result` 形式（`OK` / `NG` / `FATAL`）を唯一の正とする。エラーコードは `06_ErrorCode.md` の `<カテゴリ>-<3桁連番>` 形式（例 `TEAM-004`）を唯一の正本とする。`04_BackendInterface.md` の `success` 形式および `TEAM_NOT_FOUND` 形式のコード一覧は廃止し、06への参照へ置き換える。 |
+| 影響文書  | 04_BackendInterface.md、06_ErrorCode.md、02_BasicDesign.md、07_APISequence.md、09_MatchmakingSpecification.md、10_TestSpecification.md（全編）                                                                                   |
+| 備考    | 04の各Functionで使用されていたコードのうち06に存在しないものは、06へ追加してから参照する。                                                                                                                                                                   |
+
+---
+
+## ADR-008
+
+| 項目    | 内容                                                                                                                                                                                                                                    |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 日付    | 2026-08-03                                                                                                                                                                                                                            |
+| タイトル  | 試合状態モデルの再定義                                                                                                                                                                                                                           |
+| ステータス | Accepted                                                                                                                                                                                                                              |
+| 理由    | 本システムは対戦管理を行うものであり、選手が実際にゲーム中であるかをシステムは判定できない。そのため `MATCHED` と `PLAYING` を区別する意味がなく、両者を遷移させる手段（試合開始API）も定義されていなかった。                                                                                                                 |
+| 決定内容  | `MATCHED` を廃止し、マッチ成立時に `PLAYING` で試合を作成する。あわせて引き分け・時間切れ解散を表す終端状態 `DRAWN` を追加する。状態は `PLAYING` / `WINNER_REPORTED` / `COMPLETED` / `DRAWN` の4種類とし、遷移は `PLAYING → WINNER_REPORTED → COMPLETED`、`PLAYING → DRAWN`、`WINNER_REPORTED → DRAWN` を許可する。 |
+| 影響文書  | 01_Requirements.md、02_BasicDesign.md、03_Database.md、04_BackendInterface.md、07_APISequence.md、09_MatchmakingSpecification.md、10_TestSpecification.md、14_Glossary.md                                                                     |
+| 備考    | 試合開始API（start-match）は新設しない。Realtimeイベント `MATCH_STARTED` は `MATCH_CREATED` と同時になるため廃止する。`started_at` はマッチ成立時刻を表す。`DRAWN` の詳細はADR-014で定義する。                                                                                          |
+
+---
+
+## ADR-009
+
+| 項目    | 内容                                                                                                              |
+| ----- | ----------------------------------------------------------------------------------------------------------------- |
+| 日付    | 2026-08-03                                                                                                      |
+| タイトル  | 試合結果の報告・承認権限                                                                                                    |
+| ステータス | Accepted                                                                                                        |
+| 理由    | 「代表者のみ」とするとチーム代表者が不在の間、試合結果を確定できずに滞留するため。運用の簡便さを優先する。                                                            |
+| 決定内容  | 勝利申告は勝者チームの**いずれのメンバーでも**実行できる。承認・拒否は敗者チームの**いずれのメンバーでも**実行できる。同一チーム内で複数名が同時に操作した場合は早い者勝ちとし、楽観ロックにより2人目以降は業務エラーとする。 |
+| 影響文書  | 01_Requirements.md、02_BasicDesign.md、04_BackendInterface.md、10_TestSpecification.md                              |
+| 備考    | ADR-003（勝者申告＋敗者承認方式）の実行主体を明確化するものであり、方式自体は変更しない。                                                                |
+
+---
+
+## ADR-010
+
+| 項目    | 内容                                                                                                                                    |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| 日付    | 2026-08-03                                                                                                                            |
+| タイトル  | チーム代表者の呼称をLeaderに統一                                                                                                                   |
+| ステータス | Accepted                                                                                                                              |
+| 理由    | 14_Glossaryが `Team Leader` を正式名称・`Owner` を非推奨表現と定めている一方、データベースおよびAPIは `OWNER` を使用しており、さらに「代表者」「リーダー」も混在していたため。用語集の定義に実体を合わせる。         |
+| 決定内容  | 正式名称を `Leader` とする。`team_members.role` の値は `'LEADER'` / `'MEMBER'` とし、Edge Function名は `transfer-leader` とする。全設計書から `OWNER`・オーナー・代表者を排除する。 |
+| 影響文書  | 全設計書（特に 03_Database.md、04_BackendInterface.md、14_Glossary.md、10_TestSpecification.md）                                                  |
+| 備考    | 14_Glossaryの使用例に記載されている `leader_profile_id` は実在しない列であるため、`team_members.role = 'LEADER'` へ修正する。                                        |
+
+---
+
+## ADR-011
+
+| 項目    | 内容                                                                                          |
+| ----- | --------------------------------------------------------------------------------------------- |
+| 日付    | 2026-08-03                                                                                  |
+| タイトル  | クライアント状態管理ライブラリ                                                                             |
+| ステータス | Accepted                                                                                    |
+| 理由    | ADR-006の採用リストに状態管理ライブラリが含まれておらず、12_TechnologyStackの「React Contextを優先する」という記述と05_Frontendの Zustand 採用が矛盾していたため。 |
+| 決定内容  | UI状態の管理には **Zustand** を採用する。サーバー状態は TanStack Query が管理し、Zustandへサーバーデータを保持しない。               |
+| 影響文書  | 02_BasicDesign.md、05_Frontend.md、12_TechnologyStack.md                                      |
+| 備考    | ADR-006（フロントエンド技術選定）の補足である。12_TechnologyStackの「Redux不採用（React Context優先）」の理由文からContextの記述を削除する。 |
+
+---
+
+## ADR-012
+
+| 項目    | 内容                                                                                                                                                       |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 日付    | 2026-08-03                                                                                                                                               |
+| タイトル  | テスト基盤をTypeScriptへ統一                                                                                                                                      |
+| ステータス | Accepted                                                                                                                                                 |
+| 理由    | 10_TestSpecificationのみがUnit/Integration/Securityテストにpytestを指定しており、他のすべての文書（12_TechnologyStack、05_Frontend、PromptGuide、ImplementationRoadmap）はVitestを前提としていたため。実装言語との一致を優先する。 |
+| 決定内容  | テストはすべてTypeScriptで記述する。役割分担は以下とする。<br>・Edge Functions：`deno test`<br>・フロントエンド：Vitest ＋ React Testing Library<br>・E2E：Playwright<br>・データベース／RLS：pgTAP<br>テストメソッド名は `describe` / `it` 形式とし、テストIDと組み合わせて記述する。 |
+| 影響文書  | 10_TestSpecification.md（全編）、11_Deployment.md、12_TechnologyStack.md、ImplementationRoadmap.md                                                              |
+| 備考    | Pythonおよびpytestは採用しない。10_TestSpecificationのテスト環境から Language: Python を削除する。                                                                               |
+
+---
+
+## ADR-013
+
+| 項目    | 内容                                                                                                                        |
+| ----- | --------------------------------------------------------------------------------------------------------------------------- |
+| 日付    | 2026-08-03                                                                                                                |
+| タイトル  | チーム参加を招待制とする                                                                                                              |
+| ステータス | Accepted                                                                                                                  |
+| 理由    | 03_Databaseに team_invites が「追記（Version 1.1）」としてADR無しで追加され、04_BackendInterfaceも招待制のみを実装する一方、01_Requirementsは「チーム招待」を将来拡張としていたため。実体に合わせて要件を確定する。 |
+| 決定内容  | チームへの参加は**招待制のみ**とする。Leaderが発行した招待コードを用いて参加する。招待の有効期限は `system_settings.invite_expiration_hours` で管理し、管理者が変更できる。         |
+| 影響文書  | 01_Requirements.md、03_Database.md、04_BackendInterface.md、07_APISequence.md、10_TestSpecification.md、13_FutureFeatures.md    |
+| 備考    | 01_Requirementsの将来拡張から「チーム招待」を削除し、MVP機能へ移す。03_Databaseの「追記（Version 1.1）」は本編へ統合する。`join-team` というFunctionは存在しない。          |
+
+---
+
+## ADR-014
+
+| 項目    | 内容                                                                                                                                                                                                                                                                                                                                        |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 日付    | 2026-08-03                                                                                                                                                                                                                                                                                                                                |
+| タイトル  | 試合の自動解決（報告・承認のタイムアウト）                                                                                                                                                                                                                                                                                                                     |
+| ステータス | Accepted                                                                                                                                                                                                                                                                                                                                  |
+| 理由    | 敗者が承認しない限り試合が永久に未完了となり、「1チーム同時1試合」の制約と組み合わさると両チームが以後一切マッチングできなくなるため。                                                                                                                                                                                                                                                                        |
+| 決定内容  | ①報告期限を過ぎても勝利申告が無い試合は `DRAWN` として解散する。②承認期限を過ぎても承認・拒否が無い試合は自動承認し `COMPLETED` とする（レート更新を実施する）。③承認側は `reject-match` により報告を拒否できる。拒否時は報告内容を破棄して `PLAYING` へ戻し、報告期限を再設定する。拒否回数が上限に達した場合は `DRAWN` として解散する。<br>期限および上限は `system_settings` で管理する（`report_timeout_minutes`＝初期60、`approve_timeout_minutes`＝初期10、`max_reject_count`＝初期2）。 |
+| 影響文書  | 03_Database.md、04_BackendInterface.md、06_ErrorCode.md、07_APISequence.md、08_RatingSpecification.md、10_TestSpecification.md                                                                                                                                                                                                                  |
+| 備考    | システムは試合終了を検知できないため（ADR-008）、報告期限の起点はマッチ成立時刻となる。`matches` に `report_deadline_at` / `approve_deadline_at` / `reject_count` / `auto_approved` を追加する。自動承認時は `approved_by_profile_id` をNULLのままとし `auto_approved = true` で表す。`DRAWN` ではレートを更新せず `rating_history` も作成しないため、戦績には計上されない。これにより08_RatingSpecificationの「引き分けはレート変動なし」が正式仕様となる。 |
+
+---
+
+## ADR-015
+
+| 項目    | 内容                                                                                                                                                                     |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 日付    | 2026-08-03                                                                                                                                                             |
+| タイトル  | 認証プロバイダ非依存のプロフィール設計                                                                                                                                                    |
+| ステータス | Accepted                                                                                                                                                               |
+| 理由    | Supabase AuthはSteamを標準プロバイダとして提供していない（SteamはOpenID 2.0）。実現可否の検証結果によってはDiscord認証へ切り替える必要があり、`steam_id` を前提としたスキーマでは破壊的変更が発生するため。                                       |
+| 決定内容  | `profiles.steam_id` を廃止し、`auth_provider`（`'steam'` / `'discord'`）と `provider_user_id` の組み合わせで利用者を識別する。両者の複合UNIQUEを設定する。認証方式の実現可否はPoCで検証し、Steamが困難な場合はDiscord認証を採用する。 |
+| 影響文書  | 01_Requirements.md、03_Database.md、04_BackendInterface.md、11_Deployment.md、12_TechnologyStack.md、14_Glossary.md、10_TestSpecification.md                                 |
+| 備考    | PoCの結論を待たずにスキーマを確定することで、後からのマイグレーションを回避する。01_Requirementsの「Steamログイン必須」は「対応する外部OAuthプロバイダによるログイン必須」へ改める。                                                             |
+
+---
+
+## ADR-016
+
+| 項目    | 内容                                                                                                                                                                                                                    |
+| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 日付    | 2026-08-03                                                                                                                                                                                                            |
+| タイトル  | Edge Functionsのトランザクション実装方式                                                                                                                                                                                           |
+| ステータス | Accepted                                                                                                                                                                                                              |
+| 理由    | 設計書は多数の処理を「単一トランザクションで実行する」と規定しているが、Supabase JavaScript SDK（PostgREST経由）では複数ステートメントにまたがるトランザクションを開始できず、記述どおりに実装できないため。ビジネスロジックの単体テスト容易性も確保する必要がある。                                                                       |
+| 決定内容  | Edge Functions（Deno）からPostgreSQLへ直接接続し、TypeScript内で明示的に `BEGIN` / `COMMIT` / `ROLLBACK` を発行する。ビジネスロジック（Eloレート計算等）はTypeScriptの純粋関数として実装し、単体テスト可能とする。PL/pgSQL関数へのロジック集約は採用しない。                                    |
+| 影響文書  | 03_Database.md、04_BackendInterface.md、07_APISequence.md、08_RatingSpecification.md、11_Deployment.md                                                                                                                    |
+| 備考    | 接続はConnection Pooler経由とし、環境変数 `SUPABASE_DB_URL` を追加する。DB直結はRLSを迂回するため、Edge Function内での認可チェックを必須とする。03_Databaseの `calculate_rating_change()` および `increment_match_version()` は廃止し、レート計算とversion更新はTypeScript側で行う。 |
+
+---
+
+## ADR-017
+
+| 項目    | 内容                                                                                                                                                                        |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 日付    | 2026-08-03                                                                                                                                                                |
+| タイトル  | 監査ログをMVPに含める                                                                                                                                                              |
+| ステータス | Accepted                                                                                                                                                                  |
+| 理由    | 07_APISequenceの管理機能シーケンスと10_TestSpecificationの計23ケースが監査ログへの記録を前提としている一方、03_Databaseでは `audit_logs` を将来追加予定としており、テストが実行不能な状態であったため。                                     |
+| 決定内容  | `audit_logs` テーブルをMVP対象とする。管理者操作・試合結果の確定・認証失敗・権限違反を記録する。本テーブルは追記専用とし、更新・削除を禁止する。参照は管理者のみとする。                                                                           |
+| 影響文書  | 02_BasicDesign.md、03_Database.md、04_BackendInterface.md、07_APISequence.md、10_TestSpecification.md                                                                          |
+| 備考    | 列構成は `id` / `actor_profile_id`（システム操作時はNULL）/ `action` / `target_type` / `target_id` / `payload` / `created_at` とする。レートリセットの記録も本テーブルで扱い、`rating_history` へは登録しない。          |
+
+---
+
+## ADR-018
+
+| 項目    | 内容                                                                                                          |
+| ----- | ------------------------------------------------------------------------------------------------------------- |
+| 日付    | 2026-08-03                                                                                                  |
+| タイトル  | ランキングの未認証公開                                                                                                 |
+| ステータス | Accepted                                                                                                    |
+| 理由    | 03_Databaseは `teams` のSELECTを「全員」とする一方、04_BackendInterfaceと10_TestSpecificationは認証必須としており、公開範囲が確定していなかったため。 |
+| 決定内容  | ランキングおよびチームの公開情報は**未認証でも閲覧できる**。プロフィール情報（表示名・プロバイダID等）は認証を必須とし、ランキングには含めない。                                |
+| 影響文書  | 03_Database.md、04_BackendInterface.md、05_Frontend.md、10_TestSpecification.md                                 |
+| 備考    | ランキング画面を未認証で表示するため、05_FrontendのRoute構成でRankingをPublicLayout配下へ移す。                                           |
+
+---
+
+## ADR-019
+
+| 項目    | 内容                                                                                                                                     |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| 日付    | 2026-08-03                                                                                                                             |
+| タイトル  | ディレクトリ構成の統一                                                                                                                            |
+| ステータス | Accepted                                                                                                                               |
+| 理由    | 00_DirectoryStructure、05_Frontend、12_TechnologyStackが互いに異なる `src/` 構成を定義しており、さらに Edge Functions とMigrationの配置先を定義した文書が12のみであったため。      |
+| 決定内容  | 12_TechnologyStackの構成を基準とし、`supabase/{functions,migrations,seed}` を正式なバックエンド資産の配置先とする。フロントエンドは Feature First を維持し、TanStack Router採用に伴い `src/routes/` を設ける。 |
+| 影響文書  | 00_DirectoryStructure.md、05_Frontend.md、12_TechnologyStack.md、AIContext.md                                                             |
+| 備考    | AIContext.mdの記入例にある `src/functions/team/*` は誤りであるため `supabase/functions/*` へ修正する。                                                       |
 
 ---
 

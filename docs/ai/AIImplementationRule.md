@@ -34,8 +34,9 @@ AIは以下を遵守する。
 1. AIContext
 2. Project Constitution
 3. Project Rules
-4. Development Guide
-5. 関連設計書
+4. ReferenceIndex（正本の確認）
+5. Development Guide
+6. 関連設計書
 
 必要な情報が不足している場合は、実装を開始せず確認を求める。
 
@@ -175,13 +176,18 @@ AIは以下をすべて満たした場合のみ、タスク完了と判断する
 
 # 15. AI行動原則
 
-AIは常に以下を優先する。
+**仕様に関する文書間の優先順位は、Project Constitution 第9条に定めるものに従う。本書は独自の優先順位を定めない。**
 
-1. Project Constitution
-2. Project Rules
-3. AIContext
-4. DecisionLog
-5. Design Documents
-6. Development Guide
+そのうえで、AIは各文書を以下の役割として扱う。
+
+| 文書                                | 役割                       |
+| --------------------------------- | ------------------------ |
+| Project Constitution              | 最高規範                     |
+| AIContext                         | 今回の作業範囲・制約               |
+| 仕様文書（DecisionLog・Requirements・設計書） | 実装すべき内容（優先順位は第9条に従う）     |
+| ReferenceIndex                    | どの情報がどの文書の正本かの索引         |
+| Project Rules / Development Guide | 作業手順                     |
+
+AIContext は「今回どこまで変更してよいか」を定めるものであり、仕様の内容を上書きするものではない。
 
 優先順位が曖昧な場合は、独自判断を行わず、人間へ確認を求める。

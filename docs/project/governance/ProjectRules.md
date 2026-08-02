@@ -184,17 +184,25 @@ Pull Request には以下を記載する。
 
 設計変更時は、必要に応じて以下を更新する。
 
+* DecisionLog（**最初に更新する**）
+* ReferenceIndex（正本の変更を伴う場合）
 * Project Constitution
-* DecisionLog
 * Requirements
 * Database
 * Backend Interface
+* Error Code
 * API Sequence
+* Frontend
+* Rating / Matchmaking Specification
 * Technology Stack
-* Test Specification
+* Test Specification（Part1〜Part10）
+* Deployment
+* Glossary
 * DevelopmentGuide
 * AIContext テンプレート
 * Changelog
+
+影響範囲の判断には `ReferenceIndex.md` 8章の対応表を利用する。
 
 更新対象がないことを確認した場合は、その旨をレビューに記録する。
 
