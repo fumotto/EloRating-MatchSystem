@@ -58,7 +58,7 @@ TC-SEC-001 と TC-SEC-006 は矛盾しない。ランキングのみ未認証で
 | ---------- | ----------- | ----- | --------------- | ---------------- | -------- | ------------------------------------------------- |
 | TC-SEC-008 | 自分の更新       | 本人    | profiles UPDATE | 成功する             | Database | `rls: allows updating your own profile`           |
 | TC-SEC-009 | 他人の更新       | 他ユーザー | profiles UPDATE | 拒否される            | Database | `rls: blocks updating another profile`            |
-| TC-SEC-010 | 管理者フラグの自己付与 | 本人    | profiles UPDATE（`is_admin`） | 拒否される | Database | `rls: blocks self-granting the admin flag`        |
+| TC-SEC-010 | 管理者ロールの自己付与 | 本人    | クライアントSDKから `app_metadata` の更新を試行 | 拒否される | Integration | `authorization: blocks self-granting the admin role` |
 | TC-SEC-011 | 削除の禁止       | 本人    | profiles DELETE | 拒否される            | Database | `rls: blocks profile deletion`                    |
 
 ## 3.3 チーム
@@ -174,7 +174,7 @@ TC-SEC-052 はレート制限の検証ではない。MVPではレート制限を
 * すべてのテーブルでRLSが有効であることを検証する。
 * RLSは「許可される」と「拒否される」を対で検証する。
 * Edge Function の認可は Integration Test で検証し、RLSテストで代用しない。
-* 利用者が自身の `is_admin` を変更できないことを必ず検証する。
+* 利用者が自身の `app_metadata` を変更できないことを必ず検証する。`app_metadata` は service_role でのみ更新可能であり、この前提が崩れると管理機能の認可全体が無効になる。
 * `teams.rating` をクライアントから変更できないことを必ず検証する。
 * 招待の参照が自チームに限定されることを必ず検証する。
 * 監査ログが追記専用であることを検証する。

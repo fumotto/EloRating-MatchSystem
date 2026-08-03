@@ -504,7 +504,7 @@ BANチームはView側で除外済みのため、クライアントで除外処�
 
 すべての管理操作は `audit_logs` へ記録する（ADR-017）。
 
-管理者判定は `profiles.is_admin` により行う。
+管理者判定は、検証済みJWTの `app_metadata.role` が `admin` であることにより行う（ADR-020）。DBアクセスを伴わない。
 
 ## 14.1 チームBAN
 

@@ -122,7 +122,7 @@ DBにビジネスロジック関数（レート計算等）を定義してはな
 | 主キー     | `id`（UUID）             | －                              |
 | 外部キー    | `<参照先単数形>_id`          | `team_id`、`profile_id`         |
 | 日時型     | `TIMESTAMPTZ`          | `created_at`、`completed_at`    |
-| 真偽値     | `is_xxx` / `has_xxx`   | `is_banned`、`is_admin`         |
+| 真偽値     | `is_xxx` / `has_xxx`   | `is_banned`、`auto_approved`    |
 | 状態      | TEXT ＋ CHECK制約         | `status`、`role`                |
 | View    | 用途＋`_view`             | `team_ranking_view`            |
 
@@ -305,21 +305,39 @@ RLSは最終的な防御線であり、Edge Functions内でも認可を確認す
 
 ## 9.1 管理者の判定
 
-管理者は `profiles.is_admin` で表す。
+管理者は **Supabase Auth の `app_metadata`** で表す（ADR-020）。データベースに管理者フラグの列を持たない。
 
-RLSポリシー内で `profiles` を直接参照すると再帰的な評価が発生するため、以下の SECURITY DEFINER 関数を用いて判定する。
-
-```sql
-CREATE FUNCTION auth_is_admin() RETURNS BOOLEAN
-LANGUAGE sql SECURITY DEFINER STABLE AS $$
-  SELECT COALESCE(
-    (SELECT is_admin FROM profiles WHERE id = auth.uid()),
-    FALSE
-  );
-$$;
+```text
+auth.users.raw_app_meta_data = {"role": "admin"}
 ```
 
-本関数は認可判定のみを行い、ビジネスロジックを含まない（2.6の例外として認める）。
+RLSポリシーでは、JWTのクレームを参照して判定する。
+
+```sql
+(auth.jwt() -> 'app_metadata' ->> 'role') = 'admin'
+```
+
+`profiles` を参照しないため、再帰的な評価も SECURITY DEFINER 関数も不要である。
+
+### 付与方法
+
+管理者はSupabaseプロジェクトの運用者が指定する。アプリケーションに管理者を登録・昇格させる機能は存在しない。
+
+```sql
+UPDATE auth.users
+   SET raw_app_meta_data = raw_app_meta_data || '{"role":"admin"}'::jsonb
+ WHERE id = '<user-uuid>';
+```
+
+Supabaseダッシュボードまたは Admin API（service_role）でも同じ操作を行える。
+
+### app_metadata を用いる理由
+
+`app_metadata` は `user_metadata` と異なり **service_role でのみ更新可能**である。利用者が自身を管理者へ昇格させることが構造的に不可能であり、RLSポリシーで防ぐ必要がない。
+
+### 反映タイミング
+
+付与は対象利用者のJWTが更新される（再ログインまたはトークンリフレッシュ）まで反映されない。運用手順は `11_Deployment.md` を参照する。
 
 ---
 
@@ -342,9 +360,10 @@ $$;
 | provider_user_id | TEXT        | No   |    |         | プロバイダ側の利用者ID                   |
 | display_name     | TEXT        | No   |    |         | 表示名                            |
 | avatar_url       | TEXT        | Yes  |    |         | アイコンURL（プロバイダ側に無い場合があるためNULL可） |
-| is_admin         | BOOLEAN     | No   |    | FALSE   | 管理者フラグ                         |
 | created_at       | TIMESTAMPTZ | No   |    | now()   | 作成日時                           |
 | updated_at       | TIMESTAMPTZ | No   |    | now()   | 更新日時                           |
+
+管理者フラグの列は持たない。管理者は `app_metadata` で表す（9.1、ADR-020）。
 
 ### Constraints
 
@@ -360,7 +379,6 @@ CHECK: length(display_name) BETWEEN 1 AND 50
 
 ```text
 UX_profiles_provider
-IX_profiles_is_admin (is_admin) WHERE is_admin = TRUE
 ```
 
 ### Trigger
@@ -373,10 +391,10 @@ IX_profiles_is_admin (is_admin) WHERE is_admin = TRUE
 | ------ | --------------------- |
 | SELECT | 認証済みユーザー              |
 | INSERT | 本人のみ（`auth.uid() = id`） |
-| UPDATE | 本人のみ。ただし `is_admin` は更新不可 |
+| UPDATE | 本人のみ                  |
 | DELETE | 禁止                    |
 
-`is_admin` の変更は Migration または管理者による直接操作でのみ行う。
+管理者フラグを本テーブルに持たないため、更新可否を列単位で制限する必要はない。
 
 ### 運用ルール
 
@@ -911,7 +929,7 @@ CHECK: max_reject_count >= 0
 | UPDATE | Edge Functions のみ |
 | DELETE | 禁止               |
 
-管理者判定はEdge Function内で `auth_is_admin()` により行う。
+管理者判定はEdge Function内で、検証済みJWTの `app_metadata.role` により行う（9.1）。
 
 ### 運用ルール
 
@@ -1259,7 +1277,7 @@ LEFT JOIN profiles ap ON ap.id = m.approved_by_profile_id;
 
 | Table          | Index                                                                                     |
 | -------------- | ----------------------------------------------------------------------------------------- |
-| profiles       | `UX_profiles_provider`、`IX_profiles_is_admin`                                              |
+| profiles       | `UX_profiles_provider`                                                                     |
 | teams          | `UX_teams_name`、`IX_teams_rating_desc`、`IX_teams_is_banned`                                |
 | team_members   | `UX_team_members_profile`、`ux_team_members_leader`、`IX_team_members_team`                  |
 | team_invites   | `UX_team_invites_code_hash`、`ux_team_invites_active`、`IX_team_invites_expires_at`          |
@@ -1280,20 +1298,15 @@ LEFT JOIN profiles ap ON ap.id = m.approved_by_profile_id;
 
 ---
 
-## 14.2 auth_is_admin()
-
-管理者判定を行う SECURITY DEFINER 関数（9.1参照）。
-
----
-
-## 14.3 廃止した関数
+## 14.2 廃止した関数
 
 以下はADR-016により廃止した。ビジネスロジックをDBへ配置しないためである。
 
-| 関数                         | 廃止理由                                        |
-| -------------------------- | ------------------------------------------- |
-| `calculate_rating_change()` | Eloレート計算はTypeScriptの純粋関数として実装する（単体テスト容易性のため） |
-| `increment_match_version()` | version の加算はUPDATE文で明示的に行う（Triggerとの二重加算を防ぐため） |
+| 関数                         | 廃止理由                                                     |
+| -------------------------- | -------------------------------------------------------- |
+| `calculate_rating_change()` | Eloレート計算はTypeScriptの純粋関数として実装する（単体テスト容易性のため）              |
+| `increment_match_version()` | version の加算はUPDATE文で明示的に行う（Triggerとの二重加算を防ぐため）            |
+| `auth_is_admin()`          | 管理者判定をJWTの `app_metadata` で行うため不要（ADR-020）。これにより2.6の例外が解消した |
 
 ---
 
@@ -1303,7 +1316,7 @@ LEFT JOIN profiles ap ON ap.id = m.approved_by_profile_id;
 
 | Table           | SELECT        | INSERT         | UPDATE         | DELETE         |
 | --------------- | ------------- | -------------- | -------------- | -------------- |
-| profiles        | 認証済み          | 本人             | 本人（`is_admin` を除く） | 禁止             |
+| profiles        | 認証済み          | 本人             | 本人             | 禁止             |
 | teams           | 全員（未認証を含む）    | Edge Functions | Edge Functions | 禁止             |
 | team_members    | 認証済み          | Edge Functions | Edge Functions | Edge Functions |
 | team_invites    | 自チームのメンバー     | Edge Functions | Edge Functions | 禁止             |
@@ -1375,7 +1388,9 @@ system_settings
   max_reject_count        = 2
 ```
 
-初期管理者は、対象利用者のログイン後に `profiles.is_admin = TRUE` をMigrationまたは手動操作で設定する。
+初期管理者は、対象利用者のログイン後に `auth.users.raw_app_meta_data` へ `{"role":"admin"}` を設定する（9.1）。
+
+`profiles` に管理者フラグを持たないため、Seedでの投入対象は `system_settings` のみである。
 
 ---
 
@@ -1388,7 +1403,7 @@ Migrationは追加方式とし、適用済みのMigrationを編集しない。
 ```text
 auth（Supabase標準）
   ↓
-共通Function（update_updated_at・auth_is_admin）
+共通Function（update_updated_at）
   ↓
 profiles → teams → team_members → team_invites
   ↓
@@ -1405,7 +1420,7 @@ RLS
 Seed
 ```
 
-`auth_is_admin()` は `profiles` を参照するため、`profiles` 作成後に定義する。
+管理者判定用の関数は定義しない。JWTのクレームを直接参照する（9.1）。
 
 ---
 
@@ -1413,7 +1428,7 @@ Seed
 
 | テーブル            | 更新経路                             |
 | --------------- | -------------------------------- |
-| profiles        | クライアントから直接更新可（本人のみ・`is_admin` を除く） |
+| profiles        | クライアントから直接更新可（本人のみ）      |
 | 上記以外のすべて        | Edge Functions のみ                |
 
 クライアントから複雑な更新を行ってはならない。

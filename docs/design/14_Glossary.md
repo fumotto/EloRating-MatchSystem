@@ -44,8 +44,9 @@
 | Ranking         | ランキング    | `team_ranking_view`         | Leaderboard         | レーティング順の順位                |
 | System Settings | システム設定   | `system_settings`           | Config、Preference   | 管理者が変更できる全体設定             |
 | Audit Log       | 監査ログ     | `audit_logs`                | 操作ログ、History        | 管理操作・結果確定・認証失敗などの追記専用記録   |
-| Admin           | 管理者      | －                           | Moderator、Operator  | システム全体を管理する権限を持つ利用者       |
+| Admin           | 管理者      | `app_metadata.role='admin'` | Moderator、Operator  | システム全体を管理する権限を持つ利用者。Supabase側で指定する |
 | Auth Provider   | 認証プロバイダ  | `auth_provider`             | SNS連携、外部認証          | ログインに用いる外部OAuth提供者        |
+| App Metadata    | アプリメタデータ | `app_metadata`              | ユーザーメタデータ           | Supabase Authが保持し、service_roleのみ更新できるJWTクレーム |
 | Season          | シーズン     | `seasons`                   | Term                | ランキングの区切り（将来機能）           |
 
 ---

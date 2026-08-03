@@ -21,7 +21,8 @@ Last Updated: 2026-08-03
 
 # 2. 前提
 
-* 管理者判定は `profiles.is_admin` による（`03_Database.md` 9.1）。
+* 管理者判定はJWTの `app_metadata.role` による（`03_Database.md` 9.1、ADR-020）。DBに管理者フラグの列は存在しない。
+* 管理者の付与はSupabase側で行う。アプリケーションに登録・昇格機能は存在しないため、その種のテストは作成しない。
 * BAN状態は `teams.is_banned` で表す。`status = 'BANNED'` という列は存在しない。
 * すべての管理操作は `audit_logs` へ記録する（ADR-017）。
 * 管理操作は冪等とする。同じ結果をもたらす再送は成功を返す（`06_ErrorCode.md` 15章）。
@@ -34,12 +35,15 @@ Last Updated: 2026-08-03
 
 | ID           | 観点          | 前提条件        | 操作     | 期待結果            | 種別          | テスト名                                        |
 | ------------ | ----------- | ----------- | ------ | --------------- | ----------- | ------------------------------------------- |
-| TC-ADMIN-001 | 管理者の許可      | `is_admin = true` | 管理API実行 | 成功する            | Integration | `allows an administrator`                   |
-| TC-ADMIN-002 | 一般利用者の拒否    | `is_admin = false` | 管理API実行 | `ADMIN-001` を返す | Integration | `rejects a non-administrator`               |
-| TC-ADMIN-003 | 未認証の拒否      | 認証なし        | 管理API実行 | `AUTH-001` を返す  | Integration | `rejects an unauthenticated request`        |
-| TC-ADMIN-004 | フラグの改ざん防止   | 一般利用者       | profiles UPDATE | `is_admin` を変更できない | Database    | `prevents a user from granting themselves admin` |
+| TC-ADMIN-001 | 管理者の許可      | `app_metadata.role = 'admin'` | 管理API実行 | 成功する            | Integration | `allows an administrator`                   |
+| TC-ADMIN-002 | 一般利用者の拒否    | ロール未設定                        | 管理API実行 | `ADMIN-001` を返す | Integration | `rejects a non-administrator`               |
+| TC-ADMIN-003 | 未認証の拒否      | 認証なし                          | 管理API実行 | `AUTH-001` を返す  | Integration | `rejects an unauthenticated request`        |
+| TC-ADMIN-004 | メタデータの改ざん防止 | 一般利用者                         | クライアントSDKから `app_metadata` の更新を試行 | 変更できない | Integration | `prevents a user from granting themselves admin` |
+| TC-ADMIN-005 | 偽装ロールの拒否    | ボディに `role: admin` を含めたリクエスト   | 管理API実行 | `ADMIN-001` を返す（JWTのみを信用する） | Integration | `ignores a role supplied in the request body` |
 
-TC-ADMIN-004 は重要である。`is_admin` を利用者自身が更新できると、管理機能の認可全体が無効になる。
+TC-ADMIN-004・TC-ADMIN-005 は重要である。`app_metadata` は service_role でのみ更新可能であるため自己昇格は構造的に不可能だが、その前提が実装で崩れていないことを確認する。
+
+またEdge FunctionがリクエストボディのロールをJWTより優先すると認可が破られるため、TC-ADMIN-005 で検証する。
 
 ## 3.2 チームBAN
 
@@ -158,7 +162,8 @@ TC-ADMIN-004 は重要である。`is_admin` を利用者自身が更新でき�
 # 6. AI実装ルール
 
 * すべての管理APIで管理者権限を検証する。
-* 利用者が自身の `is_admin` を変更できないことを必ず検証する。
+* 利用者が自身の `app_metadata` を変更できないことを必ず検証する。
+* 管理者判定にリクエストボディの値を使わず、検証済みJWTのクレームのみを信用することを検証する。
 * 設定変更はトランザクションで実行されることを検証する。
 * K値の変更が完了時点の試合に適用されることを検証する（Part2 TC-RATING-027）。
 * レートリセットが `rating_history` を削除せず、かつ履歴を追加しないことを検証する。

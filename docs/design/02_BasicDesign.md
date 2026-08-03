@@ -251,7 +251,7 @@ BAN状態は `teams.is_banned`、試合中かどうかは `matches` から導出
 
 勝利申告・承認をリーダーに限定しない理由は、リーダー不在時に試合結果が確定できず滞留することを防ぐためである（ADR-009）。
 
-管理者かどうかは `profiles.is_admin` で判定する。
+管理者かどうかはJWTの `app_metadata.role` で判定する（ADR-020）。管理者の指定はSupabase側で行い、アプリケーションに登録機能を設けない。
 
 ---
 
@@ -295,7 +295,7 @@ Realtime を利用する。イベント名の正本は `04_BackendInterface.md` 
 | 認証   | Supabase Auth（外部OAuthプロバイダ）           |
 | 認可   | Row Level Security ＋ Edge Functions内の検証 |
 | 通信   | HTTPS                                 |
-| 管理機能 | `profiles.is_admin` による判定             |
+| 管理機能 | JWTの `app_metadata.role` による判定        |
 | 監査   | `audit_logs` への記録                     |
 
 ---

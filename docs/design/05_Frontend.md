@@ -194,9 +194,18 @@ TanStack Router の `beforeLoad` で実装する。
 | --------- | ------- | ------------------ |
 | Public    | なし      | －                  |
 | Protected | ログイン済み  | `/login` へリダイレクト   |
-| Admin     | `isAdmin` が true | 403画面を表示           |
+| Admin     | JWTの `app_metadata.role` が `admin` | 403画面を表示     |
 
-管理者判定は `profiles.is_admin`（Profile Query の `isAdmin`）で行う。
+管理者判定は**セッションJWTの `app_metadata.role`** で行う（ADR-020）。
+
+```typescript
+const { data: { session } } = await supabase.auth.getSession();
+const isAdmin = session?.user.app_metadata.role === "admin";
+```
+
+Profile Query には管理者情報を含めない。DBとJWTの二重管理による齟齬を避けるためである。
+
+管理者権限の付与は Supabase 側で行うため、付与直後は反映されない。対象利用者が再ログインするかトークンがリフレッシュされるまで、画面上は一般利用者として扱われる。
 
 画面側のガードは利便性のためのものであり、認可の保証はバックエンドが行う。
 

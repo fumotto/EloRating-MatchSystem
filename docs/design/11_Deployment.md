@@ -268,6 +268,54 @@ CI では Supabase Local（Docker）を起動して実行する。本番環境�
 
 ---
 
+# 11.4 管理者の付与
+
+管理者はSupabaseプロジェクトの運用者が指定する（ADR-020）。アプリケーションに管理者を登録・昇格させる機能は存在しない。
+
+## 手順
+
+1. 対象の利用者に一度ログインしてもらい、`auth.users` にレコードを作成させる
+2. 以下のいずれかで `app_metadata` にロールを設定する
+
+```sql
+UPDATE auth.users
+   SET raw_app_meta_data = raw_app_meta_data || '{"role":"admin"}'::jsonb
+ WHERE id = '<user-uuid>';
+```
+
+Supabaseダッシュボードの Authentication → Users からも編集できる。Admin API（service_role）でも同じ操作を行える。
+
+## 反映タイミング
+
+**付与は即座に反映されない。** `app_metadata` はJWTへ埋め込まれるため、対象利用者のトークンが更新されるまで有効にならない。
+
+| 反映される契機     | 所要                       |
+| ----------- | ------------------------ |
+| 再ログイン       | 即時                       |
+| トークンの自動リフレッシュ | Supabaseのトークン有効期限に依存     |
+
+付与後は対象利用者へ再ログインを案内する。
+
+## 剥奪
+
+```sql
+UPDATE auth.users
+   SET raw_app_meta_data = raw_app_meta_data - 'role'
+ WHERE id = '<user-uuid>';
+```
+
+剥奪も同様に、対象利用者のトークンが更新されるまで有効にならない。即座に無効化する必要がある場合は、対象利用者のセッションを失効させる。
+
+## 確認
+
+```sql
+SELECT id, email, raw_app_meta_data ->> 'role' AS role
+  FROM auth.users
+ WHERE raw_app_meta_data ->> 'role' = 'admin';
+```
+
+---
+
 # 12. バックアップ
 
 | 対象         | 方法               |

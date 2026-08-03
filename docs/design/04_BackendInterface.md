@@ -125,6 +125,20 @@ Service Role は内部処理専用であり、クライアントから呼び出�
 
 ---
 
+## 4.3 JWTから取得する情報
+
+Edge Functions はJWTを検証し、以下をクレームから取得する。**リクエストボディの値を信用してはならない。**
+
+| 情報      | 取得元                              | 用途           |
+| ------- | -------------------------------- | ------------ |
+| 利用者ID   | `sub`                            | 本人確認、所属チームの導出 |
+| 認証プロバイダ | `app_metadata.provider`          | プロフィール作成     |
+| 管理者ロール  | `app_metadata.role`（`admin` かどうか） | 管理機能の認可      |
+
+`app_metadata` は service_role でのみ更新可能であり、利用者が改ざんできない（ADR-020）。
+
+---
+
 # 5. 共通レスポンス
 
 レスポンス形式の正本は `06_ErrorCode.md` である。本書では概要のみ示す。
@@ -312,7 +326,6 @@ interface EnsureProfileResponse {
     displayName: string;
     avatarUrl?: string;
     authProvider: string;
-    isAdmin: boolean;
 }
 ```
 
@@ -1346,7 +1359,9 @@ queued_at < now() - INTERVAL '24 hours'
 
 # 12. Admin Edge Functions
 
-管理者判定は `profiles.is_admin` により行う（`03_Database.md` 9.1）。
+管理者判定は、検証済みJWTの `app_metadata.role` が `admin` であることにより行う（`03_Database.md` 9.1、ADR-020）。
+
+Edge Functions はDB直結でありRLSを迂回するため、各Functionの冒頭で必ずこの判定を行う。判定にDBアクセスは不要である。
 
 すべての管理操作は `audit_logs` へ記録する。
 
@@ -1786,11 +1801,12 @@ interface Profile {
     displayName: string;
     avatarUrl?: string;
     authProvider: string;
-    isAdmin: boolean;
 }
 ```
 
 `providerUserId` はクライアントへ返却しない。
+
+管理者かどうかは本DTOに含めない。フロントエンドはセッションJWTの `app_metadata.role` から判定する（ADR-020）。DBとJWTの二重管理による齟齬を避けるためである。
 
 ---
 
