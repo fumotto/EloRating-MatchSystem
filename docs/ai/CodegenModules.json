@@ -1,0 +1,137 @@
+{
+  "_comment": [
+    "AIコード生成（LangGraph_for_Develop の workflow_coding）への入力仕様。",
+    "1エントリ = 1実行 = Edge Function 1本。",
+    "",
+    "★本ファイルが docs/ 配下にある理由:",
+    "  sections は 04_BackendInterface.md / 03_Database.md / 06_ErrorCode.md の見出し番号を",
+    "  直接参照している。設計書が採番を変えると本ファイルも同時に壊れるため、設計書と同じ版で",
+    "  管理する必要がある。パイプライン側からは環境変数 MODULES_MANIFEST でこのパスを指す。",
+    "",
+    "設計書は全量477KBあり一度に渡せないため、各モジュールが必要とする節だけを指定する。",
+    "sections は見出しの番号プレフィックス（'9.2' は 9.2節のみ、'9.' は9章配下すべて）。",
+    "testCommand / implementationHint / testHint は profiles から継承し、モジュール側で上書きできる。",
+    "まずは ensure-profile / create-team の2本で通し、確認できたら残り17本を追記する。"
+  ],
+
+  "_profiles_comment": [
+    "テストランナーはレイヤごとに異なる（12_TechnologyStack.md）。",
+    "Edge Functions は Deno 上で動作するため Deno Test、フロントエンドは Vitest。",
+    "単一の TEST_COMMAND では賄えないため、プロファイルとして定義する。"
+  ],
+  "_contract_comment": [
+    "implementationHint と testHint は「実装とテストの接続契約」を両側へ同じ文言で渡すためのもの。",
+    "これが無いと、実装が Deno.serve(...) をトップレベルで呼ぶだけで何も export せず、",
+    "テストが毎回違う取り込み方（named import → default import → …）を試して失敗し続ける。",
+    "実測でテスト実行ループが収束しなかった原因がこれ。"
+  ],
+  "profiles": {
+    "edgeFunction": {
+      "testCommand": "deno test --allow-all --no-check tests/",
+      "implementationHint": [
+        "- ★リクエストを処理する関数を `export async function handler(req: Request): Promise<Response>` という名前・シグネチャで必ずexportすること。",
+        "- そのうえでエントリポイントを、ファイル末尾に次の形で記述すること。",
+        "    if (import.meta.main) { Deno.serve(handler); }",
+        "  条件を付けないとテストがimportしただけでサーバーが起動し（実測でポート8000をLISTEN）、",
+        "  ポート衝突や並列実行の失敗要因になる。",
+        "- handlerをexportしないとテストから呼び出せず、テストが書けない。これは必須の制約。",
+        "- ★更新系の処理は、設計書(04_BackendInterface 2.1 / ADR-016)のとおり PostgreSQL へ直接接続し、",
+        "  TypeScript内で明示的にトランザクションを制御すること。Supabase JavaScript SDK は更新系に使用しないこと。",
+        "- ★外部importは次の2つだけを使うこと。ここに無いURLやパッケージを新たに導入しないこと。",
+        "    import { Pool } from \"https://deno.land/x/postgres@v0.19.3/mod.ts\";",
+        "    import { create, verify } from \"https://deno.land/x/djwt@v3.0.2/mod.ts\";  // JWT検証が必要な場合のみ",
+        "  バージョン番号を変更しないこと。実測で存在しないURL(postgres@0.17.0 や esm.sh/pg@8.11.3)を",
+        "  発明してモジュール解決に失敗し、テストが1件も実行できなくなった。",
+        "- ★handlerが使う外部依存には、必ず差し替え口(set*/reset*)をexportすること。",
+        "  Deno.env や外部サービスに直接触る箇所が1つでも残ると、そこでテストが止まる。",
+        "  実測では、DBだけ注入可能にして認証を残した結果、認証が必要な全テストが401になった。",
+        "  最低限、次の2つは必ずexportすること。",
+        "    export function setDbPool(pool: unknown): void        // DBプールのモックを注入",
+        "    export function resetDbPool(): void",
+        "    export function setJwtVerifier(                       // JWT検証のモックを注入",
+        "      verify: (token: string) => Promise<Record<string, unknown> | null>",
+        "    ): void",
+        "    export function resetJwtVerifier(): void",
+        "  実装内部にモジュールスコープの変数を持ち、set*はそこへ保存するだけにすること。",
+        "- ★handler内で依存を取得する箇所は必ず次の順序にすること。",
+        "    1. 注入されたものがあればそれを使う",
+        "    2. 無ければ Deno.env（SUPABASE_DB_URL / JWT秘密鍵）から生成する",
+        "  この順序でないと、テストがモックを注入しても実物が使われ、",
+        "  環境変数が無いため全てのテストが失敗する（実測で発生済み）。",
+        "- ★JWT検証はhandler内で直接djwtのverifyを呼ばず、必ず上記の差し替え可能な関数経由にすること。",
+        "  検証結果からは sub / app_metadata.provider / app_metadata.role を取り出すこと。",
+        "- 外部依存はモジュールのトップレベルで即時に生成しないこと（import時点で環境変数が無くても壊れないようにするため）。"
+      ],
+      "testHint": [
+        "- テストは tests/ 配下に配置し、ファイル名は *.test.ts とすること。",
+        "- テストランナーは Deno Test。Deno.test(\"名前\", () => { ... }) の形式で書くこと。",
+        "- アサーションは import { assertEquals, assertRejects } from \"jsr:@std/assert\"; を使うこと。",
+        "- Vitest / Jest / vi.fn() は使用しないこと（Deno上では動作しない）。",
+        "- ★実装は `export async function handler(req: Request): Promise<Response>` をexportしている。",
+        "  テストからは `import { handler, setDbPool, resetDbPool, setJwtVerifier, resetJwtVerifier } from \"../supabase/functions/<関数名>/index.ts\";` で取り込み、",
+        "  `await handler(new Request(url, { method: \"POST\", headers, body }))` の形で呼び出すこと。",
+        "  default import や、handler以外の名前でのimportはしないこと。",
+        "- ★モックは実装がexportしている set* で注入すること。",
+        "  テストファイル内に自前の setMockDbPool のような関数を定義してはいけない。",
+        "  それでは実装側にモックが届かず、実物が使われて全テストが失敗する（実測で発生済み）。",
+        "  各テストの冒頭で set*(モック) を呼び、終了時に reset*() を呼ぶこと。",
+        "- ★認証が必要なテストでは setJwtVerifier で検証結果を固定すること。",
+        "  例: setJwtVerifier(async () => ({ sub: \"profile-1\", app_metadata: { provider: \"steam\", role: \"user\" } }));",
+        "  これを忘れると実際のJWT検証が走り、秘密鍵が無いため全て401になる（実測で発生済み）。",
+        "  認証失敗のテストでは setJwtVerifier(async () => null) を使うこと。",
+        "- ★モックのプールは実装の呼び出し方に合わせること。実装は次の形で使う。",
+        "    const tx = await pool.connect(); await tx.queryObject(...); tx.release();",
+        "  すなわち connect() を持ち、その戻り値が queryObject/queryArray と release を持つオブジェクトにすること。",
+        "- テストは外部ネットワークへ接続しないこと。依存はすべて上記の注入口で差し替えること。"
+      ]
+    },
+    "frontend": {
+      "testCommand": "npm test",
+      "implementationHint": [
+        "- テストから検証できるよう、公開する関数・コンポーネントは名前付きexportにすること。"
+      ],
+      "testHint": [
+        "- テストは tests/ 配下に配置し、ファイル名は *.test.ts とすること。",
+        "- テストランナーは Vitest。import { describe, it, expect } from \"vitest\"; を記述すること。"
+      ]
+    }
+  },
+
+  "commonDesign": [
+    { "file": "docs/design/12_TechnologyStack.md" },
+    { "file": "docs/design/00_DirectoryStructure.md", "sections": ["5.1"] }
+  ],
+
+  "commonApiSpec": [
+    {
+      "file": "docs/design/04_BackendInterface.md",
+      "sections": ["2.", "4.", "5.", "6.", "8."]
+    },
+    { "file": "docs/design/06_ErrorCode.md", "sections": ["2.", "3.", "4."] }
+  ],
+
+  "modules": [
+    {
+      "name": "ensure-profile",
+      "profile": "edgeFunction",
+      "outputHint": "supabase/functions/ensure-profile/",
+      "apiSpec": [
+        { "file": "docs/design/04_BackendInterface.md", "sections": ["9.1"] },
+        { "file": "docs/design/06_ErrorCode.md", "sections": ["5.", "7."] }
+      ],
+      "design": [{ "file": "docs/design/03_Database.md", "sections": ["10.1"] }]
+    },
+    {
+      "name": "create-team",
+      "profile": "edgeFunction",
+      "outputHint": "supabase/functions/create-team/",
+      "apiSpec": [
+        { "file": "docs/design/04_BackendInterface.md", "sections": ["9.2"] },
+        { "file": "docs/design/06_ErrorCode.md", "sections": ["6.", "8."] }
+      ],
+      "design": [
+        { "file": "docs/design/03_Database.md", "sections": ["10.2", "10.3"] }
+      ]
+    }
+  ]
+}

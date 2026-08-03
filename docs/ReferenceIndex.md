@@ -93,6 +93,7 @@ Project Constitution 第9条に定める優先順位を唯一の基準とする�
 | ai/AIImplementationRule.md | AIの行動規範     | **AIの実装原則・禁止事項・完了条件**   |
 | ai/DevelopmentGuide.md    | 開発ナビゲーション   | **作業種別ごとの文書参照順序**       |
 | ai/PromptGuide.md         | プロンプト作成方法   | **依頼テンプレートと出力形式**       |
+| ai/CodegenModules.json    | AIコード生成の入力仕様 | **モジュール定義・参照する設計書の節・実装とテストの契約** |
 
 ---
 

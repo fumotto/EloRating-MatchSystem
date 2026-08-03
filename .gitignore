@@ -1,0 +1,18 @@
+# 依存関係
+node_modules/
+
+# ビルド成果物
+dist/
+build/
+
+# 資格情報
+.env
+.env.*
+!.env.example
+
+# テスト・カバレッジ
+coverage/
+
+# OS/エディタ
+.DS_Store
+*.swp
