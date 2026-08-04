@@ -188,6 +188,10 @@ supabase/
 
 Edge Functions およびMigrationは本ディレクトリ以外へ配置しない。
 
+MVPのSeed（`system_settings` の初期行）は Migration に含める。
+これは `03_Database.md` 18章の作成順序および `11_Deployment.md` 8章に従うものであり、
+`seed/` はMVPでは使用しない。
+
 Migrationは追加方式とし、適用済みのMigrationを編集しない。
 
 ---

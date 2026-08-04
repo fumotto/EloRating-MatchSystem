@@ -13,8 +13,4 @@ CREATE TABLE profiles (
     UNIQUE (auth_provider, provider_user_id)
 );
 
--- Trigger for updated_at
-CREATE TRIGGER tr_profiles_update_updated_at
-BEFORE UPDATE ON profiles
-FOR EACH ROW
-EXECUTE FUNCTION update_updated_at();
+-- updated_at のトリガは 0012_triggers.sql で定義する（03_Database.md 18章の作成順序）。

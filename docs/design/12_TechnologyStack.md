@@ -46,7 +46,7 @@
 | -------------- | --------------------------- | ------------------------------ |
 | BaaS           | Supabase                    | 認証・DB・Realtime・Storageを統合できるため |
 | Database       | PostgreSQL                  | 信頼性・拡張性に優れるため                  |
-| Authentication | Supabase Auth + Steam OAuth | Steamアカウントによるログインを実現するため       |
+| Authentication | Supabase Auth + Discord OAuth | Supabase Auth の標準プロバイダであり、追加実装なしで成立するため（ADR-022） |
 | API            | Supabase Edge Functions     | バックエンドロジックを実装するため              |
 | Realtime       | Supabase Realtime           | マッチ成立や試合状態をリアルタイム通知するため        |
 | Storage        | Supabase Storage            | 将来の画像・アイコン保存に備えるため             |

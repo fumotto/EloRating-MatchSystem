@@ -18,8 +18,6 @@ WHERE role = 'LEADER';
 -- Indexes
 CREATE INDEX ix_team_members_team ON team_members(team_id);
 
--- Trigger for updated_at
-CREATE TRIGGER tr_team_members_update_updated_at
-BEFORE UPDATE ON team_members
-FOR EACH ROW
-EXECUTE FUNCTION update_updated_at();
+-- team_members は updated_at 列を持たない。
+-- 03_Database.md 14.1 の update_updated_at() 対象は profiles / teams / system_settings のみであり、
+-- 10.3 にも Trigger の定義は無い。したがって本テーブルへ更新トリガを張ってはならない。

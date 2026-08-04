@@ -47,6 +47,21 @@ Status: Active
 
 ---
 
+# 4.1 実装スライスとの対応
+
+実装の進行単位は `ImplementationRoadmap.md` のスライス S0 〜 S6 である（ADR-023）。
+マイルストーンは達成目標を示すものであり、スライスと1対1で対応しない。
+
+| Milestone | 対応スライス                 | 補足                                              |
+| --------- | ---------------------- | ----------------------------------------------- |
+| M1        | S0、S0.5、S3（初期化）、S4（CI） | 基盤はスライスに分散する。S0 の完了が M1 の実質的な起点である              |
+| M2        | S2、S5（Team / Invite）   | チーム作成のみ S2 で先行し、招待・脱退・移譲は S5 で完了する               |
+| M3        | S5（Queue / Match / 自動解決） |                                                 |
+| M4        | S3（ランキング表示）、S5（Rating） | 表示は S3 で先行し、レート計算は S5 で完了する                     |
+| M5        | S4、S6                  | S4 で公開経路を確立し、S6 で全テストを満たしてMVPとする                |
+
+---
+
 # 5. マイルストーン詳細
 
 ## M1 開発基盤構築
@@ -57,23 +72,26 @@ Status: Active
 
 ### 対象
 
+* Supabase Local（`supabase init` / `config.toml` / Migration の完走）
 * Bun環境
 * React / Vite / TanStack Router
-* Supabase（Local含む）
 * GitHub Actions
 * Vitest / Deno Test / pgTAP / Playwright
-* 認証プロバイダのPoC（ADR-015）
+
+認証プロバイダのPoCは実施しない。ADR-022 により Discord で確定したためである。
 
 ### 関連設計書
 
 * 12_TechnologyStack.md
 * 11_Deployment.md
+* 15_DecisionLog.md（ADR-022、ADR-023、ADR-024）
 
 ### 完了条件
 
+* `supabase db reset` がエラーなく完走する。
 * 開発環境が構築されている。
 * CIが正常に動作する。
-* テスト基盤が利用可能である。
+* テスト基盤が利用可能である（`npm test` が成功する）。
 
 ---
 

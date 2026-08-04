@@ -229,7 +229,7 @@ Layout に業務ロジックを実装しない。
 ```text
 Login 画面
   ↓
-外部OAuthプロバイダ（Steam または Discord）
+外部OAuthプロバイダ（Discord）
   ↓
 Supabase Auth がセッションを確立
   ↓
@@ -242,7 +242,10 @@ Realtime購読を開始
 Dashboard へ遷移
 ```
 
-認証プロバイダは固定しない（ADR-015）。画面はプロバイダ名を `authProvider` から取得して表示する。
+MVPの認証プロバイダは Discord とする（ADR-022）。
+
+ただし画面はプロバイダ名をハードコードしない。プロバイダ非依存の設計（ADR-015）を維持し、
+表示するプロバイダ名は `authProvider` から取得する。
 
 ## 7.1 Session
 

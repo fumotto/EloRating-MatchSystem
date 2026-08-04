@@ -77,10 +77,10 @@ Project Constitution 第9条に定める優先順位を唯一の基準とする�
 | governance/ProjectConstitution.md   | 最高規範          | **開発理念、基本原則、文書優先順位、品質ゲート**    |
 | governance/ProjectRules.md          | 日常運用ルール       | **Git運用、Pull Request、レビュー手順** |
 | governance/RiskManagement.md        | リスク管理         | **リスク一覧、評価基準、エスカレーション基準**     |
-| planning/ImplementationRoadmap.md   | 実装計画          | **実装フェーズと順序**                 |
+| planning/ImplementationRoadmap.md   | 実装計画          | **実装スライスと順序**                 |
 | planning/Milestones.md              | 開発目標          | **マイルストーンと完了条件**              |
 | planning/Backlog.md                 | 実施候補          | 未着手タスクの一覧                     |
-| status/ProjectStatus.md             | 現在の状態         | **現在のフェーズ、作業中タスク、ブロッカー**      |
+| status/ProjectStatus.md             | 現在の状態         | **現在のフェーズ・スライス、作業中タスク、ブロッカー**  |
 | status/Changelog.md                 | 変更履歴          | **リリース単位の変更履歴**               |
 
 ---

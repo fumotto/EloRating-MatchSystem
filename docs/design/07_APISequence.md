@@ -89,7 +89,9 @@ Realtime通知は必ず **COMMIT成功後** に送信する。
 
 プロフィールの作成主体は `ensure-profile` である。DBトリガによる自動作成は行わない（`04_BackendInterface.md` 4.1）。
 
-認証プロバイダは `steam` または `discord` とする（ADR-015）。プロバイダ固有の処理をシーケンスへ記載しない。
+`auth_provider` の値域は `steam` または `discord` とする（ADR-015）。MVPで使用するのは `discord` である（ADR-022）。
+
+プロバイダ固有の処理をシーケンスへ記載しない。
 
 ---
 

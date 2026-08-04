@@ -113,7 +113,7 @@ Status: Active
 
 | ID    | 分類     | 内容                                                                         | 影響度      | 発生可能性  | 優先度 | 状態         |
 | ----- | ------ | -------------------------------------------------------------------------- | -------- | ------ | --- | ---------- |
-| R-001 | 技術     | Supabase Auth が Steam を標準プロバイダとして提供していない。認証方式が成立しない可能性がある                    | Critical | High   | P1  | Open       |
+| R-001 | 技術     | Supabase Auth が Steam を標準プロバイダとして提供していない。認証方式が成立しない可能性がある                    | Critical | High   | P1  | Closed     |
 | R-002 | アーキテクチャ | Supabase JS SDK では複数ステートメントのトランザクションを開始できない。DB直結方式の実装難度・接続数上限が想定を超える可能性がある | High     | Medium | P1  | Mitigating |
 | R-003 | データ    | Edge Functions のDB直結はRLSを迂回する。認可チェックの実装漏れが認可の突破に直結する                        | Critical | Medium | P1  | Mitigating |
 | R-004 | アーキテクチャ | 自動解決バッチ（Cron）が停止すると試合が確定せず、両チームが以後マッチングできなくなる                               | High     | Medium | P1  | Mitigating |
@@ -123,12 +123,13 @@ Status: Active
 | R-008 | データ    | レート計算の丸めにより系全体の総レートが漂流する                                                   | Low      | High   | P2  | Mitigating |
 | R-009 | 品質     | 設計書間の不整合により、AIが誤った仕様で実装する                                                  | High     | Medium | P1  | Mitigating |
 | R-010 | プロジェクト | 承認期限・申告期限の初期値が運用実態に合わず、正常な試合が引き分けとして解散される                                  | Medium   | Medium | P2  | Monitoring |
+| R-011 | 品質     | 既存実装（Migration・Edge Functions）が設計書と乖離しており、Migrationの適用および全Edge Functionの実行が失敗する | Critical | High   | P0  | Mitigating |
 
 ## 6.1 対応方針
 
 | ID    | 対応                                                                          |
 | ----- | --------------------------------------------------------------------------- |
-| R-001 | Roadmap Phase 3 の冒頭でPoCを実施する。成立しない場合はDiscord認証を採用する（ADR-015）。スキーマは既にプロバイダ非依存 |
+| R-001 | **Closed（2026-08-04）。** ADR-022 により認証プロバイダを Discord へ確定し、PoCを不要とした。スキーマはプロバイダ非依存のため変更なし |
 | R-002 | Connection Pooler（Transaction mode）を使用し、prepared statement を無効化する。接続数上限を監視する |
 | R-003 | Edge Function内の認可チェックを必須とし、Integration Testで全Functionを検証する（Part8）           |
 | R-004 | Cronの実行結果を監視対象とする。滞留件数を定期確認する（`11_Deployment.md` 13.1）                      |
@@ -138,6 +139,7 @@ Status: Active
 | R-008 | 勝者の変動量を丸め、敗者へ符号反転値を適用する（`08_RatingSpecification.md` 5.2）。Unit Testで検証する     |
 | R-009 | 正本を `ReferenceIndex.md` で明示し、設計変更はDecisionLogを起点とする                          |
 | R-010 | 期限を `system_settings` の設定値とし、運用しながら調整する。`DRAWN` の発生率を監視する                    |
+| R-011 | 乖離を `Backlog.md` の B-001 〜 B-012 として個別に登録し、スライス S0 〜 S4 で解消する。実装前に必ず Supabase Local で `supabase db reset` の完走を確認する（ADR-023） |
 
 ## 6.2 更新ルール
 

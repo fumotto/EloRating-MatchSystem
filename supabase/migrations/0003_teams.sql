@@ -16,8 +16,4 @@ CREATE TABLE teams (
 CREATE INDEX ix_teams_rating_desc ON teams(rating DESC);
 CREATE INDEX ix_teams_is_banned ON teams(is_banned) WHERE is_banned = TRUE;
 
--- Trigger for updated_at
-CREATE TRIGGER tr_teams_update_updated_at
-BEFORE UPDATE ON teams
-FOR EACH ROW
-EXECUTE FUNCTION update_updated_at();
+-- updated_at のトリガは 0012_triggers.sql で定義する（03_Database.md 18章の作成順序）。

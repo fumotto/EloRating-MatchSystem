@@ -85,6 +85,9 @@ MAJOR.MINOR.PATCH
 
 ### Added
 
+* 実装ロードマップを縦切りスライス S0 〜 S6 として定義（ADR-023）
+* 既知の実装欠陥を Backlog へ B-001 〜 B-012 として登録
+* リスク R-011（既存実装と設計書の乖離）を追加
 * ReferenceIndex（全文書の索引・正本一覧）を追加
 * 試合の自動解決（申告期限切れによる引き分け解散、承認期限切れによる自動承認）を追加（ADR-014）
 * 申告内容の拒否（`reject-match`）を追加（ADR-014）
@@ -94,6 +97,9 @@ MAJOR.MINOR.PATCH
 
 ### Changed
 
+* 認証プロバイダを **Discord** に確定し、PoCを不要とした（ADR-022 / R-001 Closed）
+* 実装の進行単位を層ごとのPhaseから縦切りスライスへ変更（ADR-023）
+* 未適用Migrationに限り直接修正を許可（初版確定までの一度限りの例外。ADR-024）
 * APIレスポンス形式とエラーコード体系を `06_ErrorCode.md` へ一本化（ADR-007）
 * 試合状態を `PLAYING` / `WINNER_REPORTED` / `COMPLETED` / `DRAWN` に再定義し、`MATCHED` を廃止（ADR-008）
 * 勝利申告・承認の実行主体をチームの任意のメンバーへ変更（ADR-009）

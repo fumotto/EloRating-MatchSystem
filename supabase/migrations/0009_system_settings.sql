@@ -22,8 +22,4 @@ CREATE TABLE system_settings (
     CONSTRAINT chk_system_settings_max_reject_count CHECK (max_reject_count >= 0)
 );
 
--- Trigger for updated_at
-CREATE TRIGGER tr_system_settings_update_updated_at
-BEFORE UPDATE ON system_settings
-FOR EACH ROW
-EXECUTE FUNCTION update_updated_at();
+-- updated_at のトリガは 0012_triggers.sql で定義する（03_Database.md 18章の作成順序）。
