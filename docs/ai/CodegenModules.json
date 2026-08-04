@@ -13,7 +13,6 @@
     "testCommand / implementationHint / testHint は profiles から継承し、モジュール側で上書きできる。",
     "まずは ensure-profile / create-team の2本で通し、確認できたら残り17本を追記する。"
   ],
-
   "_profiles_comment": [
     "テストランナーはレイヤごとに異なる（12_TechnologyStack.md）。",
     "Edge Functions は Deno 上で動作するため Deno Test、フロントエンドは Vitest。",
@@ -25,7 +24,127 @@
     "テストが毎回違う取り込み方（named import → default import → …）を試して失敗し続ける。",
     "実測でテスト実行ループが収束しなかった原因がこれ。"
   ],
+  "_order_comment": [
+    "modules の並び順 = 実装順序。ImplementationRoadmap.md 5章の定義に従う。",
+    "  1. Database → 2. トランザクション基盤（共通処理） → 3. Rating → ... → 5. Team/Invite → ...",
+    "dependsOn は『先に生成されている必要があるモジュール』を宣言する。",
+    "Edge Function 同士は互いをimportしないため辺は存在しない。唯一の依存は _shared のみ。"
+  ],
   "profiles": {
+    "sqlMigration": {
+      "_comment": [
+        "Database Migration。実DBが無いため、テストは『設計書の網羅性』を検証する。",
+        "SQLが正しく動くことは検証できないが、定義漏れは検出できる。"
+      ],
+      "testCommand": "deno test --allow-all --no-check tests/",
+      "implementationHint": [
+        "- 出力は SQL ファイル（.sql）のみ。TypeScriptを生成しないこと。",
+        "- ★03_Database.md 18章のMigration作成順序に従い、ファイル名の連番で順序を表現すること。",
+        "    0001_common_functions.sql  （update_updated_at 等の共通Function）",
+        "    0002_profiles.sql / 0003_teams.sql / 0004_team_members.sql / 0005_team_invites.sql",
+        "    0006_matching_queue.sql / 0007_matches.sql / 0008_rating_history.sql",
+        "    0009_system_settings.sql / 0010_audit_logs.sql",
+        "    0011_views.sql / 0012_triggers.sql / 0013_rls.sql / 0014_seed.sql",
+        "- 各テーブルは 03_Database.md 10章の定義（列・型・制約・デフォルト）どおりに作ること。",
+        "- 命名規則は 03_Database.md 3章、共通ルール（UUID・created_at・updated_at・NULL・CHECK・UNIQUE）は4章に従う。",
+        "- 外部キーは 03_Database.md 12章の一覧に従う。",
+        "- ★管理者判定用の関数は定義しないこと（ADR-020。JWTのクレームを直接参照する）。",
+        "- RLSポリシーは 03_Database.md 9章の方針に従い、管理者判定は",
+        "  `(auth.jwt() -> 'app_metadata' ->> 'role') = 'admin'` を用いること。",
+        "- Migrationは追加方式。既存ファイルを編集する前提のコードを書かないこと。"
+      ],
+      "testHint": [
+        "- テストは tests/ 配下に配置し、ファイル名は *.test.ts とすること。",
+        "- テストランナーは Deno Test。Deno.test(\"名前\", () => { ... }) の形式で書くこと。",
+        "- アサーションは import { assertEquals, assertStringIncludes } from \"jsr:@std/assert\"; を使うこと。",
+        "- ★実DBには接続しない。supabase/migrations/ 配下のSQLファイルを",
+        "  Deno.readTextFile で読み込み、文字列として検証すること。",
+        "- 検証すべき内容は『設計書に定義されたものが漏れなく存在するか』:",
+        "    1. 03_Database.md 10章の9テーブル（profiles / teams / team_members / team_invites /",
+        "       matching_queue / matches / rating_history / system_settings / audit_logs）が",
+        "       それぞれ CREATE TABLE されていること",
+        "    2. 11章の4つのView（team_ranking_view / team_detail_view / match_list_view /",
+        "       match_detail_view）が CREATE VIEW されていること",
+        "    3. ファイル名が連番で、18章の作成順序どおりに並んでいること。",
+        "       ★連番は4桁ゼロ埋め（0001_ 〜 0014_）である。3桁で検証しないこと。",
+        "    4. 管理者判定用の関数（auth_is_admin 等）が定義されていないこと（ADR-020）",
+        "- SQLの構文的な正しさや実行結果は検証対象外（実DBが無いため）。",
+        "- ★Denoのグローバルは大文字始まりの `Deno` である。`deno.test` や `typeof deno` のように小文字で書くと ReferenceError: deno is not defined となり全テストが落ちる（実測）。テスト定義は必ず `Deno.test(...)`、ファイル読み込みは `Deno.readTextFile(...)` と書くこと。また、テスト冒頭に実行環境を検査するガードを書かないこと（ランナーは常にDenoである）。"
+      ]
+    },
+    "sharedModule": {
+      "_comment": [
+        "Edge Functions の共通処理（ADR-021）。各Edge Functionより先に生成する。",
+        "業務ロジックを含まないため純粋なユニットテストが書ける。"
+      ],
+      "testCommand": "deno test --allow-all --no-check tests/",
+      "implementationHint": [
+        "- 出力先は supabase/functions/_shared/ 配下。ADR-021の責務のみを実装すること。",
+        "- ★次の3ファイルに分けること。1ファイルに詰め込まないこと。",
+        "    _shared/response.ts  共通レスポンス生成（04_BackendInterface 5章）",
+        "    _shared/auth.ts      JWT検証とクレーム取り出し（同 4.3）",
+        "    _shared/db.ts        DB接続プールとトランザクション制御（同 2.1 / ADR-016）",
+        "- ★response.ts は次をexportすること。戻り値はいずれもグローバルの HTTP Response である。",
+        "    export function ok<T>(data: T): Response                      // 本文は5章の成功形式、HTTP 200",
+        "    export function businessError(code: string, message: string, status: number): Response",
+        "    export function systemError(code: string, message: string): Response   // HTTP 500",
+        "  実装は new Response(JSON.stringify(本文), { status, headers: { \"Content-Type\": \"application/json\" } }) の形にすること。",
+        "- ★HTTPステータスは本文に含めない。06_ErrorCode 3章の対応表どおりのステータスをResponseに載せること。",
+        "  businessError の引数 status を必ず使うこと。捨てるとステータスを運ぶ手段が無くなる（実測で200固定になった）。",
+        "- ★本文の型に Response という名前を付けてはいけない。グローバルの Response を覆い隠し、",
+        "  プレーンオブジェクトを返す実装になる（実測で発生）。本文の型名は ApiResponseBody とすること。",
+        "- ★auth.ts は次をexportすること。",
+        "    export interface JwtClaims { sub: string; app_metadata?: { provider?: string; role?: string } }",
+        "    export async function verifyJwt(req: Request): Promise<JwtClaims | null>  // Authorizationヘッダから検証",
+        "    export function setJwtVerifier(verify: (token: string) => Promise<JwtClaims | null>): void",
+        "    export function resetJwtVerifier(): void",
+        "- ★db.ts は次をexportすること。",
+        "    export function getDbPool(): unknown            // 注入があればそれ、無ければ SUPABASE_DB_URL から生成",
+        "    export function setDbPool(pool: unknown): void",
+        "    export function resetDbPool(): void",
+        "    export async function withTransaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T>",
+        "      // BEGIN → fn → COMMIT、例外時は ROLLBACK、finally で release",
+        "- ★SQLの発行は tx.queryObject(...) を使うこと。tx.query(...) は使わないこと。",
+        "  deno-postgres v0.19.3 の PoolClient に query() は存在せず queryObject / queryArray のみである。",
+        "  設計書 04_BackendInterface 2.1 の tx.query(...) は概念コードであり実APIではない。",
+        "- ★外部importは次の2つだけを使うこと。バージョン番号を変更しないこと。",
+        "    import { Pool } from \"https://deno.land/x/postgres@v0.19.3/mod.ts\";",
+        "    import { verify } from \"https://deno.land/x/djwt@v3.0.2/mod.ts\";",
+        "- 外部依存はモジュールのトップレベルで即時に生成しないこと（import時点で環境変数が無くても壊れないため）。",
+        "- 業務ロジック（チーム作成・レート計算等）は一切含めないこと。"
+      ],
+      "testHint": [
+        "- テストは tests/ 配下に配置し、ファイル名は *.test.ts とすること。",
+        "- テストランナーは Deno Test。Deno.test(\"名前\", () => { ... }) の形式で書くこと。",
+        "- アサーションは import { assertEquals, assertRejects } from \"jsr:@std/assert\"; を使うこと。",
+        "- Vitest / Jest / vi.fn() は使用しないこと（Deno上では動作しない）。",
+        "- import は `../supabase/functions/_shared/response.ts` のように相対パスで行うこと。",
+        "- 検証すべき内容:",
+        "    response.ts : ok/businessError/systemError の戻り値は Response である。",
+        "                  res.status を assertEquals で確認し、本文は await res.json() で取り出して",
+        "                  result / error.code / error.message を確認すること。",
+        "                  businessError(code, message, 409) が status 409 を返すことを必ず含めること。",
+        "    auth.ts     : Authorizationヘッダが無い・Bearer形式でない・検証失敗の各場合に null を返すこと。",
+        "                  setJwtVerifier で差し替えたverifierが実際に使われること",
+        "    db.ts       : setDbPool で注入したプールが getDbPool から返ること。",
+        "                  withTransaction が正常時にCOMMIT、例外時にROLLBACKを呼び、いずれもreleaseすること",
+        "                  モックのトランザクションは queryObject と release を持たせること（query ではない）。",
+        "- 実DB・実ネットワークには接続しないこと。すべて set* で差し替えること。",
+        "- ★Denoのグローバルは大文字始まりの `Deno` である。`deno.test` や `typeof deno` のように小文字で書くと ReferenceError: deno is not defined となり全テストが落ちる（実測）。テスト定義は必ず `Deno.test(...)`、ファイル読み込みは `Deno.readTextFile(...)` と書くこと。また、テスト冒頭に実行環境を検査するガードを書かないこと（ランナーは常にDenoである）。"
+      ],
+      "requiredExports": [
+        "ok",
+        "businessError",
+        "systemError",
+        "verifyJwt",
+        "setJwtVerifier",
+        "resetJwtVerifier",
+        "getDbPool",
+        "setDbPool",
+        "resetDbPool",
+        "withTransaction"
+      ]
+    },
     "edgeFunction": {
       "testCommand": "deno test --allow-all --no-check tests/",
       "implementationHint": [
@@ -35,31 +154,70 @@
         "  条件を付けないとテストがimportしただけでサーバーが起動し（実測でポート8000をLISTEN）、",
         "  ポート衝突や並列実行の失敗要因になる。",
         "- handlerをexportしないとテストから呼び出せず、テストが書けない。これは必須の制約。",
-        "- ★更新系の処理は、設計書(04_BackendInterface 2.1 / ADR-016)のとおり PostgreSQL へ直接接続し、",
-        "  TypeScript内で明示的にトランザクションを制御すること。Supabase JavaScript SDK は更新系に使用しないこと。",
-        "- ★外部importは次の2つだけを使うこと。ここに無いURLやパッケージを新たに導入しないこと。",
-        "    import { Pool } from \"https://deno.land/x/postgres@v0.19.3/mod.ts\";",
-        "    import { create, verify } from \"https://deno.land/x/djwt@v3.0.2/mod.ts\";  // JWT検証が必要な場合のみ",
-        "  バージョン番号を変更しないこと。実測で存在しないURL(postgres@0.17.0 や esm.sh/pg@8.11.3)を",
-        "  発明してモジュール解決に失敗し、テストが1件も実行できなくなった。",
-        "- ★handlerが使う外部依存には、必ず差し替え口(set*/reset*)をexportすること。",
-        "  Deno.env や外部サービスに直接触る箇所が1つでも残ると、そこでテストが止まる。",
-        "  実測では、DBだけ注入可能にして認証を残した結果、認証が必要な全テストが401になった。",
-        "  最低限、次の2つは必ずexportすること。",
-        "    export function setDbPool(pool: unknown): void        // DBプールのモックを注入",
-        "    export function resetDbPool(): void",
-        "    export function setJwtVerifier(                       // JWT検証のモックを注入",
-        "      verify: (token: string) => Promise<Record<string, unknown> | null>",
-        "    ): void",
-        "    export function resetJwtVerifier(): void",
-        "  実装内部にモジュールスコープの変数を持ち、set*はそこへ保存するだけにすること。",
-        "- ★handler内で依存を取得する箇所は必ず次の順序にすること。",
-        "    1. 注入されたものがあればそれを使う",
-        "    2. 無ければ Deno.env（SUPABASE_DB_URL / JWT秘密鍵）から生成する",
-        "  この順序でないと、テストがモックを注入しても実物が使われ、",
-        "  環境変数が無いため全てのテストが失敗する（実測で発生済み）。",
-        "- ★JWT検証はhandler内で直接djwtのverifyを呼ばず、必ず上記の差し替え可能な関数経由にすること。",
-        "  検証結果からは sub / app_metadata.provider / app_metadata.role を取り出すこと。",
+        "- ★共通処理は自前で実装せず、必ず _shared から import すること（ADR-021 / 04_BackendInterface 8.1）。",
+        "  import { ok, businessError, systemError } from \"../_shared/response.ts\";",
+        "  import { verifyJwt, setJwtVerifier, resetJwtVerifier } from \"../_shared/auth.ts\";",
+        "  import { withTransaction, setDbPool, resetDbPool } from \"../_shared/db.ts\";",
+        "  レスポンス生成・JWT検証・DB接続とトランザクション制御を各Functionで書き直さないこと。",
+        "  19本のFunctionに複製されると、共通レスポンス形式の変更に19ファイルの修正が必要になる。",
+        "- ★_shared から import した関数のシグネチャは次のとおり。戻り値の形を勝手に変えないこと。",
+        "    const claims = await verifyJwt(req);   // Promise<JwtClaims | null>。★awaitが必須。",
+        "      // JwtClaims = { sub: string; app_metadata?: { provider?: string; role?: string } }",
+        "      // ユーザーIDは claims.sub、認証プロバイダは claims.app_metadata?.provider で取り出す。",
+        "      if (!claims) { return businessError(\"AUTH-001\", \"認証が必要です\", 401); }",
+        "    const result = await withTransaction(async (tx) => { ... });  // Promise<T>",
+        "  ★実測で `const { userId, authProvider, isAdmin } = verifyJwt(req);` と書き、",
+        "    awaitが無いためPromiseを分割代入して全て undefined になり、さらに verifyJwt が返さない",
+        "    プロパティ名を使っていたため、認証が必要なテストが全て401になった。",
+        "    verifyJwt は userId / authProvider / isAdmin を返さない。",
+        "- ★ok / businessError / systemError は既に HTTP Response を返す。二重に包まないこと。",
+        "    return ok(dto);                                       // そのまま返す",
+        "    return businessError(\"TEAM-004\", \"チーム人数が上限です\", 409);",
+        "  new Response(JSON.stringify(ok(dto))) のように包むと本文が二重にJSON化される。",
+        "- ★businessError の第3引数には 06_ErrorCode 3章の対応表のステータスを渡すこと",
+        "  （入力値400 / 認証401 / 権限403 / 不存在404 / 業務ルール違反409）。",
+        "- ★使ってよいエラーコードは、API仕様のそのFunctionの「Error Codes」節に列挙されたものだけ。",
+        "  列挙に無いコードを使わないこと。近い意味のコードを自分で選ばないこと。",
+        "  実測（create-team）では、Error Codes が VALIDATION-001 と VALIDATION-003 だけを挙げているのに、",
+        "  チーム名が空の場合に列挙外の VALIDATION-002（必須項目が不足）を返して失敗した。",
+        "  文字数の範囲（1〜30文字など）を外れた場合は、空文字も含めて VALIDATION-003（範囲外）である。",
+        "- ★テストがモックを注入できるよう、_shared の差し替え口をそのまま re-export すること。",
+        "    export { setDbPool, resetDbPool } from \"../_shared/db.ts\";",
+        "    export { setJwtVerifier, resetJwtVerifier } from \"../_shared/auth.ts\";",
+        "  これが無いとテストが _shared と実装のどちらへ注入すべきか定まらない。",
+        "- ★handlerが自前で持つのは、このFunction固有の処理だけにすること。",
+        "    Input DTOの取り出しとValidation / Processing Flow / Output DTOの組み立て",
+        "  更新系は withTransaction(async (tx) => { ... }) の中で行うこと（ADR-016）。",
+        "  トランザクション内のSQL発行は tx.queryObject(...) を使うこと（tx.query は存在しない）。",
+        "- ★トランザクションの中で業務エラーを返す場合は、Responseをthrowし、handler側で受け止めること。",
+        "    const result = await withTransaction(async (tx) => {",
+        "      // ... 認可チェックや重複チェック",
+        "      if (既に所属している) {",
+        "        throw businessError(\"TEAM-003\", \"既にチームへ所属しています\", 409);",
+        "      }",
+        "      return dto;",
+        "    });",
+        "    return ok(result);",
+        "  これを handler 全体の try/catch で次のように受けること。",
+        "    } catch (e) {",
+        "      if (e instanceof Response) { return e; }   // 業務エラー。ROLLBACKは済んでいる。",
+        "      return systemError(\"SYSTEM-001\", \"システムエラーが発生しました\");",
+        "    }",
+        "  ★`if (e instanceof Response) return e;` が無いと、投げたResponseが未捕捉のまま外へ抜け、",
+        "    テストが「例外としてResponseが投げられた」状態で失敗する（実測で create-team の3件が該当）。",
+        "  ★業務エラーの判定がトランザクション内でしかできない場合にだけこの形を使うこと。",
+        "    入力値のバリデーションのように、トランザクションに入る前に判定できるものは",
+        "    withTransaction の外で `return businessError(...)` すること。",
+        "- ★Output DTOに載せる値は、DBを更新した「後」の値にすること。",
+        "  INSERT / UPDATE には RETURNING を付け、その rows[0] を使うこと。",
+        "    UPDATE profiles SET display_name = $1 WHERE id = $2",
+        "      RETURNING id, display_name, avatar_url, auth_provider",
+        "  更新前に取得した行（SELECTの結果）をそのまま返してはいけない。",
+        "  実測で、UPDATE に RETURNING を付けず更新前のSELECT結果を返したため、",
+        "  更新系の正常系テストが「更新したはずの値が古いまま」で失敗した。",
+        "- ★_shared 以外の外部importは追加しないこと。DB接続もJWT検証も _shared 経由で行う。",
+        "  実測で存在しないURL(postgres@0.17.0 や esm.sh/pg@8.11.3)を発明してモジュール解決に失敗し、",
+        "  テストが1件も実行できなくなった。_shared に集約すればこの failure mode を各Functionで踏まない。",
         "- 外部依存はモジュールのトップレベルで即時に生成しないこと（import時点で環境変数が無くても壊れないようにするため）。"
       ],
       "testHint": [
@@ -75,14 +233,40 @@
         "  テストファイル内に自前の setMockDbPool のような関数を定義してはいけない。",
         "  それでは実装側にモックが届かず、実物が使われて全テストが失敗する（実測で発生済み）。",
         "  各テストの冒頭で set*(モック) を呼び、終了時に reset*() を呼ぶこと。",
-        "- ★認証が必要なテストでは setJwtVerifier で検証結果を固定すること。",
-        "  例: setJwtVerifier(async () => ({ sub: \"profile-1\", app_metadata: { provider: \"steam\", role: \"user\" } }));",
-        "  これを忘れると実際のJWT検証が走り、秘密鍵が無いため全て401になる（実測で発生済み）。",
-        "  認証失敗のテストでは setJwtVerifier(async () => null) を使うこと。",
-        "- ★モックのプールは実装の呼び出し方に合わせること。実装は次の形で使う。",
+        "- ★認証が必要なテストでは、次の2つを両方やること。片方だけでは必ず401になる。",
+        "    1. setJwtVerifier で検証結果を固定する",
+        "       setJwtVerifier(async () => ({ sub: \"profile-1\", app_metadata: { provider: \"steam\", role: \"user\" } }));",
+        "    2. リクエストに Authorization ヘッダを付ける",
+        "       new Request(url, { method: \"POST\", headers: { \"Authorization\": \"Bearer test-token\", \"Content-Type\": \"application/json\" }, body })",
+        "  ★_shared の verifyJwt は、注入した verifier を呼ぶ前に Authorization ヘッダを確認し、",
+        "    \"Bearer \" で始まらなければその場で null を返す。したがって setJwtVerifier だけ呼んでも",
+        "    ヘッダの無いRequestでは verifier に到達せず、必ず401になる（実測で認証必須の6件が全て401になった）。",
+        "  認証失敗のテストでは setJwtVerifier(async () => null) を使い、ヘッダは付けても付けなくてよい。",
+        "- ★handlerの戻り値は Response である。res.status を確認し、本文は await res.json() で取り出して result / data / error.code を確認すること。",
+        "- ★モックのプールは _shared/db.ts の withTransaction の呼び出し方に合わせること。",
         "    const tx = await pool.connect(); await tx.queryObject(...); tx.release();",
-        "  すなわち connect() を持ち、その戻り値が queryObject/queryArray と release を持つオブジェクトにすること。",
-        "- テストは外部ネットワークへ接続しないこと。依存はすべて上記の注入口で差し替えること。"
+        "  すなわち connect() を持ち、その戻り値が queryObject と release を持つオブジェクトにすること。",
+        "  ★withTransaction は業務のSQLだけでなく、同じ queryObject 経由で",
+        "    \"BEGIN\" / \"COMMIT\" / \"ROLLBACK\" も発行する。モックはこれらを必ず受け付けること。",
+        "    SQL文字列で分岐する場合、未知のSQLで例外を投げる実装にしてはいけない",
+        "    （実測で BEGIN が \"Unexpected query\" として弾かれ、正常系のテストが全て失敗した）。",
+        "    分岐は次のように、業務SQLだけを判定して残りは無害な結果を返す形にすること。",
+        "      queryObject: (sql: string) => {",
+        "        if (sql.includes(\"SELECT\")) return Promise.resolve({ rows: [...] });",
+        "        if (sql.includes(\"INSERT\")) return Promise.resolve({ rows: [...] });",
+        "        return Promise.resolve({ rows: [] });   // BEGIN/COMMIT/ROLLBACK はここに来る",
+        "      },",
+        "- ★_shared の実装は既にテスト済みである。ここでは _shared の中身を検証し直さず、",
+        "  このFunction固有のValidation・Processing Flow・エラーコードの検証に集中すること。",
+        "- テストは外部ネットワークへ接続しないこと。依存はすべて上記の注入口で差し替えること。",
+        "- ★Denoのグローバルは大文字始まりの `Deno` である。`deno.test` や `typeof deno` のように小文字で書くと ReferenceError: deno is not defined となり全テストが落ちる（実測）。テスト定義は必ず `Deno.test(...)`、ファイル読み込みは `Deno.readTextFile(...)` と書くこと。また、テスト冒頭に実行環境を検査するガードを書かないこと（ランナーは常にDenoである）。"
+      ],
+      "requiredExports": [
+        "handler",
+        "setDbPool",
+        "resetDbPool",
+        "setJwtVerifier",
+        "resetJwtVerifier"
       ]
     },
     "frontend": {
@@ -96,41 +280,138 @@
       ]
     }
   },
-
   "commonDesign": [
-    { "file": "docs/design/12_TechnologyStack.md" },
-    { "file": "docs/design/00_DirectoryStructure.md", "sections": ["5.1"] }
+    {
+      "file": "docs/design/12_TechnologyStack.md"
+    },
+    {
+      "file": "docs/design/00_DirectoryStructure.md",
+      "sections": [
+        "5.1"
+      ]
+    }
   ],
-
   "commonApiSpec": [
     {
       "file": "docs/design/04_BackendInterface.md",
-      "sections": ["2.", "4.", "5.", "6.", "8."]
+      "sections": [
+        "2.",
+        "4.",
+        "5.",
+        "6.",
+        "8."
+      ]
     },
-    { "file": "docs/design/06_ErrorCode.md", "sections": ["2.", "3.", "4."] }
+    {
+      "file": "docs/design/06_ErrorCode.md",
+      "sections": [
+        "2.",
+        "3.",
+        "4."
+      ]
+    }
   ],
-
   "modules": [
+    {
+      "name": "database-migrations",
+      "profile": "sqlMigration",
+      "outputHint": "supabase/migrations/",
+      "design": [
+        {
+          "file": "docs/design/03_Database.md",
+          "sections": [
+            "3.",
+            "4.",
+            "5.",
+            "9.",
+            "10.",
+            "11.",
+            "12.",
+            "17.",
+            "18."
+          ]
+        }
+      ],
+      "apiSpec": []
+    },
+    {
+      "name": "shared-core",
+      "profile": "sharedModule",
+      "outputHint": "supabase/functions/_shared/",
+      "requires": [
+        "supabase/migrations"
+      ],
+      "apiSpec": [
+        {
+          "file": "docs/design/04_BackendInterface.md",
+          "sections": [
+            "9.1"
+          ]
+        }
+      ],
+      "design": []
+    },
     {
       "name": "ensure-profile",
       "profile": "edgeFunction",
       "outputHint": "supabase/functions/ensure-profile/",
-      "apiSpec": [
-        { "file": "docs/design/04_BackendInterface.md", "sections": ["9.1"] },
-        { "file": "docs/design/06_ErrorCode.md", "sections": ["5.", "7."] }
+      "requires": [
+        "supabase/functions/_shared"
       ],
-      "design": [{ "file": "docs/design/03_Database.md", "sections": ["10.1"] }]
+      "apiSpec": [
+        {
+          "file": "docs/design/04_BackendInterface.md",
+          "sections": [
+            "9.1"
+          ]
+        },
+        {
+          "file": "docs/design/06_ErrorCode.md",
+          "sections": [
+            "5.",
+            "7."
+          ]
+        }
+      ],
+      "design": [
+        {
+          "file": "docs/design/03_Database.md",
+          "sections": [
+            "10.1"
+          ]
+        }
+      ]
     },
     {
       "name": "create-team",
       "profile": "edgeFunction",
       "outputHint": "supabase/functions/create-team/",
+      "requires": [
+        "supabase/functions/_shared"
+      ],
       "apiSpec": [
-        { "file": "docs/design/04_BackendInterface.md", "sections": ["9.2"] },
-        { "file": "docs/design/06_ErrorCode.md", "sections": ["6.", "8."] }
+        {
+          "file": "docs/design/04_BackendInterface.md",
+          "sections": [
+            "9.2"
+          ]
+        },
+        {
+          "file": "docs/design/06_ErrorCode.md",
+          "sections": [
+            "6.",
+            "8."
+          ]
+        }
       ],
       "design": [
-        { "file": "docs/design/03_Database.md", "sections": ["10.2", "10.3"] }
+        {
+          "file": "docs/design/03_Database.md",
+          "sections": [
+            "10.2",
+            "10.3"
+          ]
+        }
       ]
     }
   ]

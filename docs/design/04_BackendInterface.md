@@ -297,6 +297,23 @@ Error Codes / Test Cases
 
 ---
 
+## 8.1 共通処理の利用
+
+各Edge Functionは、以下を自前で実装せず `supabase/functions/_shared/` から import する（ADR-021）。
+
+| 共通処理     | 定義箇所 | 内容                                    |
+| -------- | ---- | ------------------------------------- |
+| 共通レスポンス生成 | 5章   | 成功・業務エラー・システムエラーの形式                   |
+| JWT検証    | 4.3  | Authorizationヘッダの検証とクレーム取り出し          |
+| DB接続とトランザクション | 2.1  | Connection Pooler経由の接続、BEGIN/COMMIT/ROLLBACK |
+
+各Edge Functionが持つのは、そのFunction固有の Validation・Processing Flow・
+Input/Output DTO の組み立てに限る。
+
+共通処理は各Edge Functionより先に実装する（`ImplementationRoadmap.md` 5章）。
+
+---
+
 # 9. Team Management Edge Functions
 
 ## 9.1 ensure-profile

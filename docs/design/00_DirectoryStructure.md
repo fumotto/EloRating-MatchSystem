@@ -180,6 +180,8 @@ src/
 ```text
 supabase/
 ├── functions/    # Edge Functions（Deno / TypeScript）
+│   ├── _shared/  # Edge Functions 共通処理（ADR-021）
+│   └── <関数名>/  # 各Edge Function（1関数1ディレクトリ）
 ├── migrations/   # Database Migration（追加方式）
 └── seed/         # 初期データ
 ```
@@ -187,6 +189,25 @@ supabase/
 Edge Functions およびMigrationは本ディレクトリ以外へ配置しない。
 
 Migrationは追加方式とし、適用済みのMigrationを編集しない。
+
+---
+
+## functions/_shared/
+
+Edge Functions の共通処理を配置する（ADR-021）。
+
+アンダースコア始まりのディレクトリはSupabase CLIがFunctionとしてデプロイしないため、
+共有モジュールの置き場所とする。各Edge Functionは `../_shared/*.ts` でimportする。
+
+配置する責務は以下に限定する。
+
+* 共通レスポンスの生成（`04_BackendInterface.md` 5章）
+* JWTの検証とクレーム取り出し（同 4.3）
+* DB接続プールの取得とトランザクション制御（同 2.1）
+
+業務ロジックは配置しない。業務ロジックは各Edge Functionが持つ。
+
+共通処理は各Edge Functionより先に実装する（`ImplementationRoadmap.md` 5章）。
 
 ---
 
