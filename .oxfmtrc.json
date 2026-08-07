@@ -1,0 +1,16 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "lineWidth": 100,
+  "ignorePatterns": [
+    "dist",
+    "node_modules",
+    // ★docs/ は設計書の正本である。整形ツールで一括変更してはならない。
+    "docs",
+    "**/*.md",
+    "src/routeTree.gen.ts",
+    "supabase/functions",
+    "tests/integration",
+    "deno.lock",
+    "bun.lock"
+  ]
+}

@@ -392,6 +392,48 @@
 
 ---
 
+## ADR-025
+
+| 項目    | 内容 |
+| ----- | -- |
+| 日付    | 2026-08-07 |
+| タイトル  | パッケージ管理を Bun へ一本化する |
+| ステータス | Accepted |
+| 理由    | `12_TechnologyStack.md` 3章は Bun を正本としているが、S0.5 の時点では Bun が未導入であったため npm ＋ `package-lock.json` で暫定運用していた。B-011 で Bun を導入するにあたり、両者を併存させるとロックファイルが2つになり、CI とローカルで解決される依存が一致しなくなる。 |
+| 決定内容  | パッケージ管理を **Bun** に一本化する。`bun.lock` を正本とし、`package-lock.json` は削除する。CI も `bun install --frozen-lockfile` を使う。<br>ランタイムは用途で3つに分かれる。**Bun**（フロントエンド・Unit / Frontend Test）、**Deno**（Edge Functions・Integration Test）、**pgTAP**（Database Test）。Edge Functions が Deno 上で動作する以上この分割は避けられないため、パッケージ管理の一本化は Node 側に限る。<br>Edge Functions の依存は `https:` のフルURLで固定し、`jsr:` 版は採用しない。`jsr:` はnpm依存の解決にルートの `node_modules` を要求し、Bun 側のツールチェインと衝突するためである。 |
+| 影響文書  | 11_Deployment.md（11.3.1）、12_TechnologyStack.md（5.1・5.2）、Backlog.md（B-011） |
+| 備考    | `bun.lock` はコミットする。Deno 側の `deno.lock` は引き続き併存し、役割が重複しない。 |
+
+---
+
+## ADR-026
+
+| 項目    | 内容 |
+| ----- | -- |
+| 日付    | 2026-08-07 |
+| タイトル  | TanStack Router をファイルベースルーティングで使う |
+| ステータス | Accepted |
+| 理由    | ADR-006 はルーターとして TanStack Router を採用することのみを定め、ルーティングの記述方式（コードベース / ファイルベース）を定めていなかった。`05_Frontend.md` 5章は Layout の入れ子を含む20画面規模のルート木を定義しており、方式を決めずに実装を進めると後から一括変更が必要になる。 |
+| 決定内容  | **ファイルベースルーティング**（`@tanstack/router-plugin`）を採用する。`src/routes/` 配下のファイル構成がルート木の正本となり、`00_DirectoryStructure.md` 5章の `routes/  # ルート定義（TanStack Router）` と実体が一致する。<br>`05_Frontend.md` 6章の Layout は **pathless layout route** で表現する（`_public.tsx` / `_app.tsx` / `_admin.tsx`）。URLに `_public` 等は現れない。<br>ガードは各 Layout の `beforeLoad` に置く（5.3）。セッションは Router の context 経由で渡す。<br>生成物 `src/routeTree.gen.ts` はコミットする。型安全なルーティングが型検査に必要であり、生成を CI に依存させないためである。Lint / Format の対象からは除外する。 |
+| 影響文書  | 05_Frontend.md（4章・5章）、00_DirectoryStructure.md（5章） |
+| 備考    | ADR-006 を置き換えるものではなく、補足する。React Router を採用しない方針は変更しない。 |
+
+---
+
+## ADR-027
+
+| 項目    | 内容 |
+| ----- | -- |
+| 日付    | 2026-08-07 |
+| タイトル  | フロントエンド主要ライブラリのメジャーバージョンを固定する |
+| ステータス | Accepted |
+| 理由    | `12_TechnologyStack.md` 3章は「React（最新版）」のように記載しており、具体的なバージョンを定めていない。メジャー間で破壊的変更のあるライブラリ（Tailwind CSS v3→v4、Zod v3→v4 等）があるため、採用時点の版を記録しないと再現性が失われる。 |
+| 決定内容  | B-011 の時点で採用したメジャーバージョンを以下に固定する。更新は本ADRの改訂をもって行う。<br>React 19 / Vite 8 / TypeScript 7 / TanStack Router v1 / TanStack Query v5 / Zustand v5 / React Hook Form v7 / Zod v4 / Tailwind CSS v4（`@tailwindcss/vite` プラグイン方式、`tailwind.config.js` を持たない）/ Vitest v4 / oxlint v1 / oxfmt v0 |
+| 影響文書  | 12_TechnologyStack.md（3章） |
+| 備考    | oxfmt は 0.x であり安定版に達していない。破壊的変更が生じた場合は Format Check を一時的に無効化し、本ADRを改訂する。Tailwind CSS v4 は設定をCSS側（`@import "tailwindcss"`）で行うため、v3 系の `tailwind.config.js` を前提とした手順書は適用できない。 |
+
+---
+
 # 6. AI実装ルール
 
 * 設計変更を行う前に本書へADRを追加する。

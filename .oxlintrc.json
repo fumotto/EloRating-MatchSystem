@@ -1,0 +1,22 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "typescript", "unicorn"],
+  "env": { "browser": true, "es2024": true },
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "rules": {
+    // any の使用は禁止（12_TechnologyStack.md 10章）。
+    "typescript/no-explicit-any": "error",
+    // React 17 以降の JSX 変換では React の import は不要（tsconfig の jsx: react-jsx）。
+    "react/react-in-jsx-scope": "off"
+  },
+  "ignorePatterns": [
+    "dist",
+    "node_modules",
+    "src/routeTree.gen.ts",
+    "supabase/functions",
+    "tests/integration"
+  ]
+}

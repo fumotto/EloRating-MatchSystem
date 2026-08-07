@@ -88,10 +88,15 @@ Status: Active
 
 ### 完了条件
 
-* `supabase db reset` がエラーなく完走する。
-* 開発環境が構築されている。
-* CIが正常に動作する。
-* テスト基盤が利用可能である（`npm test` が成功する）。
+* `supabase db reset` がエラーなく完走する。 → ✅ S0
+* 開発環境が構築されている。 → ✅ S3 / B-011（Bun ＋ Vite ＋ React ＋ TanStack Router）
+* CIが正常に動作する。 → ✅ S4（`.github/workflows/ci.yml`）
+* テスト基盤が利用可能である（`bun run test` が成功する）。 → ✅ S0.5
+
+M1 は達成済みである。テスト起動コマンドは B-011 の Bun 移行に伴い `npm test` から `bun run test` へ変わった（ADR-025）。
+
+CI は現時点で実行できるステップのみを有効化してある。Database Test（pgTAP）と E2E Test（Playwright）は
+テストが存在しないためワークフロー内にコメントで予約しており、S5 / S6 で有効化する（`11_Deployment.md` 11.3.2）。
 
 ---
 

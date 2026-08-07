@@ -52,12 +52,15 @@ Last Updated: 2026-08-03
 | TC-TEAM-009 | LEADER登録  | チーム作成直後   | team_members取得 | 作成者の `role` が `LEADER` である              | Integration | `registers the creator as the leader`             |
 | TC-TEAM-010 | 初期レート     | チーム作成直後   | teams取得     | `system_settings.initial_rating` と一致    | Integration | `initializes the rating from system settings`     |
 | TC-TEAM-011 | チーム名重複    | 同名チームが存在  | create-team | `TEAM-002` を返す                          | Integration | `rejects a duplicate team name`                   |
-| TC-TEAM-012 | 名前の最小文字数  | 0文字       | create-team | `VALIDATION-001` を返す                    | Integration | `rejects an empty team name`                      |
-| TC-TEAM-013 | 名前の最大文字数  | 31文字      | create-team | `VALIDATION-001` を返す                    | Integration | `rejects a team name longer than 30 characters`   |
+| TC-TEAM-012 | 名前の最小文字数  | 0文字       | create-team | `VALIDATION-003` を返す                    | Integration | `rejects an empty team name`                      |
+| TC-TEAM-013 | 名前の最大文字数  | 31文字      | create-team | `VALIDATION-003` を返す                    | Integration | `rejects a team name longer than 30 characters`   |
 | TC-TEAM-014 | 名前の境界値    | 1文字／30文字  | create-team | 作成に成功する                                | Integration | `accepts team names at the length boundaries`     |
 | TC-TEAM-015 | 所属済みの拒否   | 既にチームへ所属  | create-team | `TEAM-003` を返す                          | Integration | `rejects team creation when already in a team`    |
 | TC-TEAM-016 | トランザクション  | `team_members` 登録で例外 | create-team | `teams` の作成も取り消される                      | Integration | `rolls back the team when the leader row fails`   |
 | TC-TEAM-017 | 監査ログ      | チーム作成後    | audit_logs取得 | `TEAM_CREATED` が記録される                   | Integration | `records team creation in the audit log`          |
+| TC-TEAM-058 | 名前の型      | `name` が文字列でない | create-team | `VALIDATION-001` を返す                    | Integration | `rejects a non-string team name`                  |
+
+チーム名の長さ違反は `VALIDATION-003`（入力値が範囲外です）である。型の誤りは `VALIDATION-001`（入力値が不正です）であり、両者を混同してはならない（`06_ErrorCode.md` 2章、B-015）。`04_BackendInterface.md` 9.2 が create-team のエラーコードとして両方を挙げているのはこのためである。
 
 ## 3.3 招待
 

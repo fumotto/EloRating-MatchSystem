@@ -1,0 +1,88 @@
+# CI（11_Deployment.md 11.1）。
+#
+# ステップの順序は同章の定義に従う。現時点で実行できないステップ（Database Test / E2E Test）は
+# コメントで予約してある。テストが用意でき次第、S5 / S6 で有効化すること。
+# 形だけ通るステップを並べない方針である（検証していないのに緑になるため）。
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# 同一ブランチの古い実行は打ち切る。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # フロントエンドと Unit Test は Bun（11_Deployment.md 11.3）。
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # Edge Functions と Integration Test は Deno。
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Lint (oxlint)
+        run: bun run lint
+
+      - name: Format Check (oxfmt)
+        run: bun run format:check
+
+      # Node 側（tsc）と Deno 側（deno check）の二本立て。片方だけでは全コードを検査できない。
+      - name: Type Check (tsc + deno check)
+        run: bun run typecheck
+
+      # --- 未実装のため予約 ---------------------------------------------------
+      # Supabase Local の起動と Migration 適用は、Database Test（pgTAP）を
+      # 追加する S5 で有効化する。現状は起動しても検証する対象がない。
+      #
+      # - name: Start Supabase Local
+      #   run: supabase start
+      #
+      # - name: Apply migrations
+      #   run: supabase db reset
+      # ------------------------------------------------------------------------
+
+      - name: Unit Test (Vitest)
+        run: bun run test:unit
+
+      - name: Integration Test (Deno Test)
+        run: bun run test:integration
+
+      # Frontend Test は Unit Test と同じ Vitest 実行に含まれる（src/**/*.test.tsx）。
+      # 分離が必要になった時点でステップを分ける。
+
+      - name: Build
+        run: bun run build
+        env:
+          # ビルドが通ることのみを確認する。値の正しさはここでは検証しない。
+          # 本番の値は GitHub Environment Secrets / Variables で与える（11_Deployment.md 4.1）。
+          VITE_SUPABASE_URL: http://127.0.0.1:54321
+          VITE_SUPABASE_ANON_KEY: ci-placeholder-anon-key
+          VITE_BASE_PATH: /
+
+      # 404.html は bun run build が生成する（11_Deployment.md 7章 / R-005）。
+      - name: Verify SPA fallback exists
+        run: test -f dist/404.html
+
+      # --- 未実装のため予約 ---------------------------------------------------
+      # E2E Test（Playwright）は S6 で有効化する。テストが存在しない。
+      #
+      # - name: E2E Test
+      #   run: bun run test:e2e
+      # ------------------------------------------------------------------------

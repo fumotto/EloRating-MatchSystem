@@ -1,0 +1,15 @@
+{
+  "tasks": {
+    "test": "deno test --allow-read --allow-env tests/integration/",
+    "check": "deno check tests/integration/ supabase/functions/",
+    "fmt": "deno fmt",
+    "lint": "deno lint"
+  },
+  "fmt": {
+    "exclude": ["node_modules", "src", "tests/unit", "docs"]
+  },
+  "lint": {
+    "exclude": ["node_modules", "src", "tests/unit"]
+  },
+  "exclude": ["node_modules", "src", "tests/unit"]
+}

@@ -61,12 +61,16 @@ B-013 は S0 の実施中に発見した。
 | B-005 | RLSポリシーの欠落・不統一を解消する                          | Security       | P1  | **完了**   | なし    | S0    |
 | B-006 | Seed の配置を `00_DirectoryStructure.md` と整合させる  | Refactor       | P2  | **完了**   | なし    | S0    |
 | B-013 | クライアントロールへのテーブル GRANT を付与する                  | Bug            | P0  | **完了**   | なし    | S0    |
-| B-007 | テスト実行基盤の不整合を解消する（`npm test` が通らない）           | Test           | P0  | Ready    | なし    | S0.5  |
-| B-008 | `_shared/auth.ts` のJWT検証を実装する                | Bug            | P0  | Ready    | なし    | S1    |
-| B-009 | `ensure-profile` の `provider_user_id` 取得を修正する | Bug            | P0  | Ready    | B-008 | S1    |
-| B-010 | `create-team` の `audit_logs` INSERT 列を修正する   | Bug            | P0  | Ready    | B-008 | S2    |
-| B-011 | Bun を導入しフロントエンドを初期化する                        | Infrastructure | P0  | Ready    | なし    | S3    |
+| B-007 | テスト実行基盤の不整合を解消する（`npm test` が通らない）           | Test           | P0  | **完了**    | なし    | S0.5  |
+| B-008 | `_shared/auth.ts` のJWT検証を実装する                | Bug            | P0  | **完了**    | なし    | S1    |
+| B-009 | `ensure-profile` の `provider_user_id` 取得を修正する | Bug            | P0  | **完了**    | B-008 | S1    |
+| B-010 | `create-team` の `audit_logs` INSERT 列を修正する   | Bug            | P0  | **完了**    | B-008 | S2    |
+| B-011 | Bun を導入しフロントエンドを初期化する                        | Infrastructure | P0  | **完了**    | なし    | S3    |
 | B-012 | `.env.example` を追加する                         | Documentation  | P2  | **完了**   | なし    | S4    |
+| B-014 | `withTransaction` の `tx` に型を与え `deno check` を通す | Bug            | P1  | **完了**   | なし    | S1    |
+| B-015 | チーム名長エラーコードの仕様と実装の乖離を解消する               | Bug            | P2  | **完了**   | なし    | S2    |
+
+**Backlog に未着手の項目は存在しない。** 以後に発見した欠陥は B-016 以降として追加する。
 
 ---
 
@@ -155,7 +159,14 @@ PostgreSQL の View は既定で定義者の権限で実行されるため、基
 Deno を導入し、`tests/unit/`（Vitest）と `tests/integration/`（Deno Test）へ再配置する。
 `npm test` が双方を実行して成功すること。
 
-関連設計書：00_DirectoryStructure.md、10_TestSpecification.md、12_TechnologyStack.md（5章）
+対応内容（S0.5 で完了）
+Deno 2.9.5 を導入し `deno.json` を新設した。分割基準は「Unit＝ビジネスロジック単体」「Integration＝APIからDBまでの通し」とし、
+`https:` を import するモジュールは Vitest から解決できないため Integration とした。
+テストは ADR-012 に従い `describe` / `it` 形式へ書き換え、TC-ID を付与した（`INFRA` カテゴリを新設）。
+`tsconfig.json` の `include` を Node 側の範囲へ限定し、Deno 側の型検査は `deno check` が担う二本立てとした。
+なお B-011 で npm から Bun へ移行したため、現在の起動コマンドは `bun run test` である（ADR-025）。
+
+関連設計書：00_DirectoryStructure.md、10_TestSpecification.md、11_Deployment.md（11.3.1）、12_TechnologyStack.md（5章）
 
 ## B-008 `_shared/auth.ts` のJWT検証を実装する
 
@@ -170,7 +181,14 @@ Deno を導入し、`tests/unit/`（Vitest）と `tests/integration/`（Deno Tes
 `04_BackendInterface.md` 4.3 のクレーム（`sub`、`app_metadata.role`、`app_metadata.provider`）を取り出せること。
 テスト用の差し替え口（`setJwtVerifier`）は維持する（ADR-021）。
 
-関連設計書：04_BackendInterface.md（4章）、15_DecisionLog.md（ADR-021）
+対応内容（S1 で完了）
+djwt を廃し、`createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY).auth.getUser(token)` による検証へ置き換えた。
+非対称鍵・鍵ローテーション・失効済みユーザーへ追随できる。クライアントは `db.ts` のプールと同じく初回利用時に生成する。
+`JwtClaims` へ `user_metadata.provider_id` を追加した（B-009 の前提）。
+`resetJwtVerifier` が既定実装へ戻らない不具合も併せて修正した。
+supabase-js は `https://esm.sh/@supabase/supabase-js@2.47.10` で固定する（`jsr:` 版は不可・ADR-025）。
+
+関連設計書：04_BackendInterface.md（4章）、15_DecisionLog.md（ADR-021、ADR-025）
 
 ## B-009 `ensure-profile` の `provider_user_id` 取得を修正する
 
@@ -181,6 +199,12 @@ ADR-015 が定める `UNIQUE (auth_provider, provider_user_id)` が本来の意�
 
 期待する成果
 `provider_user_id` を JWT の `user_metadata.provider_id` から取得し、`auth_provider` を実際のプロバイダから設定すること。
+
+対応内容（S1 で完了）
+`provider_user_id` を `claims.user_metadata.provider_id` から、`auth_provider` を `claims.app_metadata.provider` から取得する。
+`"steam"` へのフォールバックは削除した（ADR-022）。両者が欠落している場合は `profiles` の NOT NULL を満たせないため
+`SYSTEM-001` を返す（TC-INFRA-014）。有効なJWTであればプロバイダ情報は必ず含まれるため、欠落は認証基盤側の構成不備である。
+TC-TEAM-005 として、ボディの `authProvider` / `providerUserId` を無視しJWTを優先することを検証する。
 
 関連設計書：04_BackendInterface.md（9.1）、15_DecisionLog.md（ADR-015、ADR-022）
 
@@ -194,6 +218,11 @@ ADR-015 が定める `UNIQUE (auth_provider, provider_user_id)` が本来の意�
 期待する成果
 `target_type = 'TEAM'`、`target_id = team.id`、`actor_profile_id = claims.sub` として正しく記録されること。
 
+対応内容（S2 で完了）
+`INSERT INTO audit_logs (actor_profile_id, action, target_type, target_id) VALUES ($1, 'TEAM_CREATED', 'TEAM', $2)` へ修正した。
+TC-TEAM-017 として、発行されたSQLの列並びとパラメータ、COMMIT への到達を検証するテストを追加した。
+従来はモックが全SQLに空行を返していたため、存在しない列への INSERT がテストで検出できなかった。
+
 関連設計書：03_Database.md、04_BackendInterface.md（9.2）、15_DecisionLog.md（ADR-017）
 
 ## B-011 Bun を導入しフロントエンドを初期化する
@@ -204,7 +233,21 @@ ADR-015 が定める `UNIQUE (auth_provider, provider_user_id)` が本来の意�
 期待する成果
 `05_Frontend.md` 4章および `00_DirectoryStructure.md` に準拠した `src/` を作成し、開発サーバーが起動すること。
 
-関連設計書：05_Frontend.md、00_DirectoryStructure.md、12_TechnologyStack.md
+対応内容（S3 で完了）
+Bun 1.3.14 を導入し、`package-lock.json` を削除して `bun.lock` へ一本化した（ADR-025）。
+Vite ＋ React 19 ＋ TanStack Router（ファイルベース・ADR-026）＋ TanStack Query ＋ Zustand ＋ RHF ＋ Zod ＋
+Tailwind CSS v4 で `src/` を新設した。採用バージョンは ADR-027 に記録した。
+画面は `ImplementationRoadmap.md` S3 のとおり `/login`・`/ranking`・`/dashboard` の3枚に限定した。
+`utils/errorMessage.ts` にエラーコード → 表示文言の変換を集約した。
+`oxlint` / `oxfmt` を導入し、CI（`.github/workflows/ci.yml`）を新設した。
+
+`oxfmt` の対象から `docs/` を除外している。設計書は正本であり、整形ツールで一括変更してはならない。
+
+**未達**：S3 の完了条件のうち「Discord ログイン → `ensure-profile` → `/dashboard` 遷移」と
+「画面からのチーム作成 → ランキング反映」は Discord クレデンシャル未取得のため未検証である。
+`/ranking` の未認証表示のみ確認済み。
+
+関連設計書：05_Frontend.md、00_DirectoryStructure.md、11_Deployment.md（11.3.1）、12_TechnologyStack.md、15_DecisionLog.md（ADR-025〜027）
 
 ## B-013 クライアントロールへのテーブル GRANT を付与する
 
@@ -236,6 +279,46 @@ TRUNCATE / REFERENCES / TRIGGER / MAINTAIN のみであり、**SELECT は付与�
 **値は記載しない。**
 
 関連設計書：11_Deployment.md（4章・14章）
+
+## B-014 `withTransaction` の `tx` に型を与え `deno check` を通す
+
+背景
+`_shared/db.ts` の `withTransaction` がコールバックへ渡す `tx` に型が付いておらず、
+呼び出し側の `tx.queryObject<T>()` が `TS2347: Untyped function calls may not accept type arguments` になる。
+`create-team` で3件、`ensure-profile` で3件、計6件が発生する。
+
+期待する成果
+`tx` を deno-postgres の `PoolClient` として型付けし、`deno check` が成功すること。
+
+対応内容（S1 で完了）
+`withTransaction` の `fn` を `(tx: PoolClient) => Promise<T>` へ型付けし、`PoolClient` を再エクスポートした。
+`deno test` から `--no-check` を外し、`typecheck` を `tsc --noEmit` ＋ `deno check` の二本立てとした。
+
+型付けにより、`any` に隠れていた不具合が4件表面化したので併せて修正した。
+
+* `create-team`：`teams` の SELECT 結果を応答DTOの `CreateTeamResponse`（`teamId` を持つ）で型付けしていたため、
+  実際の列 `id` が型に存在しなかった。DB行用に `TeamRow` を新設した。
+* `ensure-profile`：`avatar_url` は DB では NULL 許容だが DTO は `string | undefined` である。`?? undefined` で変換した（3箇所）。
+
+関連設計書：04_BackendInterface.md（2.1）、11_Deployment.md（11.3.1）、15_DecisionLog.md（ADR-016）
+
+## B-015 チーム名長エラーコードの仕様と実装の乖離を解消する
+
+背景
+`10_TestSpecification_Part3_Team.md` の TC-TEAM-012 / TC-TEAM-013 はチーム名の長さ違反に対し
+`VALIDATION-001` を期待するが、`create-team` の実装は `VALIDATION-003` を返す。
+
+期待する成果
+`06_ErrorCode.md` を正として、実装かテスト仕様のいずれを修正するかを決定し、両者を一致させること。
+
+対応内容（S2 で完了）
+`06_ErrorCode.md` 2章では `VALIDATION-001` が「入力値が不正です」、`VALIDATION-003` が「入力値が範囲外です」である。
+チーム名の長さ違反は範囲の違反であるから `VALIDATION-003` が正しく、**実装が正・テスト仕様が誤り**であった。
+`04_BackendInterface.md` 9.2 が両方のコードを挙げているのは、型の誤りと範囲の違反が別物だからである。
+`10_TestSpecification_Part3_Team.md` の TC-TEAM-012 / TC-TEAM-013 を `VALIDATION-003` へ修正し、注記を追加した。
+実装は変更していない。
+
+関連設計書：06_ErrorCode.md、04_BackendInterface.md（9.2）、10_TestSpecification_Part3_Team.md（3.2）
 
 ---
 

@@ -47,6 +47,7 @@ ADR-016により Edge Functions は PostgreSQL へ直接接続し、RLSを迂回
 | TC-SEC-003 | 改ざんトークン   | 署名不正のJWT  | Edge Function | `AUTH-002` を返す  | Integration | `authorization: rejects a tampered token`         |
 | TC-SEC-004 | 削除済みユーザー  | 削除されたユーザー | Edge Function | `AUTH-002` を返す  | Integration | `authorization: rejects a deleted user`           |
 | TC-SEC-005 | 正常認証      | 有効JWT     | Edge Function | 成功する            | Integration | `authorization: accepts a valid token`            |
+| TC-SEC-061 | Bearer以外のヘッダ | `Authorization` が Bearer 形式でない | Edge Function | `AUTH-001` を返す  | Integration | `rejects a non-bearer authorization header`       |
 | TC-SEC-006 | 未認証での公開取得 | 認証なし      | Ranking Query | 取得できる           | Database    | `rls: allows anonymous access to the ranking`     |
 | TC-SEC-007 | 未認証での非公開取得 | 認証なし      | matches SELECT | 取得できない          | Database    | `rls: blocks anonymous access to matches`         |
 

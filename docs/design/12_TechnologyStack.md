@@ -65,6 +65,36 @@
 | Database Test    | pgTAP                 | RLSポリシーと制約をSQLレベルで検証できるため           |
 | E2E Test         | Playwright            | 主要ブラウザを対象に一貫したE2Eテストを実現するため         |
 
+## 5.1 ランタイムの導入手順
+
+本プロジェクトは Bun（フロントエンド・Unit Test）と Deno（Edge Functions・Integration Test）の2つのランタイムを使う。両方を導入すること。
+
+```bash
+# Bun
+curl -fsSL https://bun.sh/install | bash
+
+# Deno
+curl -fsSL https://deno.land/install.sh | sh
+```
+
+いずれのインストーラも `unzip` または `7z` を必要とする。WSL に無い場合は `sudo apt install unzip` で導入するか、GitHub Releases の zip を直接展開する。
+
+導入後、シェル設定（`~/.bashrc` 等）へ PATH を通す。
+
+```bash
+export BUN_INSTALL="$HOME/.bun"
+export DENO_INSTALL="$HOME/.deno"
+export PATH="$BUN_INSTALL/bin:$DENO_INSTALL/bin:$PATH"
+```
+
+`bun --version` / `deno --version` で確認する。CI では `oven-sh/setup-bun` と `denoland/setup-deno` を使う。
+
+## 5.2 パッケージ管理
+
+パッケージ管理は **Bun に一本化する**。`bun.lock` が正本であり、`package-lock.json` は使用しない（ADR-025）。
+
+Deno の設定はリポジトリルートの `deno.json` に置く。Edge Functions の依存は `supabase/functions/**` 内で `https:` のフルURLとして固定しており、import map は使用しない。`jsr:` 版のパッケージはnpm依存の解決にルートの `node_modules` を要求し、Bun 側のツールチェインと衝突するため採用しない。
+
 ---
 
 # 6. 品質管理

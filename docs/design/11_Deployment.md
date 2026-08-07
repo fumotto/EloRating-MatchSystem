@@ -228,7 +228,7 @@ Lint（oxlint）
   ↓
 Format Check（oxfmt）
   ↓
-Type Check（tsc --noEmit）
+Type Check（tsc --noEmit ＋ deno check）
   ↓
 Supabase Local 起動
   ↓
@@ -265,6 +265,39 @@ Project Constitution 第18条の品質ゲートを満たすため、Integration 
 | E2E             | Playwright ＋ Supabase Local |
 
 CI では Supabase Local（Docker）を起動して実行する。本番環境に対してテストを実行してはならない。
+
+## 11.3.1 スクリプト
+
+パッケージ管理は Bun に一本化してある（ADR-025）。`bun.lock` が正本であり `package-lock.json` は存在しない。
+
+| スクリプト                     | 内容                                          |
+| ------------------------- | ------------------------------------------- |
+| `bun run dev`             | Vite 開発サーバー                                 |
+| `bun run build`           | `vite build` ＋ `404.html` の生成               |
+| `bun test` / `bun run test` | `test:unit` → `test:integration` を順に実行する   |
+| `bun run test:unit`       | `vitest run`（`tests/unit/` と `src/**/*.test.tsx`） |
+| `bun run test:integration` | `deno test`（`tests/integration/` のみ）        |
+| `bun run typecheck`       | `tsc --noEmit`（Node側）＋ `deno check`（Deno側）  |
+| `bun run lint`            | `oxlint`                                    |
+| `bun run format:check`    | `oxfmt --check`                             |
+
+型検査が2本に分かれるのは、`supabase/functions/**` が Deno コード（`Deno` グローバル、`https:` の import）であり Node の解決規則では扱えないためである。`tsconfig.json` の `include` は Node 側（`src/`・`tests/unit/`）のみを対象とし、Deno 側は `deno check` が担う。**どちらか一方だけでは全コードを検査できない。**
+
+`404.html` の生成は `build` スクリプトに含めてある。CI とローカルで生成方法が分かれないようにするためである。
+
+**`oxfmt` の対象から `docs/` を除外している。** 設計書は正本であり、整形ツールで一括変更してはならない。
+
+## 11.3.2 CI で未有効のステップ
+
+11.1 の順序のうち、以下は対応するテストが存在しないため `.github/workflows/ci.yml` にコメントとして予約してある。テストを追加する時点で有効化すること。
+
+| ステップ                    | 有効化の時期 | 理由                       |
+| ----------------------- | ------ | ------------------------ |
+| Supabase Local 起動・Migration 適用 | S5     | Database Test が無く、起動しても検証対象がない |
+| Database Test（pgTAP）    | S5     | テスト未作成                   |
+| E2E Test（Playwright）    | S6     | テスト未作成                   |
+
+Frontend Test は Unit Test と同じ Vitest 実行に含めている（`src/**/*.test.tsx`）。分離が必要になった時点でステップを分ける。
 
 ---
 

@@ -21,7 +21,17 @@ export async function handler(req: Request): Promise<Response> {
   }
 
   const userId = claims.sub;
-  const authProvider = claims.app_metadata?.provider ?? "steam";
+
+  // auth_provider と provider_user_id はJWTから取得する（04_BackendInterface.md 9.1）。
+  // 既定値を 'steam' としてはならない（ADR-022）。provider_user_id に auth.uid() を入れると
+  // UNIQUE (auth_provider, provider_user_id) が本来の意味を失う（ADR-015）。
+  const authProvider = claims.app_metadata?.provider;
+  const providerUserId = claims.user_metadata?.provider_id;
+
+  if (!authProvider || !providerUserId) {
+    // 有効なJWTであればプロバイダ情報は必ず含まれる。欠落は認証基盤側の構成不備である。
+    return systemError("SYSTEM-001", "認証プロバイダ情報を取得できません");
+  }
 
   const body = await req.json();
   const request: EnsureProfileRequest = {
@@ -66,7 +76,8 @@ export async function handler(req: Request): Promise<Response> {
       return {
         id: row.id,
         displayName: row.display_name,
-        avatarUrl: row.avatar_url,
+        // DTO は省略可能（`string | undefined`）。DBのNULLをそのまま返さない。
+        avatarUrl: row.avatar_url ?? undefined,
         authProvider: row.auth_provider,
       };
     } else {
@@ -78,7 +89,7 @@ export async function handler(req: Request): Promise<Response> {
         auth_provider: string;
       }>(
         `INSERT INTO profiles (id, auth_provider, provider_user_id, display_name, avatar_url) VALUES ($1, $2, $3, $4, $5) RETURNING id, display_name, avatar_url, auth_provider`,
-        [userId, authProvider, userId, request.displayName, request.avatarUrl]
+        [userId, authProvider, providerUserId, request.displayName, request.avatarUrl]
       );
 
       if (insertResult.rows.length === 0) {
@@ -89,7 +100,8 @@ export async function handler(req: Request): Promise<Response> {
       return {
         id: row.id,
         displayName: row.display_name,
-        avatarUrl: row.avatar_url,
+        // DTO は省略可能（`string | undefined`）。DBのNULLをそのまま返さない。
+        avatarUrl: row.avatar_url ?? undefined,
         authProvider: row.auth_provider,
       };
     }

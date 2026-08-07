@@ -13,6 +13,13 @@ interface CreateTeamResponse {
   rating: number;
 }
 
+// teams の行。応答DTOは `teamId`、DBの列は `id` であり別物である。
+interface TeamRow {
+  id: string;
+  name: string;
+  rating: number;
+}
+
 export async function handler(req: Request): Promise<Response> {
   try {
     const claims = await verifyJwt(req);
@@ -55,7 +62,7 @@ export async function handler(req: Request): Promise<Response> {
       const initialRating = initialRatingResult.rows[0].initial_rating;
 
       // teams INSERT
-      const teamInsertResult = await tx.queryObject<CreateTeamResponse>(
+      const teamInsertResult = await tx.queryObject<TeamRow>(
         `INSERT INTO teams (name, rating) VALUES ($1, $2) RETURNING id, name, rating`,
         [name, initialRating]
       );
@@ -73,9 +80,11 @@ export async function handler(req: Request): Promise<Response> {
       );
 
       // audit_logs INSERT（TEAM_CREATED）
+      // 列は actor_profile_id / action / target_type / target_id / payload（ADR-017、03_Database.md 10.9）。
+      // audit_logs は業務テーブルと外部キーで結合せず、対象を target_type + target_id で表す。
       await tx.queryObject(
-        `INSERT INTO audit_logs (action, team_id, profile_id) VALUES ('TEAM_CREATED', $1, $2)`,
-        [team.id, claims.sub]
+        `INSERT INTO audit_logs (actor_profile_id, action, target_type, target_id) VALUES ($1, 'TEAM_CREATED', 'TEAM', $2)`,
+        [claims.sub, team.id]
       );
 
       return {

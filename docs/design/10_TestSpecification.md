@@ -149,6 +149,9 @@ TC-SEC-005
 | SEC    | セキュリティ  |
 | UI     | フロントエンド |
 | E2E    | E2E     |
+| INFRA  | 共通モジュール（`_shared/`）・マイグレーション定義・テスト基盤 |
+
+`INFRA` は業務機能に属さない検証を分類する。`_shared/auth.ts`・`_shared/db.ts`・`_shared/response.ts` の振る舞いと、マイグレーションSQLの静的検証がこれに当たる。業務ルールの検証を `INFRA` に入れてはならない。
 
 ---
 
@@ -201,6 +204,50 @@ Realtime通知の検証は、通知を伴う処理のIntegration TestおよびE2
 | 期待結果  | 期待される状態・応答（エラーコードを含む）                |
 | 種別    | Unit / Integration / Database / Frontend / E2E |
 | テスト名  | `it` に記述する文言                         |
+
+---
+
+# 9.1 共通モジュール・基盤（INFRA）
+
+業務機能に属さない検証を本節にまとめる。各Partには記載しない。
+
+## 9.1.1 `_shared/auth.ts`
+
+| ID           | 観点        | 前提条件            | 操作          | 期待結果       | 種別          | テスト名                                                          |
+| ------------ | --------- | --------------- | ----------- | ---------- | ----------- | ------------------------------------------------------------- |
+| TC-INFRA-001 | ヘッダ欠落     | Authorization なし | `verifyJwt` | `null` を返す | Integration | `returns null when the Authorization header is missing`       |
+| TC-INFRA-002 | Bearer以外  | `Basic` 形式      | `verifyJwt` | `null` を返す | Integration | `returns null when the Authorization header is not a Bearer token` |
+| TC-INFRA-003 | 検証失敗      | 不正なトークン         | `verifyJwt` | `null` を返す | Integration | `returns null when JWT verification fails`                    |
+| TC-INFRA-004 | 検証成功      | 有効なトークン         | `verifyJwt` | クレームを返す    | Integration | `returns the JWT claims for a valid token`                    |
+
+## 9.1.2 `_shared/db.ts`
+
+| ID           | 観点           | 前提条件            | 操作                | 期待結果                          | 種別          | テスト名                                                                     |
+| ------------ | ------------ | --------------- | ----------------- | ----------------------------- | ----------- | ------------------------------------------------------------------------ |
+| TC-INFRA-005 | プール差し替え      | `setDbPool` 実行後 | `getDbPool`       | 注入したプールが返る                    | Integration | `returns the pool injected through setDbPool`                            |
+| TC-INFRA-006 | 正常時のトランザクション | －               | `withTransaction` | `BEGIN`／`COMMIT` を発行し `release` する | Integration | `issues BEGIN and COMMIT and releases the client on success`             |
+| TC-INFRA-007 | 例外時のトランザクション | 例外を送出           | `withTransaction` | `ROLLBACK` を発行し例外を伝播、`release` する | Integration | `issues ROLLBACK, propagates the error and releases the client on failure` |
+| TC-INFRA-008 | トランザクションハンドル | －               | `withTransaction` | 渡された `tx` で `queryObject` を実行できる | Integration | `passes a transaction handle that can run queryObject`                   |
+
+## 9.1.3 `_shared/response.ts`
+
+外部依存を持たない純ロジックのため Unit（Vitest）で検証する。
+
+| ID           | 観点         | 前提条件 | 操作              | 期待結果                       | 種別   | テスト名                                                     |
+| ------------ | ---------- | ---- | --------------- | -------------------------- | ---- | -------------------------------------------------------- |
+| TC-INFRA-009 | 正常応答       | －    | `ok`            | `result=OK`、ステータス200       | Unit | `returns the payload with result OK and status 200`      |
+| TC-INFRA-010 | 業務エラー      | －    | `businessError` | `result=NG`、引数のステータスが反映される | Unit | `returns result NG with the given HTTP status`           |
+| TC-INFRA-011 | 認証・権限ステータス | －    | `businessError` | 401／403／404 がそのまま反映される     | Unit | `reflects authentication and authorization statuses as given` |
+| TC-INFRA-012 | システムエラー    | －    | `systemError`   | `result=FATAL`、ステータス500    | Unit | `returns result FATAL with status 500`                   |
+
+`businessError` が引数の `status` を捨てていると TC-INFRA-010 が失敗する。HTTPステータスは本文に含まれず、`Response` でしか運べない（`06_ErrorCode.md` 3章）。
+
+## 9.1.4 マイグレーション定義・Edge Function 基盤
+
+| ID           | 観点         | 前提条件 | 操作            | 期待結果                                        | 種別          | テスト名                                                                    |
+| ------------ | ---------- | ---- | ------------- | ------------------------------------------- | ----------- | ----------------------------------------------------------------------- |
+| TC-INFRA-013 | スキーマ定義の網羅  | －    | マイグレーションSQL走査 | 9テーブル・4ビューが定義され、連番が正しく、管理者判定関数が存在しない（ADR-020） | Integration | `defines every table and view and keeps admin helpers out of the schema` |
+| TC-INFRA-014 | プロバイダ情報の欠落 | JWTに `provider` / `provider_id` が無い | ensure-profile | `SYSTEM-001` を返す | Integration | `fails with a system error when the JWT carries no provider information` |
 
 ---
 

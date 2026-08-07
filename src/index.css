@@ -1,0 +1,16 @@
+@import "tailwindcss";
+
+/* ダークモードは Zustand のテーマ状態が html.dark を切り替える（05_Frontend.md 14.2）。 */
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  color-scheme: light dark;
+}
+
+body {
+  @apply bg-white text-slate-900 antialiased;
+}
+
+.dark body {
+  @apply bg-slate-950 text-slate-100;
+}
