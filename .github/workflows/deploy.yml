@@ -1,0 +1,112 @@
+# デプロイ（11_Deployment.md 8章・9章）。
+#
+# ★リリース順序が重要である。バックエンドを先に適用する（9章）。
+#   新しいフロントエンドが旧スキーマを参照する時間帯を作らないためである。
+#   本ワークフローは backend → frontend の順に依存させ、順序を守れないようにしてある。
+#
+# バックエンド（Migration / Edge Functions）の適用には Supabase の資格情報が要る。
+# 登録手順は docs/project/SetupRunbook.md 作業6・作業7にある（人手作業）。
+name: Deploy
+
+on:
+  # 誤爆を避けるため push では動かさない。公開は明示的な操作で行う。
+  workflow_dispatch:
+    inputs:
+      skip_backend:
+        description: "バックエンドの適用を飛ばす（フロントエンドのみ再公開する場合）"
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  # 公開前に CI と同じ検証を通す（9章の手順1）。
+  verify:
+    uses: ./.github/workflows/ci.yml
+
+  backend:
+    needs: verify
+    if: ${{ !inputs.skip_backend }}
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Link project
+        run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+
+      # ★追加方式である（10.1）。適用済みの Migration を編集してはならない。
+      #   down migration は作らない。打ち消す Migration を足して復旧する（10.2）。
+      - name: Apply migrations
+        run: supabase db push
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+
+      - name: Deploy Edge Functions
+        run: supabase functions deploy
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+  frontend:
+    # ★backend の後に置く。skip_backend のときも always() で到達させるが、
+    #   backend が失敗した場合は公開しない。
+    needs: [verify, backend]
+    if: ${{ always() && needs.verify.result == 'success' && needs.backend.result != 'failure' }}
+    runs-on: ubuntu-latest
+    environment: production
+
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      # VITE_ 接頭辞の変数はビルド成果物へ埋め込まれ公開される（4.1）。
+      # Secret ではなく Variable でよい。Service Role Key をここへ入れてはならない。
+      - name: Build
+        run: bun run build
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          # ★末尾のスラッシュを含めて `/EloRating-MatchSystem/` とする（6章）。
+          #   誤ると本番でのみアセットが404になる。ローカルでは `/` で動くため気付けない。
+          VITE_BASE_PATH: ${{ vars.VITE_BASE_PATH }}
+
+      # 直リンクとリロードの404を防ぐ（7章 / R-005）。build スクリプトが生成する。
+      - name: Verify SPA fallback exists
+        run: test -f dist/404.html
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
