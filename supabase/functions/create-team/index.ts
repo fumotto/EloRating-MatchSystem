@@ -24,7 +24,7 @@ export async function handler(req: Request): Promise<Response> {
   try {
     const claims = await verifyJwt(req);
     if (!claims) {
-      return businessError("AUTH-001", "認証が必要です", 401);
+      return businessError("AUTH-001", "Authentication required.", 401);
     }
 
     const body = await req.json();
@@ -32,11 +32,11 @@ export async function handler(req: Request): Promise<Response> {
 
     // 入力バリデーション
     if (typeof name !== "string") {
-      return businessError("VALIDATION-001", "入力値が不正です", 400);
+      return businessError("VALIDATION-001", "Invalid input.", 400);
     }
 
     if (name.length < 1 || name.length > 30) {
-      return businessError("VALIDATION-003", "入力値が範囲外です", 400);
+      return businessError("VALIDATION-003", "Input out of range.", 400);
     }
 
     const result = await withTransaction(async (tx) => {
@@ -47,7 +47,7 @@ export async function handler(req: Request): Promise<Response> {
       );
 
       if (existingMembership.rows.length > 0) {
-        throw businessError("TEAM-003", "既にチームへ所属しています", 409);
+        throw businessError("TEAM-003", "Already in a team.", 409);
       }
 
       // system_settings.initial_rating 取得
@@ -56,7 +56,7 @@ export async function handler(req: Request): Promise<Response> {
       );
 
       if (initialRatingResult.rows.length === 0) {
-        throw systemError("SYSTEM-001", "システム設定が見つかりません");
+        throw systemError("SYSTEM-001", "System settings not found.");
       }
 
       const initialRating = initialRatingResult.rows[0].initial_rating;
@@ -68,7 +68,7 @@ export async function handler(req: Request): Promise<Response> {
       );
 
       if (teamInsertResult.rows.length === 0) {
-        throw systemError("SYSTEM-001", "チーム作成に失敗しました");
+        throw systemError("SYSTEM-001", "Failed to create the team.");
       }
 
       const team = teamInsertResult.rows[0];
@@ -99,7 +99,7 @@ export async function handler(req: Request): Promise<Response> {
     if (e instanceof Response) {
       return e; // 業務エラー。ROLLBACKは済んでいる。
     }
-    return systemError("SYSTEM-001", "システムエラーが発生しました");
+    return systemError("SYSTEM-001", "Internal server error.");
   }
 }
 
