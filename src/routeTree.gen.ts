@@ -9,13 +9,29 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as AdminRouteImport } from './routes/_admin'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as PublicRouteImport } from './routes/_public'
 import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
+import { Route as AppMatchmakingRouteImport } from './routes/_app/matchmaking'
+import { Route as AppProfileRouteImport } from './routes/_app/profile'
+import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as PublicIndexRouteImport } from './routes/_public/index'
 import { Route as PublicLoginRouteImport } from './routes/_public/login'
 import { Route as PublicRankingRouteImport } from './routes/_public/ranking'
+import { Route as AdminAdminIndexRouteImport } from './routes/_admin/admin.index'
+import { Route as AdminAdminAuditRouteImport } from './routes/_admin/admin.audit'
+import { Route as AdminAdminSettingsRouteImport } from './routes/_admin/admin.settings'
+import { Route as AdminAdminTeamsRouteImport } from './routes/_admin/admin.teams'
+import { Route as AppMatchesIndexRouteImport } from './routes/_app/matches.index'
+import { Route as AppMatchesMatchIdRouteImport } from './routes/_app/matches.$matchId'
+import { Route as AppTeamIndexRouteImport } from './routes/_app/team.index'
+import { Route as AppTeamTeamIdRouteImport } from './routes/_app/team.$teamId'
 
+const AdminRoute = AdminRouteImport.update({
+  id: '/_admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AppRoute = AppRouteImport.update({
   id: '/_app',
   getParentRoute: () => rootRouteImport,
@@ -27,6 +43,21 @@ const PublicRoute = PublicRouteImport.update({
 const AppDashboardRoute = AppDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppMatchmakingRoute = AppMatchmakingRouteImport.update({
+  id: '/matchmaking',
+  path: '/matchmaking',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppProfileRoute = AppProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSettingsRoute = AppSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => AppRoute,
 } as any)
 const PublicIndexRoute = PublicIndexRouteImport.update({
@@ -44,50 +75,174 @@ const PublicRankingRoute = PublicRankingRouteImport.update({
   path: '/ranking',
   getParentRoute: () => PublicRoute,
 } as any)
+const AdminAdminIndexRoute = AdminAdminIndexRouteImport.update({
+  id: '/admin/',
+  path: '/admin/',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminAdminAuditRoute = AdminAdminAuditRouteImport.update({
+  id: '/admin/audit',
+  path: '/admin/audit',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminAdminSettingsRoute = AdminAdminSettingsRouteImport.update({
+  id: '/admin/settings',
+  path: '/admin/settings',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminAdminTeamsRoute = AdminAdminTeamsRouteImport.update({
+  id: '/admin/teams',
+  path: '/admin/teams',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AppMatchesIndexRoute = AppMatchesIndexRouteImport.update({
+  id: '/matches/',
+  path: '/matches/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppMatchesMatchIdRoute = AppMatchesMatchIdRouteImport.update({
+  id: '/matches/$matchId',
+  path: '/matches/$matchId',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppTeamIndexRoute = AppTeamIndexRouteImport.update({
+  id: '/team/',
+  path: '/team/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppTeamTeamIdRoute = AppTeamTeamIdRouteImport.update({
+  id: '/team/$teamId',
+  path: '/team/$teamId',
+  getParentRoute: () => AppRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof PublicIndexRoute
   '/dashboard': typeof AppDashboardRoute
+  '/matchmaking': typeof AppMatchmakingRoute
+  '/profile': typeof AppProfileRoute
+  '/settings': typeof AppSettingsRoute
   '/login': typeof PublicLoginRoute
   '/ranking': typeof PublicRankingRoute
+  '/admin/audit': typeof AdminAdminAuditRoute
+  '/admin/settings': typeof AdminAdminSettingsRoute
+  '/admin/teams': typeof AdminAdminTeamsRoute
+  '/matches/$matchId': typeof AppMatchesMatchIdRoute
+  '/team/$teamId': typeof AppTeamTeamIdRoute
+  '/admin/': typeof AdminAdminIndexRoute
+  '/matches/': typeof AppMatchesIndexRoute
+  '/team/': typeof AppTeamIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof PublicIndexRoute
   '/dashboard': typeof AppDashboardRoute
+  '/matchmaking': typeof AppMatchmakingRoute
+  '/profile': typeof AppProfileRoute
+  '/settings': typeof AppSettingsRoute
   '/login': typeof PublicLoginRoute
   '/ranking': typeof PublicRankingRoute
+  '/admin/audit': typeof AdminAdminAuditRoute
+  '/admin/settings': typeof AdminAdminSettingsRoute
+  '/admin/teams': typeof AdminAdminTeamsRoute
+  '/matches/$matchId': typeof AppMatchesMatchIdRoute
+  '/team/$teamId': typeof AppTeamTeamIdRoute
+  '/admin': typeof AdminAdminIndexRoute
+  '/matches': typeof AppMatchesIndexRoute
+  '/team': typeof AppTeamIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
+  '/_admin': typeof AdminRouteWithChildren
   '/_app': typeof AppRouteWithChildren
   '/_public': typeof PublicRouteWithChildren
   '/_app/dashboard': typeof AppDashboardRoute
+  '/_app/matchmaking': typeof AppMatchmakingRoute
+  '/_app/profile': typeof AppProfileRoute
+  '/_app/settings': typeof AppSettingsRoute
   '/_public/login': typeof PublicLoginRoute
   '/_public/ranking': typeof PublicRankingRoute
   '/_public/': typeof PublicIndexRoute
+  '/_admin/admin/audit': typeof AdminAdminAuditRoute
+  '/_admin/admin/settings': typeof AdminAdminSettingsRoute
+  '/_admin/admin/teams': typeof AdminAdminTeamsRoute
+  '/_app/matches/$matchId': typeof AppMatchesMatchIdRoute
+  '/_app/team/$teamId': typeof AppTeamTeamIdRoute
+  '/_admin/admin/': typeof AdminAdminIndexRoute
+  '/_app/matches/': typeof AppMatchesIndexRoute
+  '/_app/team/': typeof AppTeamIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/dashboard' | '/login' | '/ranking'
+  fullPaths:
+    | '/'
+    | '/dashboard'
+    | '/matchmaking'
+    | '/profile'
+    | '/settings'
+    | '/login'
+    | '/ranking'
+    | '/admin/audit'
+    | '/admin/settings'
+    | '/admin/teams'
+    | '/matches/$matchId'
+    | '/team/$teamId'
+    | '/admin/'
+    | '/matches/'
+    | '/team/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/dashboard' | '/login' | '/ranking'
+  to:
+    | '/'
+    | '/dashboard'
+    | '/matchmaking'
+    | '/profile'
+    | '/settings'
+    | '/login'
+    | '/ranking'
+    | '/admin/audit'
+    | '/admin/settings'
+    | '/admin/teams'
+    | '/matches/$matchId'
+    | '/team/$teamId'
+    | '/admin'
+    | '/matches'
+    | '/team'
   id:
     | '__root__'
+    | '/_admin'
     | '/_app'
     | '/_public'
     | '/_app/dashboard'
+    | '/_app/matchmaking'
+    | '/_app/profile'
+    | '/_app/settings'
     | '/_public/login'
     | '/_public/ranking'
     | '/_public/'
+    | '/_admin/admin/audit'
+    | '/_admin/admin/settings'
+    | '/_admin/admin/teams'
+    | '/_app/matches/$matchId'
+    | '/_app/team/$teamId'
+    | '/_admin/admin/'
+    | '/_app/matches/'
+    | '/_app/team/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
+  AdminRoute: typeof AdminRouteWithChildren
   AppRoute: typeof AppRouteWithChildren
   PublicRoute: typeof PublicRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/_admin': {
+      id: '/_admin'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_app': {
       id: '/_app'
       path: ''
@@ -107,6 +262,27 @@ declare module '@tanstack/react-router' {
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof AppDashboardRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/matchmaking': {
+      id: '/_app/matchmaking'
+      path: '/matchmaking'
+      fullPath: '/matchmaking'
+      preLoaderRoute: typeof AppMatchmakingRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/profile': {
+      id: '/_app/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof AppProfileRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/settings': {
+      id: '/_app/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AppSettingsRouteImport
       parentRoute: typeof AppRoute
     }
     '/_public/': {
@@ -130,15 +306,101 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PublicRankingRouteImport
       parentRoute: typeof PublicRoute
     }
+    '/_admin/admin/': {
+      id: '/_admin/admin/'
+      path: '/admin'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AdminAdminIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/_admin/admin/audit': {
+      id: '/_admin/admin/audit'
+      path: '/admin/audit'
+      fullPath: '/admin/audit'
+      preLoaderRoute: typeof AdminAdminAuditRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/_admin/admin/settings': {
+      id: '/_admin/admin/settings'
+      path: '/admin/settings'
+      fullPath: '/admin/settings'
+      preLoaderRoute: typeof AdminAdminSettingsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/_admin/admin/teams': {
+      id: '/_admin/admin/teams'
+      path: '/admin/teams'
+      fullPath: '/admin/teams'
+      preLoaderRoute: typeof AdminAdminTeamsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/_app/matches/': {
+      id: '/_app/matches/'
+      path: '/matches'
+      fullPath: '/matches/'
+      preLoaderRoute: typeof AppMatchesIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/matches/$matchId': {
+      id: '/_app/matches/$matchId'
+      path: '/matches/$matchId'
+      fullPath: '/matches/$matchId'
+      preLoaderRoute: typeof AppMatchesMatchIdRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/team/': {
+      id: '/_app/team/'
+      path: '/team'
+      fullPath: '/team/'
+      preLoaderRoute: typeof AppTeamIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/team/$teamId': {
+      id: '/_app/team/$teamId'
+      path: '/team/$teamId'
+      fullPath: '/team/$teamId'
+      preLoaderRoute: typeof AppTeamTeamIdRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
+interface AdminRouteChildren {
+  AdminAdminAuditRoute: typeof AdminAdminAuditRoute
+  AdminAdminSettingsRoute: typeof AdminAdminSettingsRoute
+  AdminAdminTeamsRoute: typeof AdminAdminTeamsRoute
+  AdminAdminIndexRoute: typeof AdminAdminIndexRoute
+}
+
+const AdminRouteChildren: AdminRouteChildren = {
+  AdminAdminAuditRoute: AdminAdminAuditRoute,
+  AdminAdminSettingsRoute: AdminAdminSettingsRoute,
+  AdminAdminTeamsRoute: AdminAdminTeamsRoute,
+  AdminAdminIndexRoute: AdminAdminIndexRoute,
+}
+
+const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
+
 interface AppRouteChildren {
   AppDashboardRoute: typeof AppDashboardRoute
+  AppMatchmakingRoute: typeof AppMatchmakingRoute
+  AppProfileRoute: typeof AppProfileRoute
+  AppSettingsRoute: typeof AppSettingsRoute
+  AppMatchesMatchIdRoute: typeof AppMatchesMatchIdRoute
+  AppTeamTeamIdRoute: typeof AppTeamTeamIdRoute
+  AppMatchesIndexRoute: typeof AppMatchesIndexRoute
+  AppTeamIndexRoute: typeof AppTeamIndexRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppDashboardRoute: AppDashboardRoute,
+  AppMatchmakingRoute: AppMatchmakingRoute,
+  AppProfileRoute: AppProfileRoute,
+  AppSettingsRoute: AppSettingsRoute,
+  AppMatchesMatchIdRoute: AppMatchesMatchIdRoute,
+  AppTeamTeamIdRoute: AppTeamTeamIdRoute,
+  AppMatchesIndexRoute: AppMatchesIndexRoute,
+  AppTeamIndexRoute: AppTeamIndexRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
@@ -159,6 +421,7 @@ const PublicRouteWithChildren =
   PublicRoute._addFileChildren(PublicRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
+  AdminRoute: AdminRouteWithChildren,
   AppRoute: AppRouteWithChildren,
   PublicRoute: PublicRouteWithChildren,
 }

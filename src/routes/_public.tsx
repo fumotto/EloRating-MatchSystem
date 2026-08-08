@@ -4,9 +4,14 @@
 //   認証済みユーザーにも同一のルートを使う。AppLayout 側に重複したランキング画面を作らない（5.2）。
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
 import { Header } from "../components/layout/Header";
+import { useRealtimeSubscription } from "../features/realtime/useRealtimeSubscription";
 
 function PublicLayout() {
   const { session } = Route.useRouteContext();
+
+  // 未認証時は ranking チャンネルのみ購読する（10.1）。
+  // 認証済みで公開ルートを見ている場合は AppLayout 側が全チャンネルを持つ。
+  useRealtimeSubscription(false);
 
   return (
     <>
