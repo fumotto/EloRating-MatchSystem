@@ -1,6 +1,6 @@
 // TanStack Query の設定（05_Frontend.md 11章・12章）。
 import { QueryClient } from "@tanstack/react-query";
-import { ApiError } from "../services/invoke";
+import { ApiError } from "../services/apiError";
 
 // 再試行の方針（12章）。
 // ネットワークエラーは3回まで。401 / 403 / 409 / 500 は再試行しない。
