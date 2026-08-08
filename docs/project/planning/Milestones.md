@@ -40,10 +40,10 @@ Status: Active
 | ID | 名称      | 状態      | 目標日 | 達成率 |
 | -- | ------- | ------- | --- | --- |
 | M1 | 開発基盤構築  | Completed | 2026-08-08 | 100% |
-| M2 | チーム管理機能 | Planned |     | 0%  |
-| M3 | マッチング機能 | Planned |     | 0%  |
-| M4 | ランキング機能 | Planned |     | 0%  |
-| M5 | MVPリリース | Planned |     | 0%  |
+| M2 | チーム管理機能 | Completed | 2026-08-08 | 100% |
+| M3 | マッチング機能 | Completed | 2026-08-08 | 100% |
+| M4 | ランキング機能 | Completed | 2026-08-08 | 100% |
+| M5 | MVPリリース | In Progress |     | 70% |
 
 ---
 
@@ -95,8 +95,8 @@ Status: Active
 
 M1 は達成済みである。テスト起動コマンドは B-011 の Bun 移行に伴い `npm test` から `bun run test` へ変わった（ADR-025）。
 
-CI は現時点で実行できるステップのみを有効化してある。Database Test（pgTAP）と E2E Test（Playwright）は
-テストが存在しないためワークフロー内にコメントで予約しており、S5 / S6 で有効化する（`11_Deployment.md` 11.3.2）。
+CI は S5 / S6 でテストを追加したことにより、Database Test（pgTAP）と E2E Test（Playwright）を含む
+全ステップを有効化してある（`11_Deployment.md` 11.3.2）。
 
 ---
 
@@ -197,6 +197,9 @@ MVPを一般公開する。
 
 * 本番環境で利用可能である。
 * Changelogが更新されている。
+
+公開経路（`.github/workflows/deploy.yml`）は整備済みである。残るのは Supabase クラウドプロジェクトの
+作成と資格情報の登録であり、これは人手作業である（`SetupRunbook.md` 作業5〜7）。
 
 ---
 
