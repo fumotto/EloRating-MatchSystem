@@ -2,4 +2,5 @@
 export const teamKeys = {
   all: ["team"] as const,
   my: () => [...teamKeys.all, "my"] as const,
+  detail: (teamId: string) => [...teamKeys.all, "detail", teamId] as const,
 };
