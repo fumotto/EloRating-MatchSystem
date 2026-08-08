@@ -82,6 +82,9 @@ Project Constitution 第9条に定める優先順位を唯一の基準とする�
 | planning/Backlog.md                 | 実施候補          | 未着手タスクの一覧                     |
 | status/ProjectStatus.md             | 現在の状態         | **現在のフェーズ・スライス、作業中タスク、ブロッカー**  |
 | status/Changelog.md                 | 変更履歴          | **リリース単位の変更履歴**               |
+| SetupRunbook.md                     | 人手作業の手順書      | **外部サービス（Discord・GitHub・Supabaseクラウド）における人手設定の手順** |
+
+`SetupRunbook.md` は手順のみを持ち、値の定義を持たない。環境変数は `11_Deployment.md` 4章、完了条件は `Milestones.md` と `ImplementationRoadmap.md` が正本である。
 
 ---
 
@@ -120,6 +123,7 @@ Project Constitution 第9条に定める優先順位を唯一の基準とする�
 | 採用ライブラリ          | 12_TechnologyStack.md                |
 | 用語・命名            | 14_Glossary.md                       |
 | なぜその設計なのか        | 15_DecisionLog.md                    |
+| 人手でしかできない設定作業の手順  | project/SetupRunbook.md              |
 
 ---
 
