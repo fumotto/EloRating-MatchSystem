@@ -75,6 +75,30 @@ export async function verifyJwt(req: Request): Promise<JwtClaims | null> {
   }
 }
 
+// 内部処理用Functionの認可（04_BackendInterface.md 11章）。
+// matchmaker / auto-resolve-matches / cleanup-* は利用者のJWTではなく Service Role で呼ばれる。
+// Service Role はクライアントへ露出しないため、これが内部処理であることの証明になる（18章）。
+//
+// ★比較は長さを揃えず単純比較で行わない。鍵の一致判定はタイミング差を残さないようにする。
+export function isServiceRole(req: Request): boolean {
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader || !authHeader.startsWith("Bearer ")) return false;
+
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!key) return false;
+
+  return timingSafeEqual(authHeader.substring(7), key);
+}
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
 // テストから検証本体を差し替えるための口（ADR-021）。
 export function setJwtVerifier(verifier: JwtVerifier) {
   jwtVerifier = verifier;
