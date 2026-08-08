@@ -18,9 +18,9 @@ test.describe("anonymous visitor", () => {
     await page.goto("/ranking");
     await expect(page.getByRole("heading", { name: "ランキング" })).toBeVisible();
 
-    // 表そのものが描画されること（0件でも表示は壊れない）。
+    // 0件でも表示が壊れないこと。文言は RankingTable の空状態に合わせる。
     const table = page.getByRole("table");
-    await expect(table.or(page.getByText("チームがありません"))).toBeVisible();
+    await expect(table.or(page.getByText("まだチームがありません"))).toBeVisible();
   });
 
   test("sends an anonymous visitor to the login page for protected routes", async ({ page }) => {
