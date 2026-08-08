@@ -287,9 +287,40 @@ Connection Pooler は **Transaction mode** を使い、**prepared statement を�
 supabase functions deploy
 ```
 
+## 8.1 Cron 用の Vault シークレット登録
+
+内部処理の Edge Function（`matchmaker` / `auto-resolve-matches` / `cleanup-*`）は pg_cron から
+HTTP で呼ばれる（Migration `0015_cron.sql`）。呼び出しには**環境ごとに異なる2つの値**が要る。
+
+**Migration には書けない。** URL は環境ごとに異なり、Service Role Key は秘匿情報だからである。
+Supabase ダッシュボードの SQL Editor で以下を実行し、Vault へ登録する。
+
+```sql
+SELECT vault.create_secret(
+  'https://＜project-ref＞.supabase.co/functions/v1',
+  'edge_function_base_url'
+);
+SELECT vault.create_secret('＜Service Role Key＞', 'service_role_key');
+```
+
+**登録するまで Cron は何もしない。** 未登録を失敗にすると毎分エラーが積まれるため、
+`invoke_edge_function` は値が無ければ黙って戻る設計にしてある。したがって
+「登録し忘れても気付けない」点に注意する。登録後に下の確認を必ず行う。
+
+```sql
+SELECT jobname, schedule FROM cron.job ORDER BY jobname;
+SELECT jobname, status, start_time FROM cron.job_run_details ORDER BY start_time DESC LIMIT 10;
+```
+
+ローカル開発では登録しなくてよい。Cron は登録されるが何も呼ばない。
+
+**Cron が止まると試合が確定せず、両チームが以後マッチングできなくなる**（R-004）。
+運用開始後は `cron.job_run_details` を監視対象に含めること。
+
 ## 完了の判定
 
-ダッシュボードの Table Editor に9テーブル・4ビューが見えること。Edge Functions に `ensure-profile` と `create-team` が並ぶこと。
+ダッシュボードの Table Editor に9テーブル・4ビューが見えること。Edge Functions に仕様どおりの
+Function が並ぶこと。`cron.job` に4件のジョブが登録され、`cron.job_run_details` が成功していること。
 
 ---
 
