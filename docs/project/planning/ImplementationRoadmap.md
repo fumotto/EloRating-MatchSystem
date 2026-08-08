@@ -41,9 +41,9 @@ Version 1.0 の Phase 1〜7（層ごとの横切り）は本改訂でスライ�
 | S1    | 認証（Discord）              | ✅ Completed |
 | S2    | チーム作成                    | ✅ Completed |
 | S3    | フロントエンド最小構成              | ✅ Completed |
-| S4    | クラウドへPush・公開             | 🟨 In Progress（CI のみ） |
-| S5    | 残機能の横展開                  | 🟨 In Progress |
-| S6    | 統合テスト・MVPリリース            | ⬜ Not Started |
+| S4    | クラウドへPush・公開             | 🟨 In Progress（CI・deploy.yml は完了。クラウド適用が人手作業） |
+| S5    | 残機能の横展開                  | ✅ Completed |
+| S6    | 統合テスト・MVPリリース            | 🟨 In Progress（テストは完了。MVP公開が残る） |
 
 S0 〜 S3 が「ログイン → プロフィール生成 → チーム作成 → ランキング表示」を貫通する最初のスライスである。
 
@@ -52,8 +52,9 @@ S0 〜 S3 が「ログイン → プロフィール生成 → チーム作成 �
 S1 〜 S3 は 2026-08-08 に Supabase Local ＋ 実 Discord ログインによる縦貫通確認
 （`SetupRunbook.md` 作業1〜3）を実施し、完了条件を満たしたため Completed とした。
 
-S4 は CI（`.github/workflows/ci.yml`）のみ先行して実施した。M1 の完了条件「CIが正常に動作する」を満たすためである
-（`Milestones.md` 4.1 が M1 ← S4(CI) と対応付けている）。クラウドへの push と GitHub Pages 公開は M5 で行う。
+S4 は CI（`.github/workflows/ci.yml`）を先行して実施し、S6 で公開用の `deploy.yml` を新設した。
+**クラウドへの push と GitHub Pages 公開は人手作業であり**（`SetupRunbook.md` 作業5〜7）、
+Supabase プロジェクトの作成と資格情報の登録が済むまで実行できない。
 
 ---
 
