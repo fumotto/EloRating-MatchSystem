@@ -287,15 +287,22 @@ CI では Supabase Local（Docker）を起動して実行する。本番環境�
 
 **`oxfmt` の対象から `docs/` を除外している。** 設計書は正本であり、整形ツールで一括変更してはならない。
 
-## 11.3.2 CI で未有効のステップ
+## 11.3.2 CI のステップ
 
-11.1 の順序のうち、以下は対応するテストが存在しないため `.github/workflows/ci.yml` にコメントとして予約してある。テストを追加する時点で有効化すること。
+11.1 の順序のうち予約状態だったステップは、S5 / S6 でテストを追加したためすべて有効化済みである。
 
-| ステップ                    | 有効化の時期 | 理由                       |
-| ----------------------- | ------ | ------------------------ |
-| Supabase Local 起動・Migration 適用 | S5     | Database Test が無く、起動しても検証対象がない |
-| Database Test（pgTAP）    | S5     | テスト未作成                   |
-| E2E Test（Playwright）    | S6     | テスト未作成                   |
+| ステップ                    | 状態     | 備考                                     |
+| ----------------------- | ------ | -------------------------------------- |
+| Supabase Local 起動・Migration 適用 | 有効  | `supabase start` ＋ `supabase db reset`  |
+| Database Test（pgTAP）    | 有効     | `supabase/tests/database/`（制約・RLS）      |
+| E2E Test（Playwright）    | 有効     | `tests/e2e/`。Edge Functions を起動してから実行する |
+
+E2E は Edge Functions を実際に呼ぶため、CI では `supabase functions serve` を起動してから実行する。
+`SUPABASE_DB_URL` にはコンテナ名を使う（`127.0.0.1` はコンテナ自身を指すため DB へ届かない）。
+
+**E2E のログインは Discord の認可画面を経由しない。** Supabase Admin API で作成した利用者を
+Discord 利用者として振る舞わせ、アプリ自身のクライアントにログインさせる（`tests/e2e/fixtures.ts`）。
+OAuth の往復そのものは自動化の対象外であり、`SetupRunbook.md` 作業3の手動確認が担う。
 
 Frontend Test は Unit Test と同じ Vitest 実行に含めている（`src/**/*.test.tsx`）。分離が必要になった時点でステップを分ける。
 

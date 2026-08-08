@@ -10,7 +10,10 @@
     // any の使用は禁止（12_TechnologyStack.md 10章）。
     "typescript/no-explicit-any": "error",
     // React 17 以降の JSX 変換では React の import は不要（tsconfig の jsx: react-jsx）。
-    "react/react-in-jsx-scope": "off"
+    "react/react-in-jsx-scope": "off",
+    // E2E がアプリの Supabase クライアントへ触れるための口。
+    // 二重アンダースコアは「アプリ本体は使わない」ことを示すための命名である。
+    "eslint/no-underscore-dangle": ["warn", { "allow": ["__supabaseForTest"] }]
   },
   "ignorePatterns": [
     "dist",
