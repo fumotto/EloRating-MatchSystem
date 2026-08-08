@@ -17,7 +17,7 @@ interface EnsureProfileResponse {
 export async function handler(req: Request): Promise<Response> {
   const claims = await verifyJwt(req);
   if (!claims) {
-    return businessError("AUTH-001", "認証が必要です", 401);
+    return businessError("AUTH-001", "Authentication required.", 401);
   }
 
   const userId = claims.sub;
@@ -30,7 +30,7 @@ export async function handler(req: Request): Promise<Response> {
 
   if (!authProvider || !providerUserId) {
     // 有効なJWTであればプロバイダ情報は必ず含まれる。欠落は認証基盤側の構成不備である。
-    return systemError("SYSTEM-001", "認証プロバイダ情報を取得できません");
+    return systemError("SYSTEM-001", "Auth provider information is unavailable.");
   }
 
   const body = await req.json();
@@ -41,7 +41,7 @@ export async function handler(req: Request): Promise<Response> {
 
   // Validation
   if (!request.displayName || request.displayName.length < 1 || request.displayName.length > 50) {
-    return businessError("VALIDATION-001", "表示名は1〜50文字で入力してください", 400);
+    return businessError("VALIDATION-001", "Invalid input.", 400);
   }
 
   const result = await withTransaction<EnsureProfileResponse>(async (tx) => {
