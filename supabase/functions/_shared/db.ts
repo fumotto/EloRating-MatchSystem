@@ -13,7 +13,11 @@ export function getDbPool(): Pool {
   if (dbPool) return dbPool;
   const dbUrl = Deno.env.get("SUPABASE_DB_URL");
   if (!dbUrl) throw new Error("SUPABASE_DB_URL is not set");
-  dbPool = new Pool(dbUrl, 10);
+  // ★第3引数の lazy を true にする。既定（false）では生成時に10本すべて接続を張る。
+  //   Function ごとに別プロセスで動くため、複数のFunctionが呼ばれるだけで接続数が積み上がり、
+  //   PostgreSQL の上限に達して Auth（GoTrue）まで "Database error" で落ちる。
+  //   実際にCIのE2Eで発生した。必要になったときだけ張る。
+  dbPool = new Pool(dbUrl, 10, true);
   return dbPool;
 }
 
