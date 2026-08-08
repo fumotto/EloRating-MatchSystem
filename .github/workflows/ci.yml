@@ -60,7 +60,9 @@ jobs:
         run: |
           supabase start
           # 鍵とURLは起動のたびに出力から取る。ワークフローへ書き写さない。
-          supabase status -o env >> "$GITHUB_ENV"
+          # ★出力は KEY="value" 形式である。引用符を外さないと値に " が混ざり、
+          #   Service Role Key が壊れて Admin API が invalid JWT になる。
+          supabase status -o env | sed -e 's/="/=/' -e 's/"$//' >> "$GITHUB_ENV"
 
       # Migration が最初から通ることを確かめる。差分適用ではなく作り直す。
       - name: Apply migrations
