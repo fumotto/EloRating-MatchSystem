@@ -2,10 +2,10 @@
 
 # Setup Runbook
 
-Version: 1.0
+Version: 1.2
 Status: Active
 
-Last Updated: 2026-08-07
+Last Updated: 2026-08-08
 
 ---
 
@@ -214,10 +214,12 @@ GitHub で Pull Request を作成する。記載事項は `ProjectRules.md` 8章
 リポジトリの **Actions** タブで、以下のステップがすべて緑になること。
 
 ```text
-Install → Lint → Format Check → Type Check → Unit Test → Integration Test → Build → Verify SPA fallback
+Install → Lint → Format Check → Type Check → Supabase Local 起動 → Migration 適用
+  → Unit Test → Integration Test → Database Test（pgTAP）→ Build → Verify SPA fallback
+  → Edge Functions 起動 → E2E Test（Playwright）
 ```
 
-Supabase Local 起動・Database Test・E2E Test はワークフロー内にコメントで予約してあり、実行されない。テストが存在しないためである（`11_Deployment.md` 11.3.2）。有効化は S5 / S6 で行う。
+S5 / S6 で pgTAP と Playwright を追加したため、予約状態だったステップはすべて有効化してある（`11_Deployment.md` 11.3.2）。
 
 ## 完了の判定
 
@@ -346,9 +348,27 @@ GitHub Pages はサブパス（`https://＜user＞.github.io/EloRating-MatchSyst
 
 **設定を誤ると本番でのみアセットが404になる**（`11_Deployment.md` 6章）。ローカルでは `/` で動くため気付けない。
 
-## 残課題
+## 9.1 デプロイ用の Secrets
 
-**デプロイ用のワークフローはまだ作成していない。** 現在の `ci.yml` は検証のみで、GitHub Pages への公開は行わない。公開ワークフローの新設は M5 の作業として残っている。着手する際に依頼してほしい。
+公開は `.github/workflows/deploy.yml` が行う。**Actions タブから手動で実行する**
+（`workflow_dispatch`）。push では動かない。誤って公開しないためである。
+
+バックエンドの適用に以下の Secret が要る。**Variable ではなく Secret とする。**
+
+| 名前                      | 種別     | 値                              |
+| ----------------------- | ------ | ------------------------------ |
+| `SUPABASE_ACCESS_TOKEN` | Secret | Supabase のアクセストークン（アカウント設定で発行） |
+| `SUPABASE_PROJECT_REF`  | Secret | 本番プロジェクトの project-ref          |
+| `SUPABASE_DB_PASSWORD`  | Secret | 本番プロジェクトのDBパスワード               |
+
+`production` という名前の Environment を作り、そこへ登録する。deploy.yml が参照する。
+
+## 9.2 実行順序
+
+deploy.yml は **backend → frontend の順に依存させてある**（`11_Deployment.md` 9章）。
+新しいフロントエンドが旧スキーマを参照する時間帯を作らないためである。ジョブの順序を入れ替えてはならない。
+
+フロントエンドのみを再公開したい場合は、実行時に `skip_backend` を有効にする。
 
 ---
 
