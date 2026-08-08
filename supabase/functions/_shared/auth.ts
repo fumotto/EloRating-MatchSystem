@@ -75,6 +75,15 @@ export async function verifyJwt(req: Request): Promise<JwtClaims | null> {
   }
 }
 
+// 管理者判定（04_BackendInterface.md 12章 / 03_Database.md 9.1 / ADR-020）。
+//
+// ★出所は検証済みJWTの app_metadata.role だけである。user_metadata は利用者が
+//   自分で書き換えられるため使ってはならない。profiles に is_admin 列は無い。
+// Edge Functions はDB直結でRLSを迂回するため、管理操作の冒頭で必ず本判定を行う。
+export function isAdmin(claims: JwtClaims): boolean {
+  return claims.app_metadata?.role === "admin";
+}
+
 // 内部処理用Functionの認可（04_BackendInterface.md 11章）。
 // matchmaker / auto-resolve-matches / cleanup-* は利用者のJWTではなく Service Role で呼ばれる。
 // Service Role はクライアントへ露出しないため、これが内部処理であることの証明になる（18章）。
