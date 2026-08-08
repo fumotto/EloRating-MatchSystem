@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { remainingTime } from "./remainingTime";
 import { apiErrorCode } from "./apiErrorCode";
-import { ApiError } from "../services/invoke";
+import { ApiError } from "../services/apiError";
 import { matchStatusLabel } from "../features/match/components/matchStatusLabel";
 
 // 現在時刻に依存させないため、基準時刻を引数で渡せるようにしてある。

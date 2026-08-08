@@ -4,7 +4,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { createTeamSchema, type CreateTeamInput } from "../schemas/createTeamSchema";
 import { useCreateTeam } from "../hooks/useCreateTeam";
-import { ApiError } from "../../../services/invoke";
+import { apiErrorCode } from "../../../utils/apiErrorCode";
 import { ErrorNotice } from "../../../components/feedback/ErrorNotice";
 
 export function CreateTeamDialog() {
@@ -21,12 +21,7 @@ export function CreateTeamDialog() {
   });
 
   // 表示文言はエラーコードから引く（12章）。error.message を直接出さない。
-  const failureCode =
-    createTeam.error instanceof ApiError
-      ? createTeam.error.code
-      : createTeam.error
-        ? "SYSTEM-001"
-        : undefined;
+  const failureCode = apiErrorCode(createTeam.error);
 
   return (
     <form onSubmit={onSubmit} className="space-y-3">

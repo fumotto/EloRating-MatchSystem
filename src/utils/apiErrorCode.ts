@@ -2,7 +2,7 @@
 //
 // 各画面で instanceof の分岐を書かないよう共通化する。
 // 通信層の失敗など code を持たないものは SYSTEM-001 として扱う。
-import { ApiError } from "../services/invoke";
+import { ApiError } from "../services/apiError";
 
 export function apiErrorCode(error: unknown): string | undefined {
   if (!error) return undefined;

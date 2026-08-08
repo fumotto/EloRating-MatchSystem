@@ -3,15 +3,10 @@
 // 更新系はすべて Edge Functions を経由する。Query（PostgREST）で更新してはならない。
 import { supabase } from "../lib/supabase";
 import type { ApiResponse } from "../types/api";
+import { ApiError } from "./apiError";
 
-// 業務エラー・システムエラーを表す例外。error.code のみを持ち回り、
-// 表示文言は utils/errorMessage.ts が決める（05_Frontend.md 12章）。
-export class ApiError extends Error {
-  constructor(public readonly code: string) {
-    super(code);
-    this.name = "ApiError";
-  }
-}
+// 呼び出し側は invoke と同じ場所から受け取れるようにしておく。
+export { ApiError };
 
 // FunctionsHttpError は応答そのものを context に持つ。ここから error.code を取り出す。
 // ネットワーク障害など本文が無い場合だけ SYSTEM-001 とする。
