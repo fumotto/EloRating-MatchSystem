@@ -196,6 +196,7 @@
     "packageJson": {
       "dependencies": [
         "npm:@hookform/resolvers@^5.7.1",
+        "npm:@playwright/test@^1.62.1",
         "npm:@supabase/supabase-js@^2.112.2",
         "npm:@tailwindcss/vite@^4.3.3",
         "npm:@tanstack/react-query@^5.101.4",

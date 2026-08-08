@@ -13,5 +13,22 @@ if (!url || !anonKey) {
   );
 }
 
+// セッションの保存先キーを明示する。
+// 既定値は URL から推測されるため環境ごとに変わり、E2E がセッションを注入できない。
+export const AUTH_STORAGE_KEY = "elorating-auth";
+
 // Anon Key は公開される前提の鍵である。Service Role Key を設定してはならない（11_Deployment.md 4.1）。
-export const supabase = createClient(url, anonKey);
+export const supabase = createClient(url, anonKey, {
+  auth: { storageKey: AUTH_STORAGE_KEY },
+});
+
+// E2E（Playwright）がログイン状態を作るための口。
+//
+// ★開発ビルドでのみ生やす。`import.meta.env.DEV` は本番ビルドで false に畳まれ、
+//   このブロックごと除去されるため、公開物にクライアントは露出しない。
+//
+// localStorage へセッションを流し込む方式は採らない。保存形式は SDK の内部仕様であり、
+// 版が上がると黙って動かなくなる。SDK自身にログインさせるのが最も壊れにくい。
+if (import.meta.env.DEV) {
+  (globalThis as unknown as { __supabaseForTest?: typeof supabase }).__supabaseForTest = supabase;
+}

@@ -1,8 +1,7 @@
 # CI（11_Deployment.md 11.1）。
 #
-# ステップの順序は同章の定義に従う。現時点で実行できないステップ（Database Test / E2E Test）は
-# コメントで予約してある。テストが用意でき次第、S5 / S6 で有効化すること。
-# 形だけ通るステップを並べない方針である（検証していないのに緑になるため）。
+# ステップの順序は同章の定義に従う。S5 / S6 で Database Test（pgTAP）と E2E Test（Playwright）を
+# 追加したため、11.3.2 で予約していたステップをすべて有効化してある。
 name: CI
 
 on:
@@ -34,6 +33,13 @@ jobs:
         with:
           deno-version: v2.x
 
+      # Database Test と E2E は Supabase Local（Docker）を使う。
+      # 本番環境に対してテストを実行してはならない（11.3）。
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
       - name: Install
         run: bun install --frozen-lockfile
 
@@ -47,16 +53,15 @@ jobs:
       - name: Type Check (tsc + deno check)
         run: bun run typecheck
 
-      # --- 未実装のため予約 ---------------------------------------------------
-      # Supabase Local の起動と Migration 適用は、Database Test（pgTAP）を
-      # 追加する S5 で有効化する。現状は起動しても検証する対象がない。
-      #
-      # - name: Start Supabase Local
-      #   run: supabase start
-      #
-      # - name: Apply migrations
-      #   run: supabase db reset
-      # ------------------------------------------------------------------------
+      - name: Start Supabase Local
+        run: |
+          supabase start
+          # 鍵とURLは起動のたびに出力から取る。ワークフローへ書き写さない。
+          supabase status -o env >> "$GITHUB_ENV"
+
+      # Migration が最初から通ることを確かめる。差分適用ではなく作り直す。
+      - name: Apply migrations
+        run: supabase db reset
 
       - name: Unit Test (Vitest)
         run: bun run test:unit
@@ -65,7 +70,9 @@ jobs:
         run: bun run test:integration
 
       # Frontend Test は Unit Test と同じ Vitest 実行に含まれる（src/**/*.test.tsx）。
-      # 分離が必要になった時点でステップを分ける。
+
+      - name: Database Test (pgTAP)
+        run: bun run test:db
 
       - name: Build
         run: bun run build
@@ -80,9 +87,36 @@ jobs:
       - name: Verify SPA fallback exists
         run: test -f dist/404.html
 
-      # --- 未実装のため予約 ---------------------------------------------------
-      # E2E Test（Playwright）は S6 で有効化する。テストが存在しない。
-      #
-      # - name: E2E Test
-      #   run: bun run test:e2e
-      # ------------------------------------------------------------------------
+      - name: Install Playwright browser
+        run: bun x playwright install --with-deps chromium
+
+      # ★E2E は Edge Functions を実際に呼ぶ。起動しておかないと全ケースが SYSTEM-001 になる。
+      #   SUPABASE_DB_URL にはコンテナ名を使う（SetupRunbook 5.2）。
+      #   127.0.0.1 はコンテナ自身を指すため、Function から DB へ届かない。
+      - name: Serve Edge Functions
+        run: |
+          echo "SUPABASE_DB_URL=postgresql://postgres:postgres@supabase_db_$(basename "$PWD"):5432/postgres" \
+            > .env.ci
+          supabase functions serve --env-file .env.ci &
+          # 起動を待つ。ここで待たないと最初のE2Eが接続エラーになる。
+          for _ in $(seq 1 30); do
+            # 応答が返れば十分である。-f は付けない。内部処理Functionは
+            # Service Role 以外に 403 を返すため、-f だと成功と見なせない。
+            curl -s -o /dev/null "http://127.0.0.1:54321/functions/v1/matchmaker" && break
+            sleep 2
+          done
+
+      - name: E2E Test (Playwright)
+        run: bun run test:e2e
+        env:
+          VITE_SUPABASE_URL: http://127.0.0.1:54321
+          VITE_SUPABASE_ANON_KEY: ${{ env.ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ env.SERVICE_ROLE_KEY }}
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

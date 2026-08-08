@@ -12,6 +12,9 @@ build/
 
 # テスト・カバレッジ
 coverage/
+playwright-report/
+test-results/
+.playwright/
 
 # OS/エディタ
 .DS_Store
