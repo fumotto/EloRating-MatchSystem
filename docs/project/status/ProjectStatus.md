@@ -2,10 +2,10 @@
 
 # Project Status
 
-Version: 1.3
+Version: 1.4
 Status: Active
 
-Last Updated: 2026-08-08
+Last Updated: 2026-08-10
 
 ---
 
@@ -87,6 +87,9 @@ Last Updated: 2026-08-08
 1. **人手作業（5〜7）** Supabase クラウドプロジェクトの作成、Vault へのシークレット登録、
    GitHub Pages 有効化と Variables / Secrets の登録。手順は `SetupRunbook.md` が正本である
 2. **M5** 上記の完了後に `deploy.yml` を手動実行して公開し、本番で縦貫通を確認する
+3. **Issue #3** Vault 登録後、自動解決が実際に動いていることを確認する。
+   Cron の成功記録では判定できない（`RiskManagement.md` 6.1.1）。
+   `scripts/health-check.sql` の `overdue_report` / `overdue_approve` が増え続けないことで判定する
 
 `SetupRunbook.md` の作業1〜4は 2026-08-08 に完了した。作業5〜7は未着手である。
 
