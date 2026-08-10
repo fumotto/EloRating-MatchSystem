@@ -30,7 +30,7 @@ jobs:
     needs: verify
     if: ${{ !inputs.skip_backend }}
     runs-on: ubuntu-latest
-    environment: production
+    environment: staging
 
     steps:
       - uses: actions/checkout@v4
@@ -66,7 +66,7 @@ jobs:
     needs: [verify, backend]
     if: ${{ always() && needs.verify.result == 'success' && needs.backend.result != 'failure' }}
     runs-on: ubuntu-latest
-    environment: production
+    environment: staging
 
     permissions:
       contents: read
