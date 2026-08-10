@@ -11,6 +11,11 @@ on:
   # Deploy ワークフローから呼び出す（9章の手順1）。
   # 公開前に PR と同じ検証を通すため、検証を二重に定義しない。
   workflow_call:
+  # 夜間定期実行（JST 10:00 / UTC 01:00）。
+  # 外部依存（Supabase CLI・Deno・Playwright のイメージ）は日々更新されるため、
+  # PRが無い日でも壊れていないことを確かめる。
+  schedule:
+    - cron: "0 1 * * *"
 
 # 同一ブランチの古い実行は打ち切る。
 concurrency:
@@ -18,6 +23,39 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # 秘密情報と一時ファイルの混入を防ぐ（11_Deployment.md 14章）。
+  # ★verify とは独立させる。重い検証の後ろに置くと、混入に気付くのが遅れる。
+  secrets-guard:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # gitleaks は履歴を走査する。浅いクローンでは過去のコミットを見られない。
+          fetch-depth: 0
+
+      # 追跡してはならないファイルが混入していないか、名前で確かめる。
+      # gitleaks は「値」を見るが、こちらは「そのファイルが存在すること自体」を弾く。
+      - name: Check for tracked secrets and temporary files
+        run: |
+          # .env.example は値が空のテンプレートであり、追跡してよい唯一の .env 系である。
+          tracked=$(git ls-files \
+            | grep -E '(^|/)\.env($|\.)|(^|/)supabase/\.(temp|branches)/|(^|/)\.env\.ci$' \
+            | grep -v '^\.env\.example$' || true)
+          if [ -n "$tracked" ]; then
+            echo "::error::追跡してはならないファイルがコミットされている:"
+            echo "$tracked"
+            exit 1
+          fi
+          echo "追跡対象に秘密情報・一時ファイルは無い"
+
+      # 値そのものの検出。履歴全体を対象にする。
+      - name: Scan for secrets (gitleaks)
+        run: |
+          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.24.3 \
+            detect --source=/repo --redact --no-banner \
+            --config=/repo/.gitleaks.toml
+
   verify:
     runs-on: ubuntu-latest
 
