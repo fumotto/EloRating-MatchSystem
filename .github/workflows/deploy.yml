@@ -47,6 +47,27 @@ jobs:
           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
 
+      # 適用前のスキーマを控える（11_Deployment.md 12章）。
+      #
+      # down migration は作らない方針であるため（10.2）、復旧は forward fix で行う。
+      # そのとき「適用前がどうだったか」が要るので、差分の基準としてここで保存する。
+      #
+      # ★データはダンプしない。GitHub の成果物は組織内で広く参照でき、
+      #   本番の個人情報をそこへ置くのは漏洩経路を自ら作ることになる。
+      #   データの復旧は Supabase 側のバックアップ／PITR を使う（SetupRunbook 10章）。
+      - name: Capture pre-migration schema
+        run: supabase db dump --linked -f pre-migration-schema.sql
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+
+      - name: Upload pre-migration schema
+        uses: actions/upload-artifact@v4
+        with:
+          name: pre-migration-schema-${{ github.run_id }}
+          path: pre-migration-schema.sql
+          retention-days: 30
+
       # ★追加方式である（10.1）。適用済みの Migration を編集してはならない。
       #   down migration は作らない。打ち消す Migration を足して復旧する（10.2）。
       - name: Apply migrations
@@ -59,6 +80,20 @@ jobs:
         run: supabase functions deploy
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      # 適用直後の健全性確認（11_Deployment.md 13章）。ここで落ちれば公開へ進まない。
+      #
+      # 接続文字列は Secret で与える。未登録なら飛ばす。
+      # 「確認したつもり」で通過させないよう、飛ばしたことを明示的に警告へ出す。
+      - name: Post-migration health check
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "::warning::SUPABASE_DB_URL が未登録のため健全性確認を飛ばした（SetupRunbook 9.1）"
+            exit 0
+          fi
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f scripts/health-check.sql
 
   frontend:
     # ★backend の後に置く。skip_backend のときも always() で到達させるが、

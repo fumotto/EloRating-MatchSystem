@@ -2,10 +2,10 @@
 
 # Setup Runbook
 
-Version: 1.2
+Version: 1.3
 Status: Active
 
-Last Updated: 2026-08-08
+Last Updated: 2026-08-10
 
 ---
 
@@ -358,8 +358,12 @@ GitHub Pages はサブパス（`https://＜user＞.github.io/EloRating-MatchSyst
 | 名前                      | 種別     | 値                              |
 | ----------------------- | ------ | ------------------------------ |
 | `SUPABASE_ACCESS_TOKEN` | Secret | Supabase のアクセストークン（アカウント設定で発行） |
-| `SUPABASE_PROJECT_REF`  | Secret | 本番プロジェクトの project-ref          |
-| `SUPABASE_DB_PASSWORD`  | Secret | 本番プロジェクトのDBパスワード               |
+| `SUPABASE_PROJECT_REF`  | Secret | 対象プロジェクトの project-ref          |
+| `SUPABASE_DB_PASSWORD`  | Secret | 対象プロジェクトのDBパスワード               |
+| `SUPABASE_DB_URL`       | Secret | Connection Pooler の接続文字列。デプロイ後の健全性確認に使う |
+
+`SUPABASE_DB_URL` を登録しないと健全性確認（`scripts/health-check.sql`）は飛ばされる。
+飛ばした場合はワークフローに警告が出るので、緑になっていても確認したことにはならない。
 
 `production` という名前の Environment を作り、そこへ登録する。deploy.yml が参照する。
 
@@ -372,7 +376,74 @@ deploy.yml は **backend → frontend の順に依存させてある**（`11_Dep
 
 ---
 
-# 10. 困ったときの確認先
+# 10. 障害対応
+
+本章は事故が起きてから読む。手順を先に決めておくのは、事故の最中に判断させないためである。
+
+## 10.1 バックアップの有効化（作業5と併せて実施する）
+
+Supabase ダッシュボードの **Database → Backups** で自動バックアップを有効にする。
+PITR（Point in Time Recovery）が使えるプランであれば有効化する。
+
+**これが本番データの唯一の復旧手段である。** CI が保存するのはスキーマだけであり、
+データは含めない（`11_Deployment.md` 12.2）。
+
+## 10.2 復元の手順
+
+1. ダッシュボードの **Backups** から復元時点を選ぶ
+2. 復元は**新しいプロジェクトへ行い**、現行プロジェクトを直接上書きしない
+3. 復元先で `scripts/health-check.sql` を実行し、スキーマと Cron を確認する
+4. 問題なければアプリの接続先（`VITE_SUPABASE_URL` / Secrets）を切り替える
+
+上書き復元を避けるのは、復元そのものが失敗した場合に戻る先を失うためである。
+
+**復旧演習を一度実施すること。** 手順が実際に通ることを、事故の前に確かめておく。
+
+## 10.3 Migration のロールバック
+
+**down migration は存在しない**（`11_Deployment.md` 10.2）。復旧は次の順で判断する。
+
+| 状況 | 対応 |
+| -- | -- |
+| スキーマの誤りだけでデータは無事 | 打ち消す Migration を追加する（forward fix） |
+| データが壊れた | 10.2 のバックアップから復元する |
+| Edge Function の不具合のみ | 直前のコミットへ戻して `functions deploy` をやり直す |
+
+適用前のスキーマは `deploy.yml` が成果物（`pre-migration-schema-<run_id>`）として
+30日保持している。forward fix の差分はこれを基準に作る。
+
+## 10.4 鍵のローテーション
+
+鍵が漏れた疑いがある場合、または定期見直しの際に実施する。
+
+| 鍵 | 再発行する場所 | 反映先 |
+| -- | -------- | --- |
+| Service Role Key | Supabase ダッシュボード → Settings → API | Vault（`service_role_key`）、GitHub Secrets |
+| Anon Key | 同上 | GitHub Variables（`VITE_SUPABASE_ANON_KEY`）、再ビルドが必要 |
+| Discord Client Secret | Discord Developer Portal → OAuth2 → Reset Secret | Supabase Auth のプロバイダ設定 |
+| DB パスワード | Supabase ダッシュボード → Settings → Database | GitHub Secrets、Vault の接続文字列 |
+
+**Anon Key の変更にはフロントエンドの再ビルドが要る。** ビルド成果物へ埋め込まれるためである
+（`11_Deployment.md` 4.1）。鍵を差し替えたら `deploy.yml` を再実行する。
+
+ローテーション後は `scripts/health-check.sql` を実行し、Cron が動いていることを確認する。
+Vault の値が古いままだと、Cron は成功と記録されながら何も呼ばなくなる（13.2）。
+
+## 10.5 秘密情報が Git へ入った場合
+
+**現時点で該当はない。** `.env` は追跡されておらず、履歴にも存在しない。
+CI の `secrets-guard` ジョブが、ファイル名と値の両面から混入を検出する。
+
+万一入った場合は次の順で対応する。**履歴の書き換えより先に鍵を無効化する。**
+履歴を消しても、既に取得された鍵は無効にならない。
+
+1. 10.4 の手順で該当する鍵をすべて再発行する
+2. `git filter-repo` などで履歴から除去し、強制 push する
+3. リポジトリを clone している全員へ、clone をやり直すよう周知する
+
+---
+
+# 11. 困ったときの確認先
 
 | 症状                                   | 確認先                                |
 | ------------------------------------ | ---------------------------------- |
@@ -384,10 +455,12 @@ deploy.yml は **backend → frontend の順に依存させてある**（`11_Dep
 | `/ranking` へ直リンクすると404               | `dist/404.html`。`bun run build` が生成する（`11_Deployment.md` 7章） |
 | 環境変数の意味が分からない                        | `11_Deployment.md` 4章              |
 | なぜその設計なのか                            | `docs/design/15_DecisionLog.md`     |
+| 試合が確定しない・待機が滞留する                     | `scripts/health-check.sql` を実行する（`11_Deployment.md` 13.2） |
+| Cron は成功しているのに何も起きない                  | Vault の登録（8.1）。未登録だと呼び出しが行われない |
 
 ---
 
-# 11. 更新ルール
+# 12. 更新ルール
 
 本書は手順の正本である。外部サービスの画面変更などで手順が実態と合わなくなった場合は本書を修正する。
 

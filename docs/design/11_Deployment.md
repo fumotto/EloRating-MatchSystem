@@ -358,11 +358,28 @@ SELECT id, email, raw_app_meta_data ->> 'role' AS role
 
 # 12. バックアップ
 
-| 対象         | 方法               |
-| ---------- | ---------------- |
-| PostgreSQL | Supabase Backup  |
+| 対象         | 方法                                   |
+| ---------- | ------------------------------------ |
+| PostgreSQL（データ） | Supabase Backup（ダッシュボードで有効化する） |
+| PostgreSQL（スキーマ） | デプロイ前に CI が取得し、成果物として30日保持する |
 
 `audit_logs` は追記専用であり削除しないため、保持期間の監視対象とする。
+
+## 12.1 デプロイ前のスキーマ取得
+
+`deploy.yml` は `supabase db push` の前に `supabase db dump` でスキーマを保存する。
+
+down migration を作らない方針（10.2）のため復旧は forward fix で行うが、そのとき
+「適用前がどうだったか」が要る。差分の基準として残す。
+
+## 12.2 データをCIの成果物に置かない
+
+**本番データのダンプを GitHub の成果物へ置いてはならない。**
+
+成果物はリポジトリを参照できる者が誰でも取得でき、保持期間中は残り続ける。
+個人情報を含むダンプをそこへ置くことは、漏洩経路を自ら作ることに等しい。
+
+データの復旧は Supabase 側のバックアップ／PITR を使う。手順は `SetupRunbook.md` 10章にある。
 
 ---
 
@@ -386,6 +403,33 @@ SELECT id, email, raw_app_meta_data ->> 'role' AS role
 | `DRAWN` の発生率                    | 急増した場合、期限設定が短すぎる可能性        |
 
 自動解決バッチが停止すると、試合が確定せず両チームが次の試合に参加できなくなるため、最優先で監視する。
+
+## 13.2 健全性確認スクリプト
+
+`scripts/health-check.sql` が上記の項目を機械で確かめられる形にしてある。
+デプロイ直後に `deploy.yml` が実行し、運用中は手動でも実行する。
+
+```bash
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f scripts/health-check.sql
+```
+
+| 確認 | 失敗時の扱い |
+| -- | ------ |
+| 9テーブル・4ビューの存在 | 異常終了（Migration の適用漏れ） |
+| `system_settings` の初期行 | 異常終了（Seed の適用漏れ） |
+| 全テーブルで RLS が有効 | 異常終了 |
+| Cron ジョブ4件の登録 | 異常終了 |
+| Vault の登録 | 警告のみ（ローカルでは未登録が正常） |
+| 滞留・期限超過・接続数 | 表示のみ |
+
+### ★Cron の「成功」を信用してはならない
+
+`cron.job_run_details` の `status = succeeded` は **SQL が実行できたこと**しか意味しない。
+`invoke_edge_function` は Vault が未登録なら何もせずに戻るため（0015_cron.sql）、
+呼び出しが一度も起きていなくてもジョブは成功と記録される。
+
+したがって Cron の成否ではなく、**期限を過ぎたまま残る試合の件数**で自動解決の生死を判断する。
+本スクリプトが `overdue_report` / `overdue_approve` を出しているのはこのためである。
 
 ---
 

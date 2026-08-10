@@ -1,0 +1,28 @@
+# gitleaks 設定（11_Deployment.md 14章「Secret を Git へコミットしない」の自動検出）。
+#
+# 既定のルールセットを土台にし、本プロジェクト固有の除外だけを足す。
+# ルールを自前で書き直すと、既定に追随できず検出漏れの原因になる。
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "本プロジェクトで検出対象から外すもの"
+
+paths = [
+  # 値が空のテンプレート。変数名しか書かれていない。
+  '''^\.env\.example$''',
+  # 設計書・手順書。鍵の「置き場所」を説明する記述が含まれるが、値は含まない。
+  '''^docs/''',
+  # 本ファイル自身。
+  '''^\.gitleaks\.toml$''',
+]
+
+regexes = [
+  # ★Supabase Local の既定鍵。Supabase CLI が全利用者へ同じ値を配る公開デモ用JWTであり、
+  #   秘密ではない。ローカル・CI でのみ使われ、クラウド環境には存在しない。
+  #   これを除外しないと、テストやワークフローの説明を書くたびに誤検出する。
+  '''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIi''',
+  # 同じくローカル既定のDBパスワード（postgres）。
+  '''postgresql://postgres:postgres@''',
+]
