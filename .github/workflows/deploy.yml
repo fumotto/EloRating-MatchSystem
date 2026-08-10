@@ -101,7 +101,9 @@ jobs:
     needs: [verify, backend]
     if: ${{ always() && needs.verify.result == 'success' && needs.backend.result != 'failure' }}
     runs-on: ubuntu-latest
-    environment: staging
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
 
     permissions:
       contents: read

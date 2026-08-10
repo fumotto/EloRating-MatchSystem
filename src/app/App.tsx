@@ -12,6 +12,7 @@ import { useEnsureProfile } from "../features/profile/hooks/useEnsureProfile";
 const router = createRouter({
   routeTree,
   context: { session: null },
+  basepath: import.meta.env.BASE_URL,
 });
 
 declare module "@tanstack/react-router" {
