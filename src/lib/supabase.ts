@@ -18,8 +18,13 @@ if (!url || !anonKey) {
 export const AUTH_STORAGE_KEY = "elorating-auth";
 
 // Anon Key は公開される前提の鍵である。Service Role Key を設定してはならない（11_Deployment.md 4.1）。
+//
+// flowType は PKCE を明示する。SDK の既定は implicit であり、
+// ログイン後のURLに `#access_token=...` としてトークン本体が乗る。
+// フラグメントはブラウザ履歴・拡張機能・スクリーンショットから読めるため、
+// 短命な認可コードだけを載せる PKCE を使う。
 export const supabase = createClient(url, anonKey, {
-  auth: { storageKey: AUTH_STORAGE_KEY },
+  auth: { storageKey: AUTH_STORAGE_KEY, flowType: "pkce" },
 });
 
 // E2E（Playwright）がログイン状態を作るための口。
