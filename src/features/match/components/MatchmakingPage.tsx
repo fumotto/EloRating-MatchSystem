@@ -1,6 +1,8 @@
 // Page（05_Frontend.md 3.2）。マッチング待機画面。
 import { useRouteContext } from "@tanstack/react-router";
 import { useMyTeam } from "../../team/hooks/useMyTeam";
+import { useTeamDetail } from "../../team/hooks/useTeamDetail";
+import { useSystemSettings } from "../../settings/hooks/useSystemSettings";
 import { useQueueStatus } from "../hooks/useQueueStatus";
 import { useQueueMatch } from "../hooks/useQueueMatch";
 import { useCancelQueue } from "../hooks/useCancelQueue";
@@ -21,6 +23,19 @@ export function MatchmakingPage() {
   const myActiveMatch = activeMatches?.find(
     (m) => m.teamAId === team?.id || m.teamBId === team?.id,
   );
+
+  // 必須人数に満たなければ待機できない（QUEUE-005 / 09 4.1）。必須人数は上限と等しい。
+  // ★判定の正本はバックエンドである。ここでの表示は、押せば必ず失敗するボタンを
+  //   出さないための案内にすぎない。人数はいつでも変わりうるため、
+  //   画面が通したからといって成功は保証されない。
+  const { data: teamDetail } = useTeamDetail(team?.id);
+  const { data: settings } = useSystemSettings();
+  const requiredMembers = settings?.team_max_members;
+  // 不足しているときだけ値を持つ。真偽値にすると表示側で null 判定が失われる。
+  const shortfall =
+    teamDetail != null && requiredMembers !== undefined && teamDetail.memberCount < requiredMembers
+      ? { current: teamDetail.memberCount, required: requiredMembers }
+      : null;
 
   if (isPending) return <p className="text-sm text-slate-500">読み込み中…</p>;
 
@@ -61,6 +76,11 @@ export function MatchmakingPage() {
             {cancelQueue.isPending ? "処理中…" : "待機をキャンセル"}
           </button>
         </div>
+      ) : shortfall ? (
+        <EmptyState
+          title="チーム人数が足りません"
+          description={`マッチングには${shortfall.required}人必要です（現在 ${shortfall.current}人）。メンバーを招待してください。`}
+        />
       ) : (
         <div className="space-y-3">
           <p className="text-sm text-slate-500 dark:text-slate-400">

@@ -24,13 +24,16 @@ const leaderVerifier = () =>
     user_metadata: { provider_id: "discord-user-1" },
   });
 
-// 既定は「LEADER・BANなし・進行中の試合なし・未登録・相手なし」。
+// 既定は「LEADER・BANなし・進行中の試合なし・未登録・必須人数を満たす・相手なし」。
 const okStubs = (overrides: QueryStub[] = []): QueryStub[] => [
   ...overrides,
   ["SELECT role FROM team_members", [{ role: "LEADER" }]],
   ["SELECT is_banned FROM teams", [{ is_banned: false }]],
   ["FROM matches", []],
   ["SELECT team_id FROM matching_queue", []],
+  // 必須人数は team_max_members と等しい（09 4.1）。既定は定員ちょうど。
+  ["SELECT team_max_members FROM system_settings", [{ team_max_members: 3 }]],
+  ["SELECT COUNT(*)::int AS count FROM team_members", [{ count: 3 }]],
   ["INSERT INTO matching_queue", [{ queued_at: new Date("2026-08-08T10:00:00Z") }]],
   ["FROM matching_queue q", []],
   ["SELECT match_rating_range, report_timeout_minutes", [
@@ -159,6 +162,48 @@ describe("queue-match", () => {
       assertEquals(res.status, 409);
       assertEquals((await res.json()).error.code, "QUEUE-001");
       assertEquals(db.find("INSERT INTO matching_queue"), undefined);
+    } finally {
+      resetJwtVerifier();
+      resetDbPool();
+    }
+  });
+
+  it("rejects queueing when the team is short of the required size", async () => {
+    // 必須人数は team_max_members と等しい（09 4.1）。定員3に対し2名。
+    setJwtVerifier(leaderVerifier);
+    const db = createMockDb(
+      okStubs([["SELECT COUNT(*)::int AS count FROM team_members", [{ count: 2 }]]]),
+    );
+    setDbPool(db.pool as never);
+
+    try {
+      const res = await post({ teamId: "team-1" });
+      assertEquals(res.status, 409);
+      assertEquals((await res.json()).error.code, "QUEUE-005");
+      // 待機列へ入れてはならない。
+      assertEquals(db.find("INSERT INTO matching_queue"), undefined);
+      assertEquals(db.rolledBack(), true);
+    } finally {
+      resetJwtVerifier();
+      resetDbPool();
+    }
+  });
+
+  it("allows queueing when the team is exactly at the required size", async () => {
+    // 境界値。定員ちょうどは通す（09 4.1）。
+    setJwtVerifier(leaderVerifier);
+    const db = createMockDb(
+      okStubs([
+        ["SELECT team_max_members FROM system_settings", [{ team_max_members: 5 }]],
+        ["SELECT COUNT(*)::int AS count FROM team_members", [{ count: 5 }]],
+      ]),
+    );
+    setDbPool(db.pool as never);
+
+    try {
+      const res = await post({ teamId: "team-1" });
+      assertEquals(res.status, 200);
+      assertEquals(db.find("INSERT INTO matching_queue") !== undefined, true);
     } finally {
       resetJwtVerifier();
       resetDbPool();

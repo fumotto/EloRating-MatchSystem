@@ -69,6 +69,31 @@ export async function handler(req: Request): Promise<Response> {
         throw businessError("QUEUE-001", "Already queued.", 409);
       }
 
+      // 必須人数に満たないチームは待機できない（09 4章 / QUEUE-005）。
+      //
+      // ★必須人数は system_settings.team_max_members と等しい。専用の列は設けない。
+      //   人数の異なるチーム同士が対戦しないことが目的であり、上限と必須が一致していれば
+      //   待機列に入るチームはすべて同数になる。
+      //
+      // ★ここで数え直す。招待の受諾や脱退は待機登録と独立に起きるため、
+      //   画面が表示した時点の人数を信用してはならない。
+      const settings = await tx.queryObject<{ team_max_members: number }>(
+        `SELECT team_max_members FROM system_settings LIMIT 1`,
+      );
+
+      if (settings.rows.length === 0) {
+        throw systemError("SYSTEM-001", "System settings not found.");
+      }
+
+      const memberCount = await tx.queryObject<{ count: number }>(
+        `SELECT COUNT(*)::int AS count FROM team_members WHERE team_id = $1`,
+        [teamId],
+      );
+
+      if (memberCount.rows[0].count < settings.rows[0].team_max_members) {
+        throw businessError("QUEUE-005", "Team does not have enough members.", 409);
+      }
+
       const queued = await tx.queryObject<{ queued_at: Date }>(
         `INSERT INTO matching_queue (team_id) VALUES ($1) RETURNING queued_at`,
         [teamId],
