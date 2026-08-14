@@ -35,11 +35,11 @@ Storage はMVPでは使用しない。
 
 # 3. 環境
 
-| 環境          | フロントエンド                     | Supabaseプロジェクト        | 用途        |
+| 環境 | フロントエンド | Supabaseプロジェクト | 用途 |
 | ----------- | --------------------------- | --------------------- | --------- |
-| Local       | Vite Dev Server（localhost）  | Supabase Local（Docker） | ローカル開発・テスト |
-| Staging     | GitHub Pages（`staging` ブランチ） | Staging用プロジェクト         | 結合確認      |
-| Production  | GitHub Pages（`main` ブランチ）   | 本番プロジェクト              | 本番        |
+| Local | Vite Dev Server（localhost） | Supabase Local（Docker） | ローカル開発・テスト |
+| Staging | GitHub Pages（`staging` ブランチ） | Staging用プロジェクト | 結合確認 |
+| Production | GitHub Pages（`main` ブランチ） | 本番プロジェクト | 本番 |
 
 Supabase プロジェクトは環境ごとに分離する。同一プロジェクトを複数環境で共有してはならない。
 
@@ -51,11 +51,11 @@ GitHub Pages は1リポジトリにつき1サイトであるため、Staging は
 
 ## 4.1 フロントエンド（ビルド時に埋め込まれる）
 
-| 変数                     | 内容           |
+| 変数 | 内容 |
 | ---------------------- | ------------ |
-| VITE_SUPABASE_URL      | Supabase URL |
-| VITE_SUPABASE_ANON_KEY | Anon Key     |
-| VITE_BASE_PATH         | 配信ベースパス      |
+| VITE_SUPABASE_URL | Supabase URL |
+| VITE_SUPABASE_ANON_KEY | Anon Key |
+| VITE_BASE_PATH | 配信ベースパス |
 
 `VITE_` 接頭辞の変数はビルド成果物に含まれ、公開される。**秘密情報を設定してはならない。**
 
@@ -63,13 +63,13 @@ GitHub Pages は1リポジトリにつき1サイトであるため、Staging は
 
 ## 4.2 バックエンド（Edge Functions）
 
-| 変数                        | 内容                                    |
+| 変数 | 内容 |
 | ------------------------- | ------------------------------------- |
-| SUPABASE_URL              | Project URL                           |
-| SUPABASE_SERVICE_ROLE_KEY | Service Role Key                      |
-| **SUPABASE_DB_URL**       | Connection Pooler 経由のDB接続文字列          |
-| AUTH_PROVIDER_CLIENT_ID   | 外部OAuthプロバイダのクライアントID                 |
-| AUTH_PROVIDER_SECRET      | 外部OAuthプロバイダのシークレット                   |
+| SUPABASE_URL | Project URL |
+| SUPABASE_SERVICE_ROLE_KEY | Service Role Key |
+| **SUPABASE_DB_URL** | Connection Pooler 経由のDB接続文字列 |
+| AUTH_PROVIDER_CLIENT_ID | 外部OAuthプロバイダのクライアントID |
+| AUTH_PROVIDER_SECRET | 外部OAuthプロバイダのシークレット |
 
 `SUPABASE_DB_URL` は、Edge Functions がPostgreSQLへ直接接続してトランザクションを制御するために必要である（ADR-016）。
 
@@ -83,11 +83,11 @@ GitHub Pages は1リポジトリにつき1サイトであるため、Staging は
 
 Edge Functions は Connection Pooler（Supavisor）経由で接続する。
 
-| 項目            | 設定                                    |
+| 項目 | 設定 |
 | ------------- | ------------------------------------- |
-| モード           | Transaction mode                      |
-| Prepared Statement | 無効化する                                 |
-| 接続数           | Edge Function の同時実行数に合わせて上限を設定する      |
+| モード | Transaction mode |
+| Prepared Statement | 無効化する |
+| 接続数 | Edge Function の同時実行数に合わせて上限を設定する |
 
 Transaction mode の Pooler では prepared statement がセッションをまたいで再利用できないため、クライアントライブラリの設定で無効化する。
 
@@ -119,6 +119,33 @@ GitHub Pages がサブパス（`https://<user>.github.io/<repo>/`）で配信さ
 ```bash
 supabase functions deploy
 ```
+
+### CORS とゲートウェイのJWT検証
+
+フロントエンドは GitHub Pagesから Supabase のドメインへ呼び出すため、
+すべてがクロスオリジンである。ブラウザから直接呼ぶ Function には次の2つを**対で**入れる。
+片方だけでは動かない。
+
+| 対応 | 場所 | 目的 |
+| --- | --- | --- |
+| `verify_jwt = false` | `supabase/config.toml` の `[functions.<name>]` | プリフライトを関数へ到達させる |
+| `withCors(handler)` | `supabase/functions/<name>/index.ts` | 応答にCORSヘッダを付ける |
+
+**なぜ `verify_jwt = false` が要るか。** CORS プリフライト（`OPTIONS`）は仕様上 `Authorization`
+ヘッダを持たない。ゲートウェイのJWT検証が有効だと、プリフライトは関数へ到達する前に401で拒否され、
+CORSヘッダも付かない。ブラウザは本リクエストを送らずに失敗し、画面には
+`No 'Access-Control-Allow-Origin' header is present` としか出ない。原因がJWT検証にあることは
+このメッセージからは読み取れない。
+
+**認可は失われない。** 各 Function は冒頭で `verifyJwt` を呼び、未認証には `AUTH-001` / 401 を返す
+（`_shared/auth.ts`）。検証の主体がゲートウェイから関数自身へ移るだけである。
+`verify_jwt = false` にする前に、その Function が自前の認可チェックを持つことを必ず確認する。
+
+許可 Origin は `_shared/cors.ts` の既定値に置き、環境ごとに変える場合は Secret `ALLOWED_ORIGINS`
+（カンマ区切り）で上書きする。受け取った `Origin` をそのまま反射してはならない。
+
+内部処理用 Function（`matchmaker` / `auto-resolve-matches` / `cleanup-*`）はブラウザから呼ばれない。
+Service Role で pg_cron から呼ばれるため、CORS を適用せず `verify_jwt` も既定のままにする。
 
 ## Migration
 
@@ -257,12 +284,12 @@ Project Constitution 第18条の品質ゲートを満たすため、Integration 
 
 ## 11.3 テスト実行環境
 
-| テスト             | 実行環境                     |
+| テスト | 実行環境 |
 | --------------- | ------------------------ |
-| Unit / Frontend | Bun ＋ Vitest             |
-| Integration     | Deno ＋ Supabase Local    |
-| Database        | pgTAP ＋ Supabase Local   |
-| E2E             | Playwright ＋ Supabase Local |
+| Unit / Frontend | Bun ＋ Vitest |
+| Integration | Deno ＋ Supabase Local |
+| Database | pgTAP ＋ Supabase Local |
+| E2E | Playwright ＋ Supabase Local |
 
 CI では Supabase Local（Docker）を起動して実行する。本番環境に対してテストを実行してはならない。
 
@@ -270,16 +297,16 @@ CI では Supabase Local（Docker）を起動して実行する。本番環境�
 
 パッケージ管理は Bun に一本化してある（ADR-025）。`bun.lock` が正本であり `package-lock.json` は存在しない。
 
-| スクリプト                     | 内容                                          |
+| スクリプト | 内容 |
 | ------------------------- | ------------------------------------------- |
-| `bun run dev`             | Vite 開発サーバー                                 |
-| `bun run build`           | `vite build` ＋ `404.html` の生成               |
-| `bun test` / `bun run test` | `test:unit` → `test:integration` を順に実行する   |
-| `bun run test:unit`       | `vitest run`（`tests/unit/` と `src/**/*.test.tsx`） |
-| `bun run test:integration` | `deno test`（`tests/integration/` のみ）        |
-| `bun run typecheck`       | `tsc --noEmit`（Node側）＋ `deno check`（Deno側）  |
-| `bun run lint`            | `oxlint`                                    |
-| `bun run format:check`    | `oxfmt --check`                             |
+| `bun run dev` | Vite 開発サーバー |
+| `bun run build` | `vite build` ＋ `404.html` の生成 |
+| `bun test` / `bun run test` | `test:unit` → `test:integration` を順に実行する |
+| `bun run test:unit` | `vitest run`（`tests/unit/` と `src/**/*.test.tsx`） |
+| `bun run test:integration` | `deno test`（`tests/integration/` のみ） |
+| `bun run typecheck` | `tsc --noEmit`（Node側）＋ `deno check`（Deno側） |
+| `bun run lint` | `oxlint` |
+| `bun run format:check` | `oxfmt --check` |
 
 型検査が2本に分かれるのは、`supabase/functions/**` が Deno コード（`Deno` グローバル、`https:` の import）であり Node の解決規則では扱えないためである。`tsconfig.json` の `include` は Node 側（`src/`・`tests/unit/`）のみを対象とし、Deno 側は `deno check` が担う。**どちらか一方だけでは全コードを検査できない。**
 
@@ -291,11 +318,11 @@ CI では Supabase Local（Docker）を起動して実行する。本番環境�
 
 11.1 の順序のうち予約状態だったステップは、S5 / S6 でテストを追加したためすべて有効化済みである。
 
-| ステップ                    | 状態     | 備考                                     |
+| ステップ | 状態 | 備考 |
 | ----------------------- | ------ | -------------------------------------- |
-| Supabase Local 起動・Migration 適用 | 有効  | `supabase start` ＋ `supabase db reset`  |
-| Database Test（pgTAP）    | 有効     | `supabase/tests/database/`（制約・RLS）      |
-| E2E Test（Playwright）    | 有効     | `tests/e2e/`。Edge Functions を起動してから実行する |
+| Supabase Local 起動・Migration 適用 | 有効 | `supabase start` ＋ `supabase db reset` |
+| Database Test（pgTAP） | 有効 | `supabase/tests/database/`（制約・RLS） |
+| E2E Test（Playwright） | 有効 | `tests/e2e/`。Edge Functions を起動してから実行する |
 
 E2E は Edge Functions を実際に呼ぶため、CI では `supabase functions serve` を起動してから実行する。
 `SUPABASE_DB_URL` にはコンテナ名を使う（`127.0.0.1` はコンテナ自身を指すため DB へ届かない）。
@@ -329,10 +356,10 @@ Supabaseダッシュボードの Authentication → Users からも編集でき�
 
 **付与は即座に反映されない。** `app_metadata` はJWTへ埋め込まれるため、対象利用者のトークンが更新されるまで有効にならない。
 
-| 反映される契機     | 所要                       |
+| 反映される契機 | 所要 |
 | ----------- | ------------------------ |
-| 再ログイン       | 即時                       |
-| トークンの自動リフレッシュ | Supabaseのトークン有効期限に依存     |
+| 再ログイン | 即時 |
+| トークンの自動リフレッシュ | Supabaseのトークン有効期限に依存 |
 
 付与後は対象利用者へ再ログインを案内する。
 
@@ -358,7 +385,7 @@ SELECT id, email, raw_app_meta_data ->> 'role' AS role
 
 # 12. バックアップ
 
-| 対象         | 方法                                   |
+| 対象 | 方法 |
 | ---------- | ------------------------------------ |
 | PostgreSQL（データ） | Supabase Backup（ダッシュボードで有効化する） |
 | PostgreSQL（スキーマ） | デプロイ前に CI が取得し、成果物として30日保持する |
@@ -385,13 +412,13 @@ down migration を作らない方針（10.2）のため復旧は forward fix で
 
 # 13. 監視
 
-| 対象             | 監視内容                     |
+| 対象 | 監視内容 |
 | -------------- | ------------------------ |
-| Edge Functions | エラー率、実行時間、失敗ログ           |
-| PostgreSQL     | 接続数、スロークエリ、ディスク使用量       |
-| Authentication | 認証失敗率                    |
-| Realtime       | 接続数、送信失敗                 |
-| Cron           | `auto-resolve-matches` の実行結果 |
+| Edge Functions | エラー率、実行時間、失敗ログ |
+| PostgreSQL | 接続数、スロークエリ、ディスク使用量 |
+| Authentication | 認証失敗率 |
+| Realtime | 接続数、送信失敗 |
+| Cron | `auto-resolve-matches` の実行結果 |
 
 ## 13.1 重点監視項目
 

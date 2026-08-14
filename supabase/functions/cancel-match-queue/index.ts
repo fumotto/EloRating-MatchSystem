@@ -3,6 +3,7 @@
 import { verifyJwt } from "../_shared/auth.ts";
 import { withTransaction } from "../_shared/db.ts";
 import { ok, businessError, systemError } from "../_shared/response.ts";
+import { withCors } from "../_shared/cors.ts";
 
 interface CancelMatchQueueResponse {
   teamId: string;
@@ -61,5 +62,5 @@ export { setDbPool, resetDbPool } from "../_shared/db.ts";
 export { setJwtVerifier, resetJwtVerifier } from "../_shared/auth.ts";
 
 if (import.meta.main) {
-  Deno.serve(handler);
+  Deno.serve(withCors(handler));
 }

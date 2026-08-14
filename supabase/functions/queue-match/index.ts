@@ -5,6 +5,7 @@ import { withTransaction } from "../_shared/db.ts";
 import { runMatchmaking } from "../_shared/matchmaking.ts";
 import { broadcast } from "../_shared/realtime.ts";
 import { ok, businessError, systemError } from "../_shared/response.ts";
+import { withCors } from "../_shared/cors.ts";
 
 interface QueueMatchResponse {
   queuedAt: string;
@@ -106,5 +107,5 @@ export { setJwtVerifier, resetJwtVerifier } from "../_shared/auth.ts";
 export { setBroadcaster, resetBroadcaster } from "../_shared/realtime.ts";
 
 if (import.meta.main) {
-  Deno.serve(handler);
+  Deno.serve(withCors(handler));
 }

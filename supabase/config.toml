@@ -425,3 +425,64 @@ enabled = true
 # declarative_schema_path = "./database"
 # JSON string passed through to pg-delta SQL formatting.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":80,\"commaStyle\":\"trailing\"}"
+
+# Edge Functions ごとの設定（11_Deployment.md 6章）。
+#
+# ★verify_jwt はゲートウェイ側のJWT検証である。既定は true。
+#   ブラウザから直接呼ぶ Function ではこれを false にしなければならない。
+#   CORS プリフライト（OPTIONS）は仕様上 Authorization ヘッダを持たないため、
+#   true のままだと関数へ到達する前に401で弾かれ、CORSヘッダも付かず、
+#   ブラウザは本リクエストを送らずに失敗する。
+#
+# ★認可は失われない。各 Function が冒頭で verifyJwt を呼び、
+#   未認証には AUTH-001 / 401 を返す（_shared/auth.ts）。
+#   検証の主体がゲートウェイから関数自身へ移るだけである。
+#   併せて _shared/cors.ts の withCors で包むこと。片方だけでは直らない。
+#
+# 内部処理用（matchmaker / auto-resolve-matches / cleanup-*）はブラウザから呼ばれない。
+# Service Role で pg_cron から呼ばれるため、ここに列挙せず既定の true のままにする。
+
+[functions.accept-team-invite]
+verify_jwt = false
+
+[functions.admin-ban-team]
+verify_jwt = false
+
+[functions.admin-reset-ratings]
+verify_jwt = false
+
+[functions.admin-unban-team]
+verify_jwt = false
+
+[functions.admin-update-system-settings]
+verify_jwt = false
+
+[functions.approve-match]
+verify_jwt = false
+
+[functions.cancel-match-queue]
+verify_jwt = false
+
+[functions.create-team]
+verify_jwt = false
+
+[functions.create-team-invite]
+verify_jwt = false
+
+[functions.ensure-profile]
+verify_jwt = false
+
+[functions.leave-team]
+verify_jwt = false
+
+[functions.queue-match]
+verify_jwt = false
+
+[functions.reject-match]
+verify_jwt = false
+
+[functions.report-match]
+verify_jwt = false
+
+[functions.transfer-leader]
+verify_jwt = false
