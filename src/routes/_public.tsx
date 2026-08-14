@@ -2,8 +2,13 @@
 //
 // ★/ranking は ADR-018 により未認証で閲覧できるため、本レイアウト配下に置く。
 //   認証済みユーザーにも同一のルートを使う。AppLayout 側に重複したランキング画面を作らない（5.2）。
-import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
+//
+// ★認証済みで公開ルートを見ている場合も AppLayout と同じ導線を出す（MainNav が分岐する）。
+//   ここだけ「ダッシュボード」への1本にすると、ランキングから設定などへ直接移動できず、
+//   利用者は一度ダッシュボードを経由させられる。
+import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { Header } from "../components/layout/Header";
+import { MainNav } from "../components/layout/MainNav";
 import { useRealtimeSubscription } from "../features/realtime/useRealtimeSubscription";
 
 function PublicLayout() {
@@ -16,15 +21,7 @@ function PublicLayout() {
   return (
     <>
       <Header>
-        {session ? (
-          <Link to="/dashboard" className="text-sm text-slate-600 dark:text-slate-300">
-            ダッシュボード
-          </Link>
-        ) : (
-          <Link to="/login" className="text-sm text-slate-600 dark:text-slate-300">
-            ログイン
-          </Link>
-        )}
+        <MainNav session={session} />
       </Header>
       <main className="mx-auto max-w-4xl px-4 py-6">
         <Outlet />

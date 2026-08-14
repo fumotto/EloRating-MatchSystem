@@ -216,11 +216,16 @@ Profile Query には管理者情報を含めない。DBとJWTの二重管理に�
 | Layout       | 責務                                          |
 | ------------ | ------------------------------------------- |
 | RootLayout   | Provider、Theme、Error Boundary、Suspense、Toast |
-| PublicLayout | 未ログイン向けヘッダー、ログイン導線                          |
+| PublicLayout | 未ログイン向けヘッダー、ログイン導線、認証済み時は AppLayout と同一のナビゲーション |
 | AppLayout    | 共通ヘッダー、ナビゲーション、通知、**Realtime購読の一括管理**       |
 | AdminLayout  | 管理画面のナビゲーション                                |
 
 Layout に業務ロジックを実装しない。
+
+ナビゲーション項目の定義は `components/layout/MainNav.tsx` に集約する。PublicLayout と AppLayout はこれを共有し、
+セッションの有無による分岐も同コンポーネントが持つ。レイアウトごとに項目を列挙してはならない。
+`/ranking` は PublicLayout 配下にあるため（5.2）、項目を二重に持つと認証済み利用者がランキングを開いた時点で
+他画面への導線を失う。
 
 ---
 
