@@ -14,7 +14,16 @@ export function useLogin() {
     setMessage(null);
     try {
       // ログイン後は Dashboard へ戻す（05_Frontend.md 7章）。
-      await authClient.signInWithOAuth(providerId, `${window.location.origin}/dashboard`);
+      //
+      // ★origin だけでは足りない。GitHub Pages はサブパスで配信されるため
+      //   `/EloRating-MatchSystem/` が落ち、Supabase の許可リストに一致しない。
+      //   一致しない redirectTo はエラーにならず Site URL へ黙って差し替えられるため、
+      //   ここを誤ると「ログインは成功するのに知らないURLへ飛ぶ」形で現れる。
+      //   BASE_URL は Vite が末尾スラッシュ付きで与える（ローカルは "/"）。
+      await authClient.signInWithOAuth(
+        providerId,
+        `${window.location.origin}${import.meta.env.BASE_URL}dashboard`,
+      );
     } catch {
       setMessage(errorMessage("AUTH-002"));
       setPendingProvider(null);
