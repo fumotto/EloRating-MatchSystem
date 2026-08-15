@@ -61,6 +61,9 @@ Playwright を使用し、実際のブラウザ操作に近い形で検証する
 | TC-E2E-019 | **申告期限切れの解散**   | 申告期限を経過（期限を短縮）  | 待機後に画面を確認          | 引き分けとして解散し、レートが変化しない          | `draws the match when nobody reports`                  |
 | TC-E2E-020 | 試合中の制限          | 進行中             | キュー登録を試行           | 登録できない                        | `blocks matchmaking while a match is in progress`      |
 | TC-E2E-021 | 解散後の再マッチング      | 直前の試合が `DRAWN`  | キュー登録              | 登録できる                         | `allows matchmaking again after a draw`                |
+| TC-E2E-022 | **必須人数未満の制限**    | 必須人数に満たないチーム     | マッチング画面を開く         | 不足の案内が出て、開始ボタンが存在しない          | `blocks matchmaking for a team below the required size` |
+
+TC-E2E-009 / 011 / 012 / 020 / 021 は、チームが必須人数（`team_max_members`）を満たしていることを前提とする（`09_MatchmakingSpecification.md` 4.1）。テストは招待経路でチームを定員まで埋めてから待機を行う。
 
 TC-E2E-018 と TC-E2E-019 は、テスト実行時間を短縮するため管理APIで期限を最小値へ変更してから実施する。
 

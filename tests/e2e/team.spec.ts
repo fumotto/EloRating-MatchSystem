@@ -2,16 +2,49 @@
 //
 // Edge Functions が起動している必要がある（supabase functions serve --env-file .env）。
 import { test, expect, createTestUser, signIn, waitForProfile, type TestUser } from "./fixtures";
+import type { Browser, Page } from "@playwright/test";
 
 // 一意なチーム名。teams.name は UNIQUE のため、実行のたびに変える必要がある。
 const teamName = (label: string) => `E2E ${label} ${Date.now().toString(36)}`;
 
-async function openApp(page: import("@playwright/test").Page, user: TestUser) {
+async function openApp(page: Page, user: TestUser) {
   await signIn(page, user);
   await page.goto("/dashboard");
   await expect(page).toHaveURL(/\/dashboard$/);
   // 先にプロフィールが確定していないと、以降の操作が外部キー違反になる。
   await waitForProfile(page, user.id);
+}
+
+// マッチング待機には必須人数を満たす必要がある（09 4.1 / QUEUE-005）。
+// 必須人数は system_settings.team_max_members と等しく、seed の既定は3である（0009 / 0014）。
+const REQUIRED_MEMBERS = 3;
+
+// チームを必須人数まで埋める。page はリーダーのものを渡す。
+//
+// ★参加は招待制のみである（ADR-013）。service_role で team_members へ直接 INSERT する
+//   近道は採らない。0013_rls.sql の GRANT は authenticated にしか与えておらず PostgREST から
+//   書けないうえ、経路を迂回すると「招待を経ずに人数が揃った」本番に存在しない状態を
+//   検証することになる。
+async function fillTeamToRequiredSize(page: Page, browser: Browser, name: string): Promise<void> {
+  // リーダーが1人目である。残りを招待で埋める。
+  for (let i = 1; i < REQUIRED_MEMBERS; i += 1) {
+    await page.goto("/team");
+    await page.getByRole("button", { name: "招待コードを発行" }).click();
+    // 平文コードは発行時の応答でしか得られない（04 9.3）。画面から読み取る。
+    const code = await page.locator("p.font-mono").first().innerText();
+
+    const member = await createTestUser(`Filler${i}`);
+    const context = await browser.newContext();
+    const memberPage = await context.newPage();
+    await openApp(memberPage, member);
+
+    await memberPage.goto("/team");
+    await memberPage.getByLabel("招待コード").fill(code);
+    await memberPage.getByRole("button", { name: "チームに参加" }).click();
+    await expect(memberPage.getByRole("heading", { name })).toBeVisible();
+
+    await context.close();
+  }
 }
 
 test.describe("team flow", () => {
@@ -77,7 +110,7 @@ test.describe("team flow", () => {
     await expect(page.getByRole("alert")).toContainText("招待が存在しません");
   });
 
-  test("keeps waiting when no opponent is available", async ({ page }) => {
+  test("keeps waiting when no opponent is available", async ({ page, browser }) => {
     // TC-E2E-011 相手が見つからないのはエラーではない（09 12章）。
     const user = await createTestUser("Waiter");
     await openApp(page, user);
@@ -87,6 +120,9 @@ test.describe("team flow", () => {
     await page.getByLabel("チーム名").fill(name);
     await page.getByRole("button", { name: "チームを作成" }).click();
     await expect(page.getByRole("heading", { name })).toBeVisible();
+
+    // 必須人数に満たないチームは待機できない（09 4.1）。
+    await fillTeamToRequiredSize(page, browser, name);
 
     await page.goto("/matchmaking");
     await page.getByRole("button", { name: "マッチングを開始" }).click();
@@ -101,7 +137,7 @@ test.describe("team flow", () => {
     await expect(page.getByRole("button", { name: "マッチングを開始" })).toBeVisible();
   });
 
-  test("cancels matchmaking", async ({ page }) => {
+  test("cancels matchmaking", async ({ page, browser }) => {
     // TC-E2E-012
     const user = await createTestUser("Canceller");
     await openApp(page, user);
@@ -112,11 +148,32 @@ test.describe("team flow", () => {
     await page.getByRole("button", { name: "チームを作成" }).click();
     await expect(page.getByRole("heading", { name })).toBeVisible();
 
+    await fillTeamToRequiredSize(page, browser, name);
+
     await page.goto("/matchmaking");
     await page.getByRole("button", { name: "マッチングを開始" }).click();
     await expect(page.getByText("対戦相手を探しています…")).toBeVisible();
 
     await page.getByRole("button", { name: "待機をキャンセル" }).click();
     await expect(page.getByRole("button", { name: "マッチングを開始" })).toBeVisible();
+  });
+
+  test("blocks matchmaking for a team below the required size", async ({ page }) => {
+    // TC-E2E-022 必須人数に満たないチームは待機できない（09 4.1 / QUEUE-005）。
+    const user = await createTestUser("Solo");
+    await openApp(page, user);
+
+    const name = teamName("Short");
+    await page.goto("/team");
+    await page.getByLabel("チーム名").fill(name);
+    await page.getByRole("button", { name: "チームを作成" }).click();
+    await expect(page.getByRole("heading", { name })).toBeVisible();
+
+    // リーダー1人だけの状態。
+    await page.goto("/matchmaking");
+
+    await expect(page.getByText("チーム人数が足りません")).toBeVisible();
+    // ★押せば必ず失敗するボタンを出してはならない。
+    await expect(page.getByRole("button", { name: "マッチングを開始" })).toBeHidden();
   });
 });
