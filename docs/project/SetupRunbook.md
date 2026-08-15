@@ -368,12 +368,25 @@ GitHub Pages はサブパス（`https://＜user＞.github.io/EloRating-MatchSyst
 | `SUPABASE_ACCESS_TOKEN` | Secret | Supabase のアクセストークン（アカウント設定で発行） |
 | `SUPABASE_PROJECT_REF`  | Secret | 対象プロジェクトの project-ref          |
 | `SUPABASE_DB_PASSWORD`  | Secret | 対象プロジェクトのDBパスワード               |
-| `SUPABASE_DB_URL`       | Secret | Connection Pooler の接続文字列。デプロイ後の健全性確認に使う |
+| `SUPABASE_DB_URL`       | Secret | Connection Pooler（**Session mode / 5432**）の接続文字列。デプロイ後の健全性確認に使う |
+
+**登録先はリポジトリ直下（Settings → Secrets and variables → Actions）とする。**
+Environment を作る必要はない。deploy.yml の `backend` は `staging`、`frontend` は
+`github-pages` を宣言しているが、いずれも Environment Secrets を定義しておらず、
+リポジトリの Secret へ解決される。
 
 `SUPABASE_DB_URL` を登録しないと健全性確認（`scripts/health-check.sql`）は飛ばされる。
 飛ばした場合はワークフローに警告が出るので、緑になっていても確認したことにはならない。
 
-`production` という名前の Environment を作り、そこへ登録する。deploy.yml が参照する。
+### ★`SUPABASE_DB_URL` は Pooler の接続文字列である
+
+`db.＜project-ref＞.supabase.co` 形式（直接接続）を登録してはならない。IPv6 でしか
+解決されず、GitHub Actions のランナーからは到達できないため
+`Network is unreachable` で失敗する。ホスト名が `.pooler.supabase.com` であることを
+確認する。
+
+Edge Functions が使う `APP_DB_POOL_URL`（Transaction mode / 6543）とは**別の値**である
+（8章 / ADR-028）。ポート番号で取り違えやすいので注意する。
 
 ## 9.2 実行順序
 
