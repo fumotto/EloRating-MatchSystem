@@ -1,4 +1,4 @@
-<!-- favicon.png（1024x1024）をベクター化したもの。
+<!-- assets/favicon-source.png（1024x1024）をベクター化したもの。
      直線と4色で構成された図形のため、トレースで元の見た目を保てる。
      ★fill-rule="evenodd" を外さないこと。白い輪郭の内側が塗り潰され、別の絵になる。 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
