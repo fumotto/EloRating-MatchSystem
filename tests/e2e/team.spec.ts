@@ -172,8 +172,27 @@ test.describe("team flow", () => {
     // リーダー1人だけの状態。
     await page.goto("/matchmaking");
 
+    const startButton = page.getByRole("button", { name: "マッチングを開始" });
+
+    // ★ボタンは最初から存在し、非活性である。案内と同時に見えていること。
+    //   消して入れ替える形にすると、人数が確定するまでの間だけ押せる状態が見える。
+    await expect(startButton).toBeVisible();
+    await expect(startButton).toBeDisabled();
     await expect(page.getByText("チーム人数が足りません")).toBeVisible();
-    // ★押せば必ず失敗するボタンを出してはならない。
-    await expect(page.getByRole("button", { name: "マッチングを開始" })).toBeHidden();
+  });
+
+  test("logs out and returns to the ranking", async ({ page }) => {
+    // TC-E2E-023 ログアウト後はヘッダーが未ログインの状態へ戻る。
+    //
+    // ★セッションを消すだけではマッチのコンテキストが古いままになり、
+    //   「ログアウト」が出続ける。App.tsx の invalidate がこれを防ぐ。
+    const user = await createTestUser("Leaver");
+    await openApp(page, user);
+
+    await page.getByRole("button", { name: "ログアウト" }).click();
+
+    await expect(page).toHaveURL(/\/ranking$/);
+    await expect(page.getByRole("link", { name: "ログイン" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "ログアウト" })).toBeHidden();
   });
 });

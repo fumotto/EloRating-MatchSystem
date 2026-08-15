@@ -25,6 +25,21 @@ function InnerApp() {
   const { session, isLoading } = useSession();
   const ensureProfile = useEnsureProfile();
 
+  // ★セッションが変わったらルータのマッチを作り直す。
+  //
+  //   RouterProvider の context を差し替えても、読み込み済みのマッチが持つ
+  //   コンテキストは再計算されない。beforeLoad はナビゲーション時にしか
+  //   評価されないためである（TanStack Router の設計）。
+  //   invalidate を呼ばないと、ログアウト後もヘッダーが旧セッションのまま
+  //   「ログアウト」を出し続ける。ガードも旧セッションで通ったままになる。
+  //
+  //   依存はトークンではなく利用者IDにする。セッションオブジェクトは
+  //   トークン更新のたびに同一性が変わるため、そのまま依存にすると
+  //   1時間ごとに全マッチを作り直すことになる。
+  useEffect(() => {
+    void router.invalidate();
+  }, [session?.user.id]);
+
   // ログイン確立後に ensure-profile を呼ぶ（05_Frontend.md 7章 / 04_BackendInterface.md 4.1）。
   useEffect(() => {
     if (!session) return;

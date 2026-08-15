@@ -23,7 +23,7 @@ interface MainNavProps {
 }
 
 export function MainNav({ session }: MainNavProps) {
-  const { logout, isPending } = useLogout();
+  const { logout, isPending, message } = useLogout();
 
   if (!session) {
     return (
@@ -62,6 +62,12 @@ export function MainNav({ session }: MainNavProps) {
       >
         {isPending ? "ログアウト中…" : "ログアウト"}
       </button>
+      {/* ログアウトに失敗した場合。黙って握り潰すと、押しても何も起きないように見える。 */}
+      {message ? (
+        <span role="alert" className="text-sm text-red-600 dark:text-red-400">
+          {message}
+        </span>
+      ) : null}
     </nav>
   );
 }

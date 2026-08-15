@@ -26,16 +26,24 @@ export function MatchmakingPage() {
 
   // 必須人数に満たなければ待機できない（QUEUE-005 / 09 4.1）。必須人数は上限と等しい。
   // ★判定の正本はバックエンドである。ここでの表示は、押せば必ず失敗するボタンを
-  //   出さないための案内にすぎない。人数はいつでも変わりうるため、
+  //   活かしておかないための案内にすぎない。人数はいつでも変わりうるため、
   //   画面が通したからといって成功は保証されない。
   const { data: teamDetail } = useTeamDetail(team?.id);
   const { data: settings } = useSystemSettings();
   const requiredMembers = settings?.team_max_members;
+  const memberCount = teamDetail?.memberCount;
+
+  // ★人数と必須人数が揃うまでは「不足していない」と見なしてはならない。
+  //   未確定のうちにボタンを活かすと、一瞬押せる状態が見えてから非活性へ変わる。
+  const isRosterLoading = memberCount === undefined || requiredMembers === undefined;
+
   // 不足しているときだけ値を持つ。真偽値にすると表示側で null 判定が失われる。
   const shortfall =
-    teamDetail != null && requiredMembers !== undefined && teamDetail.memberCount < requiredMembers
-      ? { current: teamDetail.memberCount, required: requiredMembers }
+    !isRosterLoading && memberCount < requiredMembers
+      ? { current: memberCount, required: requiredMembers }
       : null;
+
+  const canQueue = !isRosterLoading && shortfall === null;
 
   if (isPending) return <p className="text-sm text-slate-500">読み込み中…</p>;
 
@@ -76,20 +84,25 @@ export function MatchmakingPage() {
             {cancelQueue.isPending ? "処理中…" : "待機をキャンセル"}
           </button>
         </div>
-      ) : shortfall ? (
-        <EmptyState
-          title="チーム人数が足りません"
-          description={`マッチングには${shortfall.required}人必要です（現在 ${shortfall.current}人）。メンバーを招待してください。`}
-        />
       ) : (
         <div className="space-y-3">
           <p className="text-sm text-slate-500 dark:text-slate-400">
             マッチングを開始すると、レートの近いチームと自動で対戦が組まれます。
           </p>
+
+          {/* ★不足の案内とボタンは同時に出す。ボタンを消して入れ替えると、
+              人数が確定するまでの間だけボタンが見え、直後に消える形になる。 */}
+          {shortfall ? (
+            <p role="status" className="text-sm text-amber-700 dark:text-amber-500">
+              チーム人数が足りません。マッチングには{shortfall.required}人必要です（現在{" "}
+              {shortfall.current}人）。メンバーを招待してください。
+            </p>
+          ) : null}
+
           {/* 相手が見つからないのはエラーではない。matched: false で待機が続く（09 4章）。 */}
           <button
             type="button"
-            disabled={queueMatch.isPending}
+            disabled={!canQueue || queueMatch.isPending}
             onClick={() => queueMatch.mutate({ teamId: team.id })}
             className="rounded bg-indigo-600 px-4 py-2 text-sm text-white disabled:opacity-50"
           >
