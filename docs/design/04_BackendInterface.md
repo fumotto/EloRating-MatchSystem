@@ -75,7 +75,7 @@ try {
 
 * Supabase JavaScript SDK（PostgREST経由）は複数ステートメントにまたがるトランザクションを開始できない。更新系処理でSDKを使用してはならない。
 * 直接接続はRLSを迂回する。**Edge Function内での認可チェックは必須**である。
-* 接続は Connection Pooler 経由とし、環境変数 `SUPABASE_DB_URL` を使用する（`11_Deployment.md`）。
+* 接続は Connection Pooler 経由とし、環境変数 `APP_DB_POOL_URL` を使用する（`11_Deployment.md` 4.2・5.1）。`SUPABASE_DB_URL` は Supabase が自動注入する直接接続であり、予約接頭辞のため上書きできない。ローカルと CI のみ、そちらへ退避する。
 * Transaction mode の Pooler では prepared statement に制約があるため、接続設定で無効化する。
 
 ---

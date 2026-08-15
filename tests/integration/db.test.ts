@@ -95,3 +95,61 @@ describe("_shared/db", () => {
     }
   });
 });
+
+// 接続先の解決（11_Deployment.md 5.1）。
+//
+// 本番は APP_DB_POOL_URL（Pooler）を使う。SUPABASE_DB_URL は Supabase が自動注入する
+// 直接接続であり、予約接頭辞のため上書きできない。
+// ローカルと CI は --env-file で SUPABASE_DB_URL を注入するため、退避経路を壊してはならない。
+describe("_shared/db connection url", () => {
+  const POOLED = "postgresql://postgres.ref:pw@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres";
+  const DIRECT = "postgresql://postgres:pw@db.ref.supabase.co:5432/postgres";
+
+  // 環境変数はプロセス全体で共有される。テストごとに元へ戻す。
+  function withEnv(values: Record<string, string | undefined>, fn: () => void) {
+    const saved: Record<string, string | undefined> = {};
+    for (const key of Object.keys(values)) {
+      saved[key] = Deno.env.get(key);
+      const next = values[key];
+      if (next === undefined) Deno.env.delete(key);
+      else Deno.env.set(key, next);
+    }
+    try {
+      fn();
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) Deno.env.delete(key);
+        else Deno.env.set(key, value);
+      }
+      resetDbPool();
+    }
+  }
+
+  it("builds a pool from APP_DB_POOL_URL when it is set", () => {
+    withEnv({ APP_DB_POOL_URL: POOLED, SUPABASE_DB_URL: DIRECT }, () => {
+      resetDbPool();
+      assertEquals(typeof getDbPool(), "object");
+    });
+  });
+
+  it("falls back to SUPABASE_DB_URL when APP_DB_POOL_URL is absent", () => {
+    // ★この経路が CI とローカルを支えている。落とすと全 Integration / E2E が壊れる。
+    withEnv({ APP_DB_POOL_URL: undefined, SUPABASE_DB_URL: DIRECT }, () => {
+      resetDbPool();
+      assertEquals(typeof getDbPool(), "object");
+    });
+  });
+
+  it("throws when neither is set", () => {
+    withEnv({ APP_DB_POOL_URL: undefined, SUPABASE_DB_URL: undefined }, () => {
+      resetDbPool();
+      let message = "";
+      try {
+        getDbPool();
+      } catch (e) {
+        message = (e as Error).message;
+      }
+      assertEquals(message, "APP_DB_POOL_URL も SUPABASE_DB_URL も設定されていない");
+    });
+  });
+});

@@ -9,10 +9,32 @@ let dbPool: Pool | null = null;
 
 // プールはimport時ではなく初回利用時に作る。
 // トップレベルで作ると、環境変数の無いテスト環境ではimportしただけで壊れる。
+// 接続先の解決（11_Deployment.md 5.1）。
+//
+// ★本番では APP_DB_POOL_URL を使う。SUPABASE_DB_URL ではない。
+//   SUPABASE_DB_URL は Supabase が自動注入する既定値（直接接続）であり、
+//   `SUPABASE_` は予約接頭辞のため `supabase secrets set` で上書きできない。
+//   設計が要求する Connection Pooler（Supavisor / Transaction mode）へ向けるには、
+//   予約されていない名前で別に与えるしかない。
+//
+// ★Pooler を挟まないと接続数が素の PostgreSQL の上限に張り付く。
+//   下の lazy 指定の理由と同じ問題であり、あちらは緩和にすぎない。
+//
+// ローカルと CI は --env-file で SUPABASE_DB_URL を直接注入しており予約の制約を受けない。
+// 未設定時にそちらへ退避するのは、両方の経路を壊さないためである。
+function resolveDbUrl(): string {
+  const pooled = Deno.env.get("APP_DB_POOL_URL");
+  if (pooled) return pooled;
+
+  const fallback = Deno.env.get("SUPABASE_DB_URL");
+  if (fallback) return fallback;
+
+  throw new Error("APP_DB_POOL_URL も SUPABASE_DB_URL も設定されていない");
+}
+
 export function getDbPool(): Pool {
   if (dbPool) return dbPool;
-  const dbUrl = Deno.env.get("SUPABASE_DB_URL");
-  if (!dbUrl) throw new Error("SUPABASE_DB_URL is not set");
+  const dbUrl = resolveDbUrl();
   // ★第3引数の lazy を true にする。既定（false）では生成時に10本すべて接続を張る。
   //   Function ごとに別プロセスで動くため、複数のFunctionが呼ばれるだけで接続数が積み上がり、
   //   PostgreSQL の上限に達して Auth（GoTrue）まで "Database error" で落ちる。

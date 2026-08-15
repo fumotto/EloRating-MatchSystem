@@ -67,11 +67,15 @@ GitHub Pages は1リポジトリにつき1サイトであるため、Staging は
 | ------------------------- | ------------------------------------- |
 | SUPABASE_URL | Project URL |
 | SUPABASE_SERVICE_ROLE_KEY | Service Role Key |
-| **SUPABASE_DB_URL** | Connection Pooler 経由のDB接続文字列 |
+| **APP_DB_POOL_URL** | Connection Pooler 経由のDB接続文字列 |
 | AUTH_PROVIDER_CLIENT_ID | 外部OAuthプロバイダのクライアントID |
 | AUTH_PROVIDER_SECRET | 外部OAuthプロバイダのシークレット |
 
-`SUPABASE_DB_URL` は、Edge Functions がPostgreSQLへ直接接続してトランザクションを制御するために必要である（ADR-016）。
+`APP_DB_POOL_URL` は、Edge Functions がPostgreSQLへ直接接続してトランザクションを制御するために必要である（ADR-016）。
+
+**名前を `SUPABASE_DB_URL` にしてはならない。** `SUPABASE_` は Supabase の予約接頭辞であり、`supabase secrets set` が拒否する。`SUPABASE_DB_URL` は Supabase が自動注入する既定値（直接接続）として常に存在するため、これを当てにすると Pooler を経由しない接続になり、5.1 の要件を満たせない。
+
+ローカルと CI は `supabase functions serve --env-file` で環境変数を直接注入するため予約の制約を受けない。`_shared/db.ts` は `APP_DB_POOL_URL` を優先し、無ければ `SUPABASE_DB_URL` へ退避する。両方の経路を1つの実装で扱うためである。
 
 認証プロバイダ関連の変数名はプロバイダに依存しない名称とする（ADR-015）。プロバイダ確定後も変数名を変更しない。
 
@@ -90,6 +94,8 @@ Edge Functions は Connection Pooler（Supavisor）経由で接続する。
 | 接続数 | Edge Function の同時実行数に合わせて上限を設定する |
 
 Transaction mode の Pooler では prepared statement がセッションをまたいで再利用できないため、クライアントライブラリの設定で無効化する。
+
+接続文字列は `APP_DB_POOL_URL` で与える（4.2）。**Pooler を経由しないと接続数が素の PostgreSQL の上限に張り付き、上限到達時は Auth（GoTrue）まで "Database error" で巻き添えになる。** Edge Function は呼び出しごとに別プロセスで動くため、直接接続では接続が積み上がりやすい。`_shared/db.ts` の遅延生成はこれを緩和するだけであり、根本の対処は Pooler の経由である。
 
 ## 5.2 RLSの扱い
 

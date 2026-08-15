@@ -276,12 +276,20 @@ push 前に Migration の内容を確定させておくこと。
 続いて Secret を設定する。
 
 ```bash
-supabase secrets set SUPABASE_DB_URL='＜Connection Pooler の接続文字列＞'
+supabase secrets set APP_DB_POOL_URL='＜Connection Pooler の接続文字列＞'
 ```
+
+接続文字列は ダッシュボード → Project Settings → Database → Connection string → **Session pooler**（または Transaction pooler）から取得する。ホスト名が `db.＜project-ref＞.supabase.co` ではなく **`.pooler.supabase.com`** であることを確認する。
 
 Connection Pooler は **Transaction mode** を使い、**prepared statement を無効化**する（`11_Deployment.md` 5.1）。Transaction mode では prepared statement がセッションをまたいで再利用できないためである。
 
-`SUPABASE_URL` と `SUPABASE_SERVICE_ROLE_KEY` は Supabase が自動で注入するため、通常は設定不要である。
+### ★名前を `SUPABASE_DB_URL` にしてはならない
+
+`SUPABASE_` は Supabase の予約接頭辞であり、`supabase secrets set` はこの名前を拒否する。**設定したつもりで通っていない状態になる。**
+
+さらに紛らわしいことに、`SUPABASE_DB_URL` は Supabase が自動注入する既定値として**常に存在する**。したがって Function は動いてしまう。ただし中身は Pooler ではなく直接接続であり、`11_Deployment.md` 5.1 の要件を満たさない。負荷がかかるまで問題が表面化しない。
+
+`SUPABASE_URL` と `SUPABASE_SERVICE_ROLE_KEY` も同様に自動で注入されるため、設定不要である。
 
 最後に Edge Functions をデプロイする。
 
