@@ -276,7 +276,7 @@
 | 理由    | 設計書は多数の処理を「単一トランザクションで実行する」と規定しているが、Supabase JavaScript SDK（PostgREST経由）では複数ステートメントにまたがるトランザクションを開始できず、記述どおりに実装できないため。ビジネスロジックの単体テスト容易性も確保する必要がある。                                                                       |
 | 決定内容  | Edge Functions（Deno）からPostgreSQLへ直接接続し、TypeScript内で明示的に `BEGIN` / `COMMIT` / `ROLLBACK` を発行する。ビジネスロジック（Eloレート計算等）はTypeScriptの純粋関数として実装し、単体テスト可能とする。PL/pgSQL関数へのロジック集約は採用しない。                                    |
 | 影響文書  | 03_Database.md、04_BackendInterface.md、07_APISequence.md、08_RatingSpecification.md、11_Deployment.md                                                                                                                    |
-| 備考    | 接続はConnection Pooler経由とし、環境変数 `SUPABASE_DB_URL` を追加する。DB直結はRLSを迂回するため、Edge Function内での認可チェックを必須とする。03_Databaseの `calculate_rating_change()` および `increment_match_version()` は廃止し、レート計算とversion更新はTypeScript側で行う。 |
+| 備考    | 接続はConnection Pooler経由とし、環境変数 `SUPABASE_DB_URL` を追加する。DB直結はRLSを迂回するため、Edge Function内での認可チェックを必須とする。03_Databaseの `calculate_rating_change()` および `increment_match_version()` は廃止し、レート計算とversion更新はTypeScript側で行う。<br>**★環境変数名は ADR-028 により `APP_DB_POOL_URL` へ改められた。** `SUPABASE_` は予約接頭辞であり、この名前では Pooler の接続文字列を設定できない。本行は当時の記録として残す。 |
 
 ---
 
@@ -431,6 +431,20 @@
 | 決定内容  | B-011 の時点で採用したメジャーバージョンを以下に固定する。更新は本ADRの改訂をもって行う。<br>React 19 / Vite 8 / TypeScript 7 / TanStack Router v1 / TanStack Query v5 / Zustand v5 / React Hook Form v7 / Zod v4 / Tailwind CSS v4（`@tailwindcss/vite` プラグイン方式、`tailwind.config.js` を持たない）/ Vitest v4 / oxlint v1 / oxfmt v0 |
 | 影響文書  | 12_TechnologyStack.md（3章） |
 | 備考    | oxfmt は 0.x であり安定版に達していない。破壊的変更が生じた場合は Format Check を一時的に無効化し、本ADRを改訂する。Tailwind CSS v4 は設定をCSS側（`@import "tailwindcss"`）で行うため、v3 系の `tailwind.config.js` を前提とした手順書は適用できない。 |
+
+---
+
+## ADR-028
+
+| 項目    | 内容 |
+| ----- | -- |
+| 日付    | 2026-08-15 |
+| タイトル  | Edge Functions のDB接続文字列を `APP_DB_POOL_URL` へ改める |
+| ステータス | Accepted |
+| 理由    | ADR-016 は「接続はConnection Pooler経由とし、環境変数 `SUPABASE_DB_URL` を追加する」としていたが、この決定は実現できないことが判明した。`SUPABASE_` は Supabase の予約接頭辞であり `supabase secrets set` が拒否するため、この名前で Pooler の接続文字列を与えられない。さらに `SUPABASE_DB_URL` は Supabase が自動注入する既定値（直接接続）として常に存在するため、設定に失敗しても Function は動作してしまい、Pooler を経由していないことに気付けない。 |
+| 決定内容  | Edge Functions のDB接続文字列は `APP_DB_POOL_URL` で与える。`_shared/db.ts` はこれを優先し、未設定の場合にのみ `SUPABASE_DB_URL` へ退避する。退避を残すのは、ローカルと CI が `supabase functions serve --env-file` で環境変数を直接注入しており予約の制約を受けないためである。値が誤っている場合に退避してはならない。誤設定を隠蔽し、Pooler を経由しているつもりで直接接続に戻る状態を生むためである。 |
+| 影響文書  | 04_BackendInterface.md（2.1）、11_Deployment.md（4.2・5.1）、docs/project/SetupRunbook.md（作業6） |
+| 備考    | ADR-016 の本文は当時の決定の記録として改変しない。本ADRが `SUPABASE_DB_URL` に関する部分を上書きする。トランザクション実装方式そのもの（DB直結・TypeScript側での `BEGIN`/`COMMIT`）は ADR-016 のまま有効である。Pooler を経由しないと接続数が素の PostgreSQL の上限に張り付き、上限到達時は Auth（GoTrue）まで "Database error" で巻き添えになる。`_shared/db.ts` の遅延生成は緩和にすぎない。 |
 
 ---
 
