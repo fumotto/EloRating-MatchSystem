@@ -1,0 +1,1042 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>選手のためのレート戦の歩き方</title>
+    <link rel="icon" type="image/svg+xml" href="../favicon.svg" />
+    <style>
+      html {
+        -webkit-text-size-adjust: 100%;
+      }
+      img,
+      svg {
+        max-width: 100%;
+      }
+      table {
+        border-collapse: collapse;
+      }
+
+      /* ── トークン ───────────────────────────────────────────────
+     導入ガイドと同じ藍寄りのニュートラル＋indigo を土台にしつつ、
+     こちらは「対戦」を扱うため、勝敗・期限の色を主役に据える。
+     勝＝緑、敗＝赤ではなく、進行状態を4段階の色で表す。          */
+      :root {
+        --ground: #fafafc;
+        --surface: #ffffff;
+        --surface-sunk: #f3f4f9;
+        --ink: #1a1b2e;
+        --ink-muted: #5a5d75;
+        --ink-faint: #8b8fa8;
+        --rule: #e2e3ec;
+        --rule-strong: #c9cbd9;
+        --accent: #4f46e5;
+        --accent-soft: #eeedfb;
+
+        /* 試合の4状態。順に「動いている → 待っている → 決まった → 流れた」 */
+        --st-play: #2563eb;
+        --st-play-bg: #eaf0fe;
+        --st-wait: #b45309;
+        --st-wait-bg: #fdf4e7;
+        --st-done: #047857;
+        --st-done-bg: #e7f5f0;
+        --st-drawn: #6b7280;
+        --st-drawn-bg: #f1f2f5;
+
+        --caution: #b45309;
+        --caution-soft: #fdf4e7;
+        --danger: #dc2626;
+        --danger-soft: #fdf0f0;
+
+        --sans:
+          "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic Medium", "Yu Gothic",
+          "Noto Sans JP", "Meiryo", system-ui, sans-serif;
+        --serif:
+          "Hiragino Mincho ProN", "Yu Mincho", "YuMincho", "Noto Serif JP", "MS PMincho", serif;
+        --mono: ui-monospace, "SFMono-Regular", "Menlo", "Consolas", "Noto Sans Mono", monospace;
+
+        --measure: 34rem;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+          --ground: #14151f;
+          --surface: #1c1d2a;
+          --surface-sunk: #222432;
+          --ink: #e8e9f2;
+          --ink-muted: #a3a7c0;
+          --ink-faint: #767a94;
+          --rule: #2c2e3e;
+          --rule-strong: #3e4154;
+          --accent: #a29bff;
+          --accent-soft: #24243c;
+
+          --st-play: #7ba6ff;
+          --st-play-bg: #1a2237;
+          --st-wait: #f0a855;
+          --st-wait-bg: #2b2418;
+          --st-done: #4fc79e;
+          --st-done-bg: #162a24;
+          --st-drawn: #9aa0b0;
+          --st-drawn-bg: #23252f;
+
+          --caution: #f0a855;
+          --caution-soft: #2b2418;
+          --danger: #f87171;
+          --danger-soft: #2e1d1d;
+        }
+      }
+
+      :root[data-theme="dark"] {
+        --ground: #14151f;
+        --surface: #1c1d2a;
+        --surface-sunk: #222432;
+        --ink: #e8e9f2;
+        --ink-muted: #a3a7c0;
+        --ink-faint: #767a94;
+        --rule: #2c2e3e;
+        --rule-strong: #3e4154;
+        --accent: #a29bff;
+        --accent-soft: #24243c;
+
+        --st-play: #7ba6ff;
+        --st-play-bg: #1a2237;
+        --st-wait: #f0a855;
+        --st-wait-bg: #2b2418;
+        --st-done: #4fc79e;
+        --st-done-bg: #162a24;
+        --st-drawn: #9aa0b0;
+        --st-drawn-bg: #23252f;
+
+        --caution: #f0a855;
+        --caution-soft: #2b2418;
+        --danger: #f87171;
+        --danger-soft: #2e1d1d;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--ground);
+        color: var(--ink);
+        font-family: var(--sans);
+        font-size: 16px;
+        line-height: 1.85;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .wrap {
+        max-width: 74rem;
+        margin: 0 auto;
+        padding: 0 1.5rem 6rem;
+        display: grid;
+        grid-template-columns: 13rem minmax(0, 1fr);
+        gap: 3.5rem;
+        align-items: start;
+      }
+      @media (max-width: 58rem) {
+        .wrap {
+          grid-template-columns: minmax(0, 1fr);
+          gap: 0;
+        }
+      }
+
+      /* ── 表紙 ───────────────────────────────────────────────── */
+      .masthead {
+        border-bottom: 1px solid var(--rule);
+        background: var(--surface);
+      }
+      .masthead-inner {
+        max-width: 74rem;
+        margin: 0 auto;
+        padding: 3.5rem 1.5rem 2.5rem;
+      }
+      .eyebrow {
+        font-family: var(--mono);
+        font-size: 0.7rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+        margin: 0 0 1.25rem;
+      }
+      h1 {
+        font-family: var(--serif);
+        font-size: clamp(1.9rem, 1.2rem + 2.4vw, 2.9rem);
+        font-weight: 600;
+        line-height: 1.3;
+        text-wrap: balance;
+        margin: 0 0 1rem;
+      }
+      .standfirst {
+        max-width: 40rem;
+        margin: 0;
+        font-size: 1.05rem;
+        color: var(--ink-muted);
+      }
+
+      /* ── 目次 ───────────────────────────────────────────────── */
+      .rail {
+        position: sticky;
+        top: 2rem;
+        padding-top: 3rem;
+        font-size: 0.84rem;
+        line-height: 1.5;
+      }
+      @media (max-width: 58rem) {
+        .rail {
+          position: static;
+          padding: 2rem 0 0;
+          border-bottom: 1px solid var(--rule);
+          margin-bottom: 1rem;
+        }
+      }
+      .rail h2 {
+        font-family: var(--mono);
+        font-size: 0.68rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+        font-weight: 400;
+        margin: 0 0 0.9rem;
+      }
+      .rail ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.1rem;
+      }
+      .rail a {
+        display: block;
+        padding: 0.28rem 0;
+        color: var(--ink-muted);
+        text-decoration: none;
+      }
+      .rail a:hover {
+        color: var(--accent);
+      }
+      .rail a:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+
+      /* ── 本文 ───────────────────────────────────────────────── */
+      main {
+        padding-top: 3rem;
+        min-width: 0;
+      }
+      main > * {
+        max-width: var(--measure);
+      }
+      section + section {
+        margin-top: 4.5rem;
+      }
+
+      h2 {
+        font-family: var(--serif);
+        font-size: 1.6rem;
+        font-weight: 600;
+        line-height: 1.4;
+        text-wrap: balance;
+        margin: 0 0 1.25rem;
+        padding-bottom: 0.6rem;
+        border-bottom: 2px solid var(--ink);
+      }
+      h3 {
+        font-size: 1.02rem;
+        font-weight: 700;
+        line-height: 1.6;
+        margin: 2.5rem 0 0.75rem;
+      }
+      h4 {
+        font-size: 0.92rem;
+        font-weight: 700;
+        margin: 1.75rem 0 0.5rem;
+      }
+      p {
+        margin: 0 0 1.1rem;
+      }
+
+      a {
+        color: var(--accent);
+        text-underline-offset: 2px;
+      }
+      a:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+
+      ul,
+      ol {
+        margin: 0 0 1.1rem;
+        padding-left: 1.4rem;
+      }
+      li {
+        margin-bottom: 0.35rem;
+      }
+
+      code {
+        font-family: var(--mono);
+        font-size: 0.86em;
+        background: var(--surface-sunk);
+        border: 1px solid var(--rule);
+        border-radius: 3px;
+        padding: 0.08em 0.35em;
+      }
+
+      .table-scroll {
+        overflow-x: auto;
+        margin: 0 0 1.4rem;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 0.88rem;
+        line-height: 1.65;
+      }
+      th,
+      td {
+        text-align: left;
+        vertical-align: top;
+        padding: 0.6rem 0.9rem 0.6rem 0;
+        border-bottom: 1px solid var(--rule);
+      }
+      th {
+        font-family: var(--mono);
+        font-size: 0.68rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        font-weight: 400;
+        color: var(--ink-faint);
+        border-bottom: 1px solid var(--rule-strong);
+        white-space: nowrap;
+      }
+      td.num {
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+
+      /* ── 試合の状態バッジ ───────────────────────────────────────
+     画面に出る4つの表示と1対1で対応させる。読者が画面で見た文字を
+     そのままここで探せるようにするため、名称は画面の文言と揃える。 */
+      .state {
+        display: inline-block;
+        font-size: 0.78rem;
+        font-weight: 700;
+        line-height: 1.6;
+        padding: 0 0.5rem;
+        border-radius: 2px;
+        border: 1px solid currentColor;
+        white-space: nowrap;
+      }
+      .state.play {
+        color: var(--st-play);
+        background: var(--st-play-bg);
+      }
+      .state.wait {
+        color: var(--st-wait);
+        background: var(--st-wait-bg);
+      }
+      .state.done {
+        color: var(--st-done);
+        background: var(--st-done-bg);
+      }
+      .state.drawn {
+        color: var(--st-drawn);
+        background: var(--st-drawn-bg);
+      }
+
+      /* ── 進行の階段 ─────────────────────────────────────────── */
+      .ladder {
+        list-style: none;
+        margin: 0 0 1.4rem;
+        padding: 0;
+      }
+      .ladder li {
+        display: grid;
+        grid-template-columns: 6.5rem 1fr;
+        gap: 1rem;
+        align-items: baseline;
+        padding: 0.75rem 0;
+        border-bottom: 1px solid var(--rule);
+        margin: 0;
+      }
+      .ladder .who {
+        font-size: 0.85rem;
+        color: var(--ink-muted);
+        display: block;
+        margin-top: 0.1rem;
+      }
+
+      /* ── 注意 ───────────────────────────────────────────────── */
+      .note {
+        border: 1px solid var(--rule);
+        border-left: 3px solid var(--rule-strong);
+        background: var(--surface);
+        padding: 1rem 1.2rem 0.4rem;
+        margin: 0 0 1.4rem;
+      }
+      .note > :first-child {
+        margin-top: 0;
+      }
+      .note .label {
+        display: block;
+        font-family: var(--mono);
+        font-size: 0.66rem;
+        letter-spacing: 0.13em;
+        text-transform: uppercase;
+        margin-bottom: 0.45rem;
+        color: var(--ink-faint);
+      }
+      .note.caution {
+        border-left-color: var(--caution);
+        background: var(--caution-soft);
+      }
+      .note.caution .label {
+        color: var(--caution);
+      }
+      .note.danger {
+        border-left-color: var(--danger);
+        background: var(--danger-soft);
+      }
+      .note.danger .label {
+        color: var(--danger);
+      }
+
+      /* ── 期限の目立たせ ─────────────────────────────────────── */
+      .deadline {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0 2rem;
+        margin: 0 0 1.4rem;
+        padding: 1rem 1.2rem;
+        background: var(--surface-sunk);
+        border: 1px solid var(--rule);
+      }
+      .deadline div {
+        min-width: 9rem;
+      }
+      .deadline dt {
+        font-family: var(--mono);
+        font-size: 0.66rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+      }
+      .deadline dd {
+        margin: 0.15rem 0 0;
+        font-size: 1.35rem;
+        font-variant-numeric: tabular-nums;
+        font-weight: 700;
+      }
+      .deadline dd small {
+        font-size: 0.8rem;
+        font-weight: 400;
+        color: var(--ink-muted);
+      }
+
+      footer {
+        max-width: var(--measure);
+        margin-top: 5rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid var(--rule);
+        font-size: 0.82rem;
+        color: var(--ink-faint);
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          animation: none !important;
+          transition: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <p style="max-width: 74rem; margin: 0 auto; padding: 1rem 1.5rem 0; font-size: 0.85rem">
+      <a href="../" style="color: inherit">&larr; アプリへ戻る</a>
+    </p>
+    <header class="masthead">
+      <div class="masthead-inner">
+        <p class="eyebrow">Player Guide</p>
+        <h1>チームを組んで、<br />相手を探して、勝ち上がる</h1>
+        <p class="standfirst">
+          勝てばレートが上がり、負ければ下がります。実力の近いチーム同士が自動で組まれるので、
+          強すぎる相手にも弱すぎる相手にも当たりません。まずはチームを作るところから。
+        </p>
+      </div>
+    </header>
+
+    <div class="wrap">
+      <nav class="rail" aria-label="目次">
+        <h2>目次</h2>
+        <ul>
+          <li><a href="#flow">全体の流れ</a></li>
+          <li><a href="#login">ログインする</a></li>
+          <li><a href="#team">チームに入る</a></li>
+          <li><a href="#invite">メンバーを集める</a></li>
+          <li><a href="#match">対戦相手を探す</a></li>
+          <li><a href="#result">結果を記録する</a></li>
+          <li><a href="#rating">レートの見方</a></li>
+          <li><a href="#manage">チームの運営</a></li>
+          <li><a href="#trouble">困ったときは</a></li>
+          <li><a href="#manners">マナー</a></li>
+          <li><a href="#glossary">用語集</a></li>
+        </ul>
+      </nav>
+
+      <main>
+        <section id="flow">
+          <h2>全体の流れ</h2>
+          <ol class="ladder">
+            <li><strong>ログイン</strong><span class="who">Discord のアカウントで</span></li>
+            <li>
+              <strong>チームを作る</strong><span class="who">または招待コードで参加する</span>
+            </li>
+            <li>
+              <strong>仲間を集める</strong><span class="who">リーダーが招待コードを配る</span>
+            </li>
+            <li>
+              <strong>相手を探す</strong><span class="who">リーダーが「マッチングを開始」</span>
+            </li>
+            <li><strong>対戦する</strong><span class="who">このサイトの外で</span></li>
+            <li><strong>勝利を申告</strong><span class="who">勝ったチームの誰か</span></li>
+            <li><strong>承認する</strong><span class="who">負けたチームの誰か</span></li>
+            <li><strong>レート更新</strong><span class="who">自動で計算されます</span></li>
+          </ol>
+          <div class="note">
+            <span class="label">大事な前提</span>
+            <p>
+              <strong>実際の対戦はこのサイトの外で行います。</strong
+              >このサイトがやるのは「相手を探すこと」と「結果を記録して強さを計算すること」だけです。ゲーム本体や集合の連絡は、これまでどおりの方法で行ってください。
+            </p>
+          </div>
+        </section>
+
+        <section id="login">
+          <h2>ログインする</h2>
+          <ol>
+            <li>右上の <strong>ログイン</strong> を押します</li>
+            <li><strong>Discord でログイン</strong> を押します</li>
+            <li>Discord の画面で <strong>認証</strong> を押します</li>
+          </ol>
+          <p>パスワードを新しく作る必要はありません。Discord のアカウントをそのまま使います。</p>
+          <div class="note">
+            <span class="label">ランキングを見るだけなら</span>
+            <p>
+              <strong>ログインは要りません。</strong
+              >サイトを開いて「ランキング」を押せば見られます。チームを作ったり対戦したりするときだけログインが必要です。
+            </p>
+          </div>
+        </section>
+
+        <section id="team">
+          <h2>チームに入る</h2>
+          <p>
+            対戦はチーム単位です。方法は2つあります。<strong>同時に所属できるチームは1つだけ</strong>です。
+          </p>
+
+          <h3>チームを作る</h3>
+          <ol>
+            <li>ヘッダーの <strong>マイチーム</strong> を押します</li>
+            <li>チーム名を入力します（1〜30文字）</li>
+            <li><strong>チームを作成</strong> を押します</li>
+          </ol>
+          <p>
+            作った人が自動的に<strong>リーダー</strong>になります。同じ名前のチームは作れないので、既に使われている場合は別の名前にしてください。
+          </p>
+
+          <h3>招待コードで参加する</h3>
+          <p>
+            チームに入るにはリーダーから<strong>招待コード</strong>をもらう必要があります。自由に参加することはできません。
+          </p>
+          <ol>
+            <li><strong>マイチーム</strong> を開きます</li>
+            <li><strong>招待コード</strong> の欄に、もらった26文字を貼り付けます</li>
+            <li><strong>チームに参加</strong> を押します</li>
+          </ol>
+
+          <h4>うまくいかないとき</h4>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>表示されるメッセージ</th>
+                  <th>意味</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>招待が存在しません</td>
+                  <td>コードが間違っています</td>
+                </tr>
+                <tr>
+                  <td>招待の有効期限が切れています</td>
+                  <td>発行から24時間を過ぎました</td>
+                </tr>
+                <tr>
+                  <td>招待は既に使用されています</td>
+                  <td>誰かが先に使いました</td>
+                </tr>
+                <tr>
+                  <td>既にチームへ所属しています</td>
+                  <td>先に今のチームを脱退してください</td>
+                </tr>
+                <tr>
+                  <td>チーム人数が上限です</td>
+                  <td>チームが満員です</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="invite">
+          <h2>メンバーを集める</h2>
+          <p>リーダー向けの操作です。</p>
+          <ol>
+            <li><strong>マイチーム</strong> を開きます</li>
+            <li><strong>招待コードを発行</strong> を押します</li>
+            <li>表示された26文字を、誘いたい人に伝えます</li>
+          </ol>
+
+          <div class="note danger">
+            <span class="label">Danger</span>
+            <p>
+              <strong>コードは一度しか表示されません。</strong
+              >画面を閉じたり他のページへ移動したりすると二度と表示できません。その場でコピーして、相手に送ってから閉じてください。
+            </p>
+          </div>
+
+          <div class="note caution">
+            <span class="label">Caution</span>
+            <p>
+              <strong>有効なコードは常に1つだけです。</strong
+              >新しく発行すると前のコードは使えなくなります。複数人を誘うときは、1人ずつ順番に「発行
+              → 渡す → 参加してもらう」を繰り返してください。
+            </p>
+          </div>
+
+          <p>有効期限は発行から <strong>24時間</strong> です。過ぎたら発行し直してください。</p>
+        </section>
+
+        <section id="match">
+          <h2>対戦相手を探す</h2>
+
+          <h3>マッチングを開始する</h3>
+          <p><strong>リーダーだけが操作できます。</strong></p>
+          <ol>
+            <li>ヘッダーの <strong>マッチング</strong> を押します</li>
+            <li><strong>マッチングを開始</strong> を押します</li>
+            <li>「対戦相手を探しています…」と出れば待機中です</li>
+          </ol>
+
+          <h3>すぐに相手が見つからないとき</h3>
+          <p>「今は相手が見つかりませんでした。このまま待機します。」と表示されます。</p>
+          <p>
+            <strong>これは失敗ではありません。</strong
+            >待機したままで、後から他のチームがマッチングを始めたときに自動で組まれます。画面を閉じても待機は続きます。
+          </p>
+
+          <h3>ボタンが押せないとき</h3>
+          <p>ボタンが灰色で押せない場合、条件を満たしていません。画面に理由が出ます。</p>
+
+          <h4>「チーム人数が足りません」</h4>
+          <p>
+            <strong>人数が揃っていないと対戦できません。</strong
+            >必要な人数は運営が決めており、画面に「マッチングには◯人必要です（現在
+            ◯人）」と表示されます。メンバーを招待して揃えてください。
+          </p>
+
+          <h4>「進行中の試合があります」</h4>
+          <p>
+            <strong>1つのチームが同時に持てる試合は1つだけ</strong
+            >です。今の試合を終わらせてから、次のマッチングを始めてください。
+          </p>
+
+          <h3>待機をやめる</h3>
+          <p>
+            <strong>待機をキャンセル</strong>
+            を押すと待機列から外れます。外れている間は対戦相手として選ばれません。
+          </p>
+
+          <h3>どうやって相手が決まるのか</h3>
+          <p>
+            <strong>レートが近いチーム同士</strong
+            >が優先的に組まれます。運営が決めた範囲（初期設定では400）を超えて離れているチームとは組まれません。強すぎる相手にも弱すぎる相手にも当たらない仕組みです。
+          </p>
+        </section>
+
+        <section id="result">
+          <h2>結果を記録する</h2>
+          <p>対戦が終わったら、結果をサイトに記録します。試合は4つの状態を進んでいきます。</p>
+
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>状態</th>
+                  <th>意味</th>
+                  <th>次にすること</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="state play">進行中</span></td>
+                  <td>まだ誰も申告していない</td>
+                  <td>勝ったチームが申告する</td>
+                </tr>
+                <tr>
+                  <td><span class="state wait">承認待ち</span></td>
+                  <td>申告済み。相手の返事待ち</td>
+                  <td>負けたチームが承認または拒否する</td>
+                </tr>
+                <tr>
+                  <td><span class="state done">確定</span></td>
+                  <td>結果が確定。レート更新済み</td>
+                  <td>ありません</td>
+                </tr>
+                <tr>
+                  <td><span class="state drawn">引き分け</span></td>
+                  <td>時間切れか拒否上限で解散</td>
+                  <td>レートは変わっていません</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>勝利を申告する（勝ったチーム）</h3>
+          <ol>
+            <li>ヘッダーの <strong>試合</strong> から対象の試合を開きます</li>
+            <li><strong>自チームの勝利を申告</strong> を押します</li>
+          </ol>
+          <p>
+            <strong>リーダーでなくても、チームの誰でも申告できます。</strong
+            >先に気付いた人が押してください。
+          </p>
+          <p>
+            「相手が勝った」と申告することはできません。<strong>勝った側が申告する</strong>仕組みです。
+          </p>
+
+          <h3>承認する（負けたチーム）</h3>
+          <p>
+            相手が申告すると、あなたの画面に <strong>承認する</strong> と
+            <strong>拒否する</strong> が出ます。内容が正しければ
+            <strong>承認する</strong> を押します。これで試合が確定し、レートが更新されます。
+          </p>
+
+          <h3>期限に注意</h3>
+          <div class="deadline">
+            <div>
+              <dt>勝利申告まで</dt>
+              <dd>60<small> 分</small></dd>
+            </div>
+            <div>
+              <dt>承認まで</dt>
+              <dd>10<small> 分</small></dd>
+            </div>
+            <div>
+              <dt>拒否できる回数</dt>
+              <dd>2<small> 回</small></dd>
+            </div>
+          </div>
+          <p>
+            いずれも初期設定の値です。運営が変更することがあります。実際の残り時間は試合の画面に表示されます。
+          </p>
+
+          <div class="note danger">
+            <span class="label">申告の期限切れ</span>
+            <p>
+              <strong>引き分けとして解散します。</strong
+              >どちらのレートも変わりません。せっかく対戦しても記録が残らないので、終わったら早めに申告してください。
+            </p>
+          </div>
+
+          <div class="note caution">
+            <span class="label">承認の期限切れ</span>
+            <p>
+              <strong>自動的に承認されます。</strong
+              >相手の申告どおりに確定し、レートが更新されます。放置しても試合は前に進みます。異議がある場合は、期限内に拒否してください。
+            </p>
+          </div>
+
+          <h3>拒否する</h3>
+          <p>
+            申告内容が事実と違う場合に使います。<strong>拒否する</strong> を押すと申告が取り消されて
+            <span class="state play">進行中</span> に戻り、勝ったチームがもう一度申告し直せます。
+          </p>
+
+          <div class="note caution">
+            <span class="label">Caution</span>
+            <p>
+              <strong>拒否できる回数には上限があります。</strong
+              >画面に「拒否の残り回数」が出ます。上限に達すると<strong
+                >引き分けとして解散し、どちらのレートも変わりません。</strong
+              >
+            </p>
+            <p>
+              拒否は「間違いを直すため」の機能です。話し合いがつかない場合は、先に当事者間で確認してから記録してください。
+            </p>
+          </div>
+        </section>
+
+        <section id="rating">
+          <h2>レートの見方</h2>
+          <ul>
+            <li>新しいチームは <strong>1500</strong> から始まります</li>
+            <li>勝つと上がり、負けると下がります</li>
+            <li>引き分けでは変わりません</li>
+            <li><strong>100</strong> より下がることはありません</li>
+          </ul>
+
+          <h3>どれくらい動くのか</h3>
+          <p><strong>相手との実力差によって変わります。</strong></p>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>相手</th>
+                  <th>勝ったとき</th>
+                  <th>負けたとき</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>格上</td>
+                  <td>大きく上がる</td>
+                  <td>少ししか下がらない</td>
+                </tr>
+                <tr>
+                  <td>互角</td>
+                  <td>中くらい上がる</td>
+                  <td>中くらい下がる</td>
+                </tr>
+                <tr>
+                  <td>格下</td>
+                  <td>少ししか上がらない</td>
+                  <td>大きく下がる</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            <strong>格下に勝っても、あまり増えません。</strong
+            >弱い相手ばかり選んでも上位には行けない、という仕組みです。
+          </p>
+          <p>
+            初期設定の場合、互角の相手との1試合でおよそ
+            <strong>16</strong> 動きます。実力差が大きいほどこの値から離れます。
+          </p>
+
+          <h3>増えた分と減った分</h3>
+          <p>
+            勝ったチームの増加と、負けたチームの減少は<strong>同じ値</strong>です。全体の合計は変わりません。ただしレートが下限に近いチームが負けた場合、下限で止まるため減少分が小さくなることがあります。
+          </p>
+
+          <h3>ランキング</h3>
+          <p>
+            ヘッダーの
+            <strong>ランキング</strong>
+            から見られます。<strong>ログインしていなくても見られます。</strong>まだ1試合もしていないチームも表示されます。
+          </p>
+        </section>
+
+        <section id="manage">
+          <h2>チームの運営</h2>
+
+          <h3>リーダーを交代する</h3>
+          <p>
+            <strong>マイチーム</strong> の「リーダーの移譲」で、交代したい相手の
+            <strong>◯◯ へ移譲</strong> を押します。移譲すると、あなたは通常のメンバーになります。
+          </p>
+          <div class="note caution">
+            <span class="label">Caution</span>
+            <p><strong>元には戻せません。</strong>相手に確認してから実行してください。</p>
+          </div>
+
+          <h3>チームを脱退する</h3>
+          <p>
+            <strong>マイチーム</strong> の下部にある <strong>チームを脱退する</strong> を押します。
+          </p>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>脱退できないとき</th>
+                  <th>対処</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>先にリーダーを他のメンバーへ移譲してください</td>
+                  <td>他にメンバーがいる間、リーダーは抜けられません。先に移譲する</td>
+                </tr>
+                <tr>
+                  <td>試合中のため脱退できません</td>
+                  <td>試合を終わらせてから脱退する</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            脱退すると、どこにも所属していない状態になります。<strong
+              >待機中だった場合は待機も自動で解除されます。</strong
+            >
+          </p>
+          <p>
+            リーダー1人だけのチームは、そのまま脱退できます。ただしチーム名は残るため、<strong
+              >同じ名前で作り直すことはできません。</strong
+            >
+          </p>
+        </section>
+
+        <section id="trouble">
+          <h2>困ったときは</h2>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>症状</th>
+                  <th>原因</th>
+                  <th>対処</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>マッチング開始が押せない</td>
+                  <td>人数不足か試合中</td>
+                  <td>画面の説明を読む</td>
+                </tr>
+                <tr>
+                  <td>招待コードが使えない</td>
+                  <td>期限切れか使用済み</td>
+                  <td>新しいコードをもらう</td>
+                </tr>
+                <tr>
+                  <td>相手が見つからない</td>
+                  <td>待機中のチームが他にいない</td>
+                  <td>そのまま待つ。失敗ではありません</td>
+                </tr>
+                <tr>
+                  <td>勝ったのにレートが増えない</td>
+                  <td>相手がまだ承認していない</td>
+                  <td>承認されるまで確定しません</td>
+                </tr>
+                <tr>
+                  <td>試合が引き分けになった</td>
+                  <td>期限切れか拒否上限</td>
+                  <td>次の試合へ。レートは変わっていません</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>「予期しないエラーが発生しました」と出たとき</h3>
+          <ol>
+            <li>ページを再読み込みする</li>
+            <li>数分待ってからもう一度試す</li>
+            <li>それでも直らない場合は運営へ連絡する</li>
+          </ol>
+
+          <h3>操作が反映されないとき</h3>
+          <p>
+            複数人が同時に同じ試合を操作すると、後から押した方がエラーになることがあります。<strong>ページを再読み込みしてから</strong>やり直してください。
+          </p>
+        </section>
+
+        <section id="manners">
+          <h2>マナー</h2>
+
+          <h3>結果は正直に記録する</h3>
+          <p>
+            レートは全員の記録の積み重ねで成り立っています。虚偽の申告はランキング全体の信頼を損ないます。
+          </p>
+
+          <h3>期限内に操作する</h3>
+          <p>
+            申告と承認には期限があります。放置すると引き分けになり、<strong>対戦した意味がなくなります。</strong>終わったらその場で記録するのが確実です。
+          </p>
+
+          <h3>待機したままにしない</h3>
+          <p>
+            対戦する予定がなくなったら
+            <strong>待機をキャンセル</strong>
+            してください。待機したままだと、相手が試合を組んだのに応答がない状態になります。
+          </p>
+
+          <h3>招待コードを公開しない</h3>
+          <p>
+            コードを知っている人は誰でもチームに入れます。SNS
+            などに貼らず、招待したい相手にだけ直接渡してください。
+          </p>
+        </section>
+
+        <section id="glossary">
+          <h2>用語集</h2>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>言葉</th>
+                  <th>意味</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>レート</td>
+                  <td>チームの強さを表す数値。1500 から始まる</td>
+                </tr>
+                <tr>
+                  <td>リーダー</td>
+                  <td>チームの代表者。招待の発行とマッチング開始ができる</td>
+                </tr>
+                <tr>
+                  <td>メンバー</td>
+                  <td>リーダー以外の所属者。結果の申告と承認はできる</td>
+                </tr>
+                <tr>
+                  <td>招待コード</td>
+                  <td>チームに参加するための26文字。有効期限24時間</td>
+                </tr>
+                <tr>
+                  <td>マッチング</td>
+                  <td>対戦相手を自動で探す仕組み</td>
+                </tr>
+                <tr>
+                  <td>待機</td>
+                  <td>対戦相手を探している状態</td>
+                </tr>
+                <tr>
+                  <td>申告</td>
+                  <td>勝ったチームが結果を報告すること</td>
+                </tr>
+                <tr>
+                  <td>承認</td>
+                  <td>負けたチームが結果を認めること</td>
+                </tr>
+                <tr>
+                  <td>確定</td>
+                  <td>結果が決まり、レートが更新された状態</td>
+                </tr>
+                <tr>
+                  <td>引き分け</td>
+                  <td>期限切れか拒否上限で解散した状態。レートは変わらない</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <footer>
+          <p>
+            期限や回数、必要人数は運営が変更できます。ここに書かれた数値は初期設定のものです。実際の値は各画面の表示を確認してください。
+          </p>
+        </footer>
+      </main>
+    </div>
+  </body>
+</html>

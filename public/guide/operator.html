@@ -1,0 +1,2229 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>EloRating 導入ガイド</title>
+    <link rel="icon" type="image/svg+xml" href="../favicon.svg" />
+    <style>
+      html {
+        -webkit-text-size-adjust: 100%;
+      }
+      img,
+      svg {
+        max-width: 100%;
+      }
+      table {
+        border-collapse: collapse;
+      }
+
+      /* ── トークン ───────────────────────────────────────────────
+     配色はアプリ本体の Tailwind パレット（slate + indigo-600、
+     警告は amber-700、エラーは red-600）から取る。読者が完成後の
+     画面を見たとき、同じ色に出会うようにするため。
+     ニュートラルは純灰ではなく藍寄りに振ってある。            */
+      :root {
+        --ground: #fafafc;
+        --surface: #ffffff;
+        --surface-sunk: #f3f4f9;
+        --ink: #1a1b2e;
+        --ink-muted: #5a5d75;
+        --ink-faint: #8b8fa8;
+        --rule: #e2e3ec;
+        --rule-strong: #c9cbd9;
+        --accent: #4f46e5;
+        --accent-soft: #eeedfb;
+        --caution: #b45309;
+        --caution-soft: #fdf4e7;
+        --danger: #dc2626;
+        --danger-soft: #fdf0f0;
+
+        --sans:
+          "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic Medium", "Yu Gothic",
+          "Noto Sans JP", "Meiryo", system-ui, sans-serif;
+        --serif:
+          "Hiragino Mincho ProN", "Yu Mincho", "YuMincho", "Noto Serif JP", "MS PMincho", serif;
+        --mono: ui-monospace, "SFMono-Regular", "Menlo", "Consolas", "Noto Sans Mono", monospace;
+
+        --measure: 34rem;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+          --ground: #14151f;
+          --surface: #1c1d2a;
+          --surface-sunk: #222432;
+          --ink: #e8e9f2;
+          --ink-muted: #a3a7c0;
+          --ink-faint: #767a94;
+          --rule: #2c2e3e;
+          --rule-strong: #3e4154;
+          --accent: #a29bff;
+          --accent-soft: #24243c;
+          --caution: #f0a855;
+          --caution-soft: #2b2418;
+          --danger: #f87171;
+          --danger-soft: #2e1d1d;
+        }
+      }
+
+      :root[data-theme="dark"] {
+        --ground: #14151f;
+        --surface: #1c1d2a;
+        --surface-sunk: #222432;
+        --ink: #e8e9f2;
+        --ink-muted: #a3a7c0;
+        --ink-faint: #767a94;
+        --rule: #2c2e3e;
+        --rule-strong: #3e4154;
+        --accent: #a29bff;
+        --accent-soft: #24243c;
+        --caution: #f0a855;
+        --caution-soft: #2b2418;
+        --danger: #f87171;
+        --danger-soft: #2e1d1d;
+      }
+
+      /* ── 基本 ───────────────────────────────────────────────── */
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--ground);
+        color: var(--ink);
+        font-family: var(--sans);
+        font-size: 16px;
+        line-height: 1.85;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .wrap {
+        max-width: 78rem;
+        margin: 0 auto;
+        padding: 0 1.5rem 6rem;
+        display: grid;
+        grid-template-columns: 15rem minmax(0, 1fr);
+        gap: 3.5rem;
+        align-items: start;
+      }
+
+      @media (max-width: 60rem) {
+        .wrap {
+          grid-template-columns: minmax(0, 1fr);
+          gap: 0;
+        }
+      }
+
+      /* ── 表紙 ───────────────────────────────────────────────── */
+      .masthead {
+        border-bottom: 1px solid var(--rule);
+        background: var(--surface);
+      }
+      .masthead-inner {
+        max-width: 78rem;
+        margin: 0 auto;
+        padding: 3.5rem 1.5rem 2.75rem;
+      }
+      .eyebrow {
+        font-family: var(--mono);
+        font-size: 0.7rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+        margin: 0 0 1.25rem;
+      }
+      h1 {
+        font-family: var(--serif);
+        font-size: clamp(1.9rem, 1.2rem + 2.4vw, 3rem);
+        font-weight: 600;
+        line-height: 1.3;
+        letter-spacing: 0.01em;
+        text-wrap: balance;
+        margin: 0 0 1rem;
+      }
+      .standfirst {
+        max-width: 40rem;
+        margin: 0;
+        font-size: 1.05rem;
+        color: var(--ink-muted);
+      }
+      .facts {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0 2.5rem;
+        margin: 2rem 0 0;
+        padding: 1.25rem 0 0;
+        border-top: 1px solid var(--rule);
+      }
+      .facts div {
+        min-width: 8rem;
+      }
+      .facts dt {
+        font-family: var(--mono);
+        font-size: 0.68rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+      }
+      .facts dd {
+        margin: 0.15rem 0 0;
+        font-size: 1.05rem;
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* ── 目次レール ─────────────────────────────────────────── */
+      .rail {
+        position: sticky;
+        top: 2rem;
+        padding-top: 3rem;
+        font-size: 0.82rem;
+        line-height: 1.5;
+      }
+      @media (max-width: 60rem) {
+        .rail {
+          position: static;
+          padding: 2rem 0 0;
+          border-bottom: 1px solid var(--rule);
+          margin-bottom: 1rem;
+        }
+      }
+      .rail h2 {
+        font-family: var(--mono);
+        font-size: 0.68rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+        font-weight: 400;
+        margin: 0 0 0.9rem;
+      }
+      .rail ol {
+        list-style: none;
+        margin: 0 0 1.75rem;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.1rem;
+        counter-reset: rail;
+      }
+      .rail li {
+        counter-increment: rail;
+      }
+      .rail a {
+        display: grid;
+        grid-template-columns: 1.6rem 1fr;
+        gap: 0.35rem;
+        padding: 0.28rem 0;
+        color: var(--ink-muted);
+        text-decoration: none;
+        border-bottom: 1px solid transparent;
+      }
+      .rail a::before {
+        content: counter(rail, decimal-leading-zero);
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        color: var(--ink-faint);
+        font-variant-numeric: tabular-nums;
+      }
+      .rail a:hover {
+        color: var(--accent);
+      }
+      .rail a:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      .rail .plain {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .rail .plain a {
+        grid-template-columns: 1fr;
+      }
+      .rail .plain a::before {
+        content: none;
+      }
+
+      /* ── 本文 ───────────────────────────────────────────────── */
+      main {
+        padding-top: 3rem;
+        min-width: 0;
+      }
+      main > * {
+        max-width: var(--measure);
+      }
+      main > .full {
+        max-width: none;
+      }
+
+      section + section {
+        margin-top: 4.5rem;
+      }
+
+      h2 {
+        font-family: var(--serif);
+        font-size: 1.65rem;
+        font-weight: 600;
+        line-height: 1.4;
+        text-wrap: balance;
+        margin: 0 0 1.25rem;
+        padding-bottom: 0.6rem;
+        border-bottom: 2px solid var(--ink);
+      }
+      h2 .step-no {
+        display: block;
+        font-family: var(--mono);
+        font-size: 0.7rem;
+        font-weight: 400;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin-bottom: 0.4rem;
+      }
+      h3 {
+        font-size: 1.02rem;
+        font-weight: 700;
+        line-height: 1.6;
+        margin: 2.5rem 0 0.75rem;
+      }
+      h4 {
+        font-size: 0.92rem;
+        font-weight: 700;
+        margin: 1.75rem 0 0.5rem;
+      }
+      p {
+        margin: 0 0 1.1rem;
+      }
+      strong {
+        font-weight: 700;
+      }
+
+      a {
+        color: var(--accent);
+        text-decoration-thickness: 1px;
+        text-underline-offset: 2px;
+      }
+      a:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+
+      ul,
+      ol {
+        margin: 0 0 1.1rem;
+        padding-left: 1.4rem;
+      }
+      li {
+        margin-bottom: 0.35rem;
+      }
+
+      code {
+        font-family: var(--mono);
+        font-size: 0.86em;
+        background: var(--surface-sunk);
+        border: 1px solid var(--rule);
+        border-radius: 3px;
+        padding: 0.08em 0.35em;
+        word-break: break-all;
+      }
+      pre {
+        font-family: var(--mono);
+        font-size: 0.82rem;
+        line-height: 1.7;
+        background: var(--surface-sunk);
+        border: 1px solid var(--rule);
+        border-left: 3px solid var(--rule-strong);
+        padding: 0.9rem 1.1rem;
+        margin: 0 0 1.2rem;
+        overflow-x: auto;
+      }
+      pre code {
+        background: none;
+        border: 0;
+        padding: 0;
+        font-size: inherit;
+      }
+
+      /* ── 表 ─────────────────────────────────────────────────── */
+      .table-scroll {
+        overflow-x: auto;
+        margin: 0 0 1.4rem;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 0.88rem;
+        line-height: 1.65;
+      }
+      th,
+      td {
+        text-align: left;
+        vertical-align: top;
+        padding: 0.6rem 0.9rem 0.6rem 0;
+        border-bottom: 1px solid var(--rule);
+      }
+      th {
+        font-family: var(--mono);
+        font-size: 0.68rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        font-weight: 400;
+        color: var(--ink-faint);
+        border-bottom: 1px solid var(--rule-strong);
+        white-space: nowrap;
+      }
+      td.num {
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+
+      /* ── 値トークン（A〜L）─────────────────────────────────────
+     手順をまたいで持ち回る値。同じ見た目の記号が「控える場所」と
+     「使う場所」の両方に出ることで、値の行き先を追えるようにする。 */
+      .tok {
+        display: inline-block;
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        font-weight: 700;
+        line-height: 1.5;
+        min-width: 1.45rem;
+        text-align: center;
+        padding: 0 0.3rem;
+        border: 1px solid var(--accent);
+        border-radius: 2px;
+        color: var(--accent);
+        background: var(--accent-soft);
+        vertical-align: 0.05em;
+      }
+      .tok.secret {
+        border-color: var(--danger);
+        color: var(--danger);
+        background: var(--danger-soft);
+      }
+
+      /* ── 注意喚起 ───────────────────────────────────────────── */
+      .note {
+        border: 1px solid var(--rule);
+        border-left: 3px solid var(--rule-strong);
+        background: var(--surface);
+        padding: 1rem 1.2rem 0.4rem;
+        margin: 0 0 1.4rem;
+      }
+      .note > :first-child {
+        margin-top: 0;
+      }
+      .note .label {
+        display: block;
+        font-family: var(--mono);
+        font-size: 0.66rem;
+        letter-spacing: 0.13em;
+        text-transform: uppercase;
+        margin-bottom: 0.45rem;
+        color: var(--ink-faint);
+      }
+      .note.caution {
+        border-left-color: var(--caution);
+        background: var(--caution-soft);
+      }
+      .note.caution .label {
+        color: var(--caution);
+      }
+      .note.danger {
+        border-left-color: var(--danger);
+        background: var(--danger-soft);
+      }
+      .note.danger .label {
+        color: var(--danger);
+      }
+
+      /* ── 確認リスト ─────────────────────────────────────────── */
+      .check {
+        border-top: 1px solid var(--rule-strong);
+        padding-top: 0.9rem;
+        margin-top: 2rem;
+      }
+      .check .label {
+        font-family: var(--mono);
+        font-size: 0.66rem;
+        letter-spacing: 0.13em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+        display: block;
+        margin-bottom: 0.5rem;
+      }
+      .check ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      .check li {
+        display: flex;
+        gap: 0.6rem;
+        align-items: baseline;
+        margin-bottom: 0.3rem;
+      }
+      .check input {
+        accent-color: var(--accent);
+        width: 0.95rem;
+        height: 0.95rem;
+        flex: none;
+        cursor: pointer;
+      }
+      .check label {
+        cursor: pointer;
+        font-size: 0.92rem;
+      }
+      .check input:checked + label {
+        color: var(--ink-faint);
+        text-decoration: line-through;
+      }
+
+      /* ── 流れ図 ─────────────────────────────────────────────── */
+      .flow {
+        list-style: none;
+        padding: 0;
+        margin: 0 0 1.4rem;
+        counter-reset: flow;
+      }
+      .flow li {
+        counter-increment: flow;
+        display: grid;
+        grid-template-columns: 2.2rem 1fr;
+        gap: 0.75rem;
+        padding: 0.5rem 0;
+        border-bottom: 1px solid var(--rule);
+        margin: 0;
+        font-size: 0.92rem;
+      }
+      .flow li::before {
+        content: counter(flow, decimal-leading-zero);
+        font-family: var(--mono);
+        font-size: 0.75rem;
+        color: var(--ink-faint);
+        font-variant-numeric: tabular-nums;
+        padding-top: 0.15rem;
+      }
+      .flow .what {
+        color: var(--ink-muted);
+        font-size: 0.85rem;
+        display: block;
+      }
+
+      footer {
+        max-width: var(--measure);
+        margin-top: 5rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid var(--rule);
+        font-size: 0.82rem;
+        color: var(--ink-faint);
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          animation: none !important;
+          transition: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <p style="max-width: 74rem; margin: 0 auto; padding: 1rem 1.5rem 0; font-size: 0.85rem">
+      <a href="../" style="color: inherit">&larr; アプリへ戻る</a>
+    </p>
+    <header class="masthead">
+      <div class="masthead-inner">
+        <p class="eyebrow">Fork Guide</p>
+        <h1>自分専用のチーム対戦<br />レーティングサイトを立ち上げる</h1>
+        <p class="standfirst">
+          GitHub・Supabase・Discord の3つを順につないでいきます。プログラミングの知識は要りません。
+          画面を見ながら値をコピーして貼り付ける作業が中心で、コマンドを打つ場面はありません。
+        </p>
+        <dl class="facts">
+          <div>
+            <dt>所要時間</dt>
+            <dd>60〜90分</dd>
+          </div>
+          <div>
+            <dt>費用</dt>
+            <dd>無料</dd>
+          </div>
+          <div>
+            <dt>手順</dt>
+            <dd>全11ステップ</dd>
+          </div>
+          <div>
+            <dt>必要なもの</dt>
+            <dd>ブラウザだけ</dd>
+          </div>
+        </dl>
+      </div>
+    </header>
+
+    <div class="wrap">
+      <nav class="rail" aria-label="目次">
+        <h2>手順</h2>
+        <ol>
+          <li><a href="#s1">GitHub でコピーを作る</a></li>
+          <li><a href="#s2">Supabase でプロジェクトを作る</a></li>
+          <li><a href="#s3">Discord アプリを作る</a></li>
+          <li><a href="#s4">Supabase に Discord を登録</a></li>
+          <li><a href="#s5">接続情報を登録する</a></li>
+          <li><a href="#s6">GitHub に設定値を登録</a></li>
+          <li><a href="#s7">GitHub Pages を有効化</a></li>
+          <li><a href="#s8">公開する</a></li>
+          <li><a href="#s9">動作を確認する</a></li>
+          <li><a href="#s10">自分を管理者にする</a></li>
+          <li><a href="#s11">定期処理を有効にする</a></li>
+        </ol>
+        <h2>そのあと</h2>
+        <ul class="plain">
+          <li><a href="#ledger">値の控え表</a></li>
+          <li><a href="#admin">管理者の仕事</a></li>
+          <li><a href="#settings">システム設定</a></li>
+          <li><a href="#ops">日々の運用</a></li>
+          <li><a href="#trouble">困ったときは</a></li>
+          <li><a href="#glossary">用語集</a></li>
+        </ul>
+      </nav>
+
+      <main>
+        <section id="intro">
+          <h2>はじめに</h2>
+
+          <h3>完成すると何ができるか</h3>
+          <ul>
+            <li>Discord アカウントでログインできる、自分だけのサイトが公開されます</li>
+            <li>利用者はチームを作り、仲間を招待できます</li>
+            <li>「マッチング」を押すと、実力の近いチーム同士が自動で対戦相手として組まれます</li>
+            <li>
+              勝敗を申告・承認すると、チェスと同じ
+              <strong>Elo レーティング</strong> で強さの数値が更新されます
+            </li>
+            <li>ランキングはログインしていない人でも見られます</li>
+          </ul>
+
+          <h3>使う3つのサービス</h3>
+          <p>すべて無料で登録できます。Discord は既にお持ちの方が多いはずです。</p>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>サービス</th>
+                  <th>役割</th>
+                  <th>例えるなら</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>GitHub</strong></td>
+                  <td>プログラムの保管庫。サイトの公開も行う</td>
+                  <td>土地と建物</td>
+                </tr>
+                <tr>
+                  <td><strong>Supabase</strong></td>
+                  <td>データの保管庫。ログインの窓口</td>
+                  <td>倉庫と受付</td>
+                </tr>
+                <tr>
+                  <td><strong>Discord</strong></td>
+                  <td>ログインに使う本人確認</td>
+                  <td>身分証の発行元</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>作業の流れ</h3>
+          <p>
+            上から順に進めてください。<strong>順番を入れ替えないでください。</strong>後の手順で前の手順の値を使うためです。
+          </p>
+          <ol class="flow">
+            <li>
+              <span>GitHub でコピーを作る<span class="what">サイトの住所が決まる</span></span>
+            </li>
+            <li>
+              <span
+                >Supabase でプロジェクトを作る<span class="what"
+                  >データの保管場所ができる</span
+                ></span
+              >
+            </li>
+            <li>
+              <span>Discord アプリを作る<span class="what">ログインの仕組みができる</span></span>
+            </li>
+            <li>
+              <span>Supabase に Discord を登録<span class="what">手順2と3をつなぐ</span></span>
+            </li>
+            <li>
+              <span>接続情報を登録する<span class="what">データベースへの通り道を作る</span></span>
+            </li>
+            <li>
+              <span>GitHub に設定値を登録<span class="what">手順2の値を GitHub へ渡す</span></span>
+            </li>
+            <li>
+              <span>GitHub Pages を有効にする<span class="what">公開の準備</span></span>
+            </li>
+            <li>
+              <span>公開する<span class="what">サイトが動き出す</span></span>
+            </li>
+            <li><span>動作を確認する</span></li>
+            <li><span>自分を管理者にする</span></li>
+            <li><span>定期処理を有効にする</span></li>
+          </ol>
+        </section>
+
+        <section id="ledger">
+          <h2>値の控え表</h2>
+          <p>
+            作業中に何度も使う値があります。この表を紙かメモ帳に写して、手に入れるたびに書き込んでください。
+            本文中では <span class="tok">C</span> のような記号で参照します。
+          </p>
+          <div class="note danger">
+            <span class="label">Danger</span>
+            <p>
+              <span class="tok secret">E</span> <span class="tok secret">G</span>
+              <span class="tok secret">H</span> <span class="tok secret">J</span>
+              <span class="tok secret">K</span>
+              <span class="tok secret">L</span>
+              は<strong>特に重要な秘密情報</strong>です。他人に知られると、データを勝手に読み書きされます。この表を
+              SNS やチャットに貼らないでください。
+            </p>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>記号</th>
+                  <th>名前</th>
+                  <th>手に入る場所</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="num"><span class="tok">A</span></td>
+                  <td>GitHub ユーザー名</td>
+                  <td>手順1</td>
+                </tr>
+                <tr>
+                  <td class="num"><span class="tok">B</span></td>
+                  <td>サイトの URL</td>
+                  <td>手順1</td>
+                </tr>
+                <tr>
+                  <td class="num"><span class="tok">C</span></td>
+                  <td>Project URL</td>
+                  <td>手順2</td>
+                </tr>
+                <tr>
+                  <td class="num"><span class="tok">D</span></td>
+                  <td>project-ref</td>
+                  <td>手順2</td>
+                </tr>
+                <tr>
+                  <td class="num"><span class="tok secret">E</span></td>
+                  <td>データベースのパスワード</td>
+                  <td>手順2</td>
+                </tr>
+                <tr>
+                  <td class="num"><span class="tok">F</span></td>
+                  <td>Publishable key</td>
+                  <td>手順2</td>
+                </tr>
+                <tr>
+                  <td class="num"><span class="tok secret">G</span></td>
+                  <td>Service role key</td>
+                  <td>手順2</td>
+                </tr>
+                <tr>
+                  <td class="num"><span class="tok secret">H</span></td>
+                  <td>アクセストークン</td>
+                  <td>手順2</td>
+                </tr>
+                <tr>
+                  <td class="num"><span class="tok">I</span></td>
+                  <td>Discord Client ID</td>
+                  <td>手順3</td>
+                </tr>
+                <tr>
+                  <td class="num"><span class="tok secret">J</span></td>
+                  <td>Discord Client Secret</td>
+                  <td>手順3</td>
+                </tr>
+                <tr>
+                  <td class="num"><span class="tok secret">K</span></td>
+                  <td>接続文字列（Session・5432）</td>
+                  <td>手順5</td>
+                </tr>
+                <tr>
+                  <td class="num"><span class="tok secret">L</span></td>
+                  <td>接続文字列（Transaction・6543）</td>
+                  <td>手順5</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="s1">
+          <h2><span class="step-no">Step 01</span>GitHub でコピーを作る</h2>
+
+          <h3>GitHub アカウントを作る</h3>
+          <p>すでにお持ちの方は次へ進んでください。</p>
+          <ol>
+            <li><a href="https://github.com/signup">github.com/signup</a> を開きます</li>
+            <li>メールアドレス、パスワード、ユーザー名を入力します</li>
+            <li>メールに届いた確認コードを入力します</li>
+          </ol>
+          <div class="note caution">
+            <span class="label">Caution</span>
+            <p>
+              <strong>ユーザー名はサイトの URL に入ります。</strong
+              >後から変えると設定をやり直すことになるので、気に入った名前にしてください（半角英数字とハイフン）。
+            </p>
+          </div>
+          <p>
+            控えます。 → <span class="tok">A</span> <strong>GitHub ユーザー名</strong>（例
+            <code>taro-yamada</code>）
+          </p>
+
+          <h3>コピー（fork）を作る</h3>
+          <p>
+            「fork（フォーク）」は、他人のプログラムを自分の場所に丸ごとコピーする操作です。
+            コピー後は自由に触れます。元のプログラムには影響しません。
+          </p>
+          <ol>
+            <li>
+              <a href="https://github.com/fumotto/EloRating-MatchSystem">元のリポジトリ</a
+              >を開きます
+            </li>
+            <li>画面右上の <strong>Fork</strong> ボタンを押します</li>
+            <li>
+              Repository name は <code>EloRating-MatchSystem</code> のまま<strong>変えない</strong>
+            </li>
+            <li><strong>Create fork</strong> を押します</li>
+          </ol>
+          <div class="note caution">
+            <span class="label">Caution</span>
+            <p>
+              <strong>公開設定はそのままに。</strong>fork したコピーは
+              Public（公開）になります。Private（非公開）にすると、サイトの公開に GitHub
+              の有料プランが必要になります。
+            </p>
+            <p>
+              公開されるのはプログラムだけです。利用者のデータは Supabase 側にあり、公開されません。
+            </p>
+          </div>
+
+          <h3>サイトの URL を控える</h3>
+          <p>
+            これがあなたのサイトの住所になります。まだ開いても何も表示されませんが、後で使います。
+          </p>
+          <pre><code>https://&lt;A&gt;.github.io/EloRating-MatchSystem/</code></pre>
+          <p>
+            <strong>末尾のスラッシュまで含めてください。</strong> → <span class="tok">B</span>
+            <strong>サイトの URL</strong>
+          </p>
+
+          <h3>自動処理を有効にする</h3>
+          <p>fork したコピーでは、自動処理（Actions）が最初は止まっています。</p>
+          <ol>
+            <li>上部の <strong>Actions</strong> タブを開きます</li>
+            <li>
+              黄色い案内の
+              <strong>I understand my workflows, go ahead and enable them</strong> を押します
+            </li>
+          </ol>
+          <p>案内が出ない場合は、すでに有効です。</p>
+
+          <div class="check">
+            <span class="label">できたことの確認</span>
+            <ul>
+              <li>
+                <input type="checkbox" id="c1a" /><label for="c1a">自分のリポジトリが開ける</label>
+              </li>
+              <li>
+                <input type="checkbox" id="c1b" /><label for="c1b"
+                  >Actions タブに「Deploy」と「CI」が見えている</label
+                >
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        <section id="s2">
+          <h2><span class="step-no">Step 02</span>Supabase でプロジェクトを作る</h2>
+          <p>利用者の情報、チーム、試合結果などを保管する場所を用意します。</p>
+
+          <h3>アカウントと組織を作る</h3>
+          <ol>
+            <li><a href="https://supabase.com/dashboard/sign-up">supabase.com</a> を開きます</li>
+            <li>
+              <strong>Continue with GitHub</strong>
+              を押すと、手順1のアカウントでそのまま登録できます
+            </li>
+            <li>
+              組織の作成を求められたら、好きな名前・<code>Personal</code>・<strong>Free</strong>
+              で作ります
+            </li>
+          </ol>
+
+          <h3>プロジェクトを作る</h3>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>項目</th>
+                  <th>設定</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Name</td>
+                  <td>好きな名前（例 <code>elorating</code>）</td>
+                </tr>
+                <tr>
+                  <td>Database Password</td>
+                  <td>強いパスワードを作る（下記参照）</td>
+                </tr>
+                <tr>
+                  <td>Region</td>
+                  <td><code>Northeast Asia (Tokyo)</code></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="note danger">
+            <span class="label">Danger</span>
+            <p>
+              <strong>この画面を閉じるとパスワードは二度と表示されません。</strong
+              >必ず今すぐ控えてください。
+            </p>
+            <p>
+              <code>Generate a password</code>
+              で自動生成したものをコピーするのが確実です。自分で決める場合は、記号
+              <code>@ : / ? # [ ] &amp;</code> を<strong>使わないでください</strong>。後の手順で URL
+              の一部として扱うため、これらがあると正しく動きません。
+            </p>
+          </div>
+          <p>→ <span class="tok secret">E</span> <strong>データベースのパスワード</strong></p>
+          <p><strong>Create new project</strong> を押します。準備に2〜3分かかります。</p>
+
+          <h3>プロジェクトの情報を控える</h3>
+          <p><strong>Project Settings → Data API</strong> を開きます。</p>
+          <p>
+            → <span class="tok">C</span> <strong>Project URL</strong>（例
+            <code>https://abcdefghijklmnopqrst.supabase.co</code>）
+          </p>
+          <p>
+            この URL のうち、<code>https://</code> と
+            <code>.supabase.co</code>
+            に挟まれた<strong>英小文字20文字</strong>が「project-ref」です。
+          </p>
+          <pre><code>https://abcdefghijklmnopqrst.supabase.co
+        ~~~~~~~~~~~~~~~~~~~~
+        ここが project-ref</code></pre>
+          <p>→ <span class="tok">D</span> <strong>project-ref</strong></p>
+
+          <h3>API キーを控える</h3>
+          <p><strong>Project Settings → API Keys</strong> を開きます。2種類あります。</p>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>名前</th>
+                  <th>性質</th>
+                  <th>控える先</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Publishable key</td>
+                  <td>公開してよい</td>
+                  <td><span class="tok">F</span></td>
+                </tr>
+                <tr>
+                  <td>Secret key / service_role</td>
+                  <td>絶対に公開しない</td>
+                  <td><span class="tok secret">G</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="note danger">
+            <span class="label">Danger</span>
+            <p><strong>2つのキーの違いは重大です。</strong></p>
+            <p>
+              <strong>Publishable key</strong>
+              は誰でも見られる前提の鍵です。サイトを開けば誰でも取り出せます。許される操作が制限されているため、公開されても問題ありません。
+            </p>
+            <p>
+              <strong>Service role key</strong>
+              はすべての制限を無視できる鍵です。他人に知られると、<strong>全利用者のデータを自由に読み書き・削除されます。</strong>手順6で「Variables」の欄に間違って入れると全世界に公開されます。
+            </p>
+          </div>
+
+          <h3>アクセストークンを発行する</h3>
+          <p>GitHub が Supabase を操作するための鍵です。プロジェクトの鍵とは別物です。</p>
+          <ol>
+            <li>
+              <a href="https://supabase.com/dashboard/account/tokens"
+                >アカウント設定の Access Tokens</a
+              >
+              を開きます
+            </li>
+            <li>
+              <strong>Generate new token</strong> を押し、名前を入れます（例
+              <code>github-actions</code>）
+            </li>
+            <li>表示された <code>sbp_</code> で始まる文字列を控えます</li>
+          </ol>
+          <p>→ <span class="tok secret">H</span> <strong>アクセストークン</strong></p>
+          <div class="note caution">
+            <span class="label">よくある間違い</span>
+            <p>
+              ここで控えるのは <strong>アカウント設定</strong> で発行した
+              <code>sbp_</code> で始まる値です。前項の API
+              キーとは<strong>別物</strong>です。混同すると手順8で
+              <code>Invalid access token format</code> というエラーで止まります。
+            </p>
+          </div>
+
+          <div class="check">
+            <span class="label">できたことの確認</span>
+            <ul>
+              <li>
+                <input type="checkbox" id="c2a" /><label for="c2a">C〜H の6つの値を控えた</label>
+              </li>
+              <li>
+                <input type="checkbox" id="c2b" /><label for="c2b"
+                  >G と H を他人に見せていない</label
+                >
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        <section id="s3">
+          <h2><span class="step-no">Step 03</span>Discord アプリを作る</h2>
+          <p>利用者が Discord アカウントでログインできるようにします。</p>
+
+          <h3>アプリを作る</h3>
+          <ol>
+            <li>
+              <a href="https://discord.com/developers/applications">Discord Developer Portal</a>
+              を開きます
+            </li>
+            <li>右上の <strong>New Application</strong> を押します</li>
+            <li>名前を入れます。<strong>この名前は利用者のログイン画面に表示されます</strong></li>
+            <li>利用規約に同意して <strong>Create</strong> を押します</li>
+          </ol>
+
+          <h3>戻り先を登録する</h3>
+          <ol>
+            <li>左メニューの <strong>OAuth2</strong> を開きます</li>
+            <li><strong>Redirects → Add Redirect</strong> を押します</li>
+            <li>次を入力します</li>
+          </ol>
+          <pre><code>https://&lt;D&gt;.supabase.co/auth/v1/callback</code></pre>
+          <p>画面下の <strong>Save Changes</strong> を押します。</p>
+          <div class="note danger">
+            <span class="label">Danger</span>
+            <p>
+              <strong>戻り先はあなたのサイトの URL ではありません。</strong>Supabase
+              の受付窓口の住所です。
+            </p>
+            <p>
+              利用者から見ると最後は自分のサイトに戻ってきますが、Discord が直接呼ぶのは Supabase
+              の窓口だからです。ここに <span class="tok">B</span> を入れると
+              <code>redirect_uri mismatch</code> というエラーになります。
+            </p>
+          </div>
+
+          <h3>Client ID と Secret を控える</h3>
+          <p>
+            同じ <strong>OAuth2</strong> の画面にあります。<strong>CLIENT ID</strong>
+            をコピーします。
+          </p>
+          <p>
+            → <span class="tok">I</span> <strong>Discord Client ID</strong>（例
+            <code>1234567890123456789</code>）
+          </p>
+          <div class="note danger">
+            <span class="label">Danger</span>
+            <p>
+              <strong>Client ID は「数字」です。</strong
+              >18〜19桁の数字であり、アプリの名前ではありません。
+            </p>
+            <p>
+              名前を控えてしまうと、手順4で登録してもログイン時に Discord
+              が「無効なクライアント」というエラーを返します。数字の列であることを必ず確認してください。
+            </p>
+          </div>
+          <p>続いて <strong>Reset Secret</strong> を押し、表示された文字列を控えます。</p>
+          <p>→ <span class="tok secret">J</span> <strong>Discord Client Secret</strong></p>
+          <p>
+            この画面を閉じると二度と表示されません。閉じてしまったら、もう一度
+            <strong>Reset Secret</strong> を押せば新しい値が出ます（古い値は無効になります）。
+          </p>
+
+          <div class="check">
+            <span class="label">できたことの確認</span>
+            <ul>
+              <li>
+                <input type="checkbox" id="c3a" /><label for="c3a"
+                  >Redirects に <code>...supabase.co/auth/v1/callback</code> が登録されている</label
+                >
+              </li>
+              <li>
+                <input type="checkbox" id="c3b" /><label for="c3b">I が18〜19桁の数字である</label>
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        <section id="s4">
+          <h2><span class="step-no">Step 04</span>Supabase に Discord を登録する</h2>
+          <p>手順2と手順3をつなぎます。</p>
+
+          <h3>Discord ログインを有効にする</h3>
+          <ol>
+            <li><strong>Authentication → Sign In / Providers</strong> を開きます</li>
+            <li>
+              一覧から <strong>Discord</strong> を開き、<strong>Enable Sign in with Discord</strong>
+              をオンにします
+            </li>
+            <li>
+              Client ID に <span class="tok">I</span>、Client Secret に
+              <span class="tok secret">J</span> を入れます
+            </li>
+            <li><strong>Save</strong> を押します</li>
+          </ol>
+
+          <h3>戻り先を許可する</h3>
+          <ol>
+            <li><strong>Authentication → URL Configuration</strong> を開きます</li>
+            <li><strong>Site URL</strong> に <span class="tok">B</span> を入れます</li>
+            <li><strong>Redirect URLs</strong> に次を追加します</li>
+          </ol>
+          <pre><code>https://&lt;A&gt;.github.io/EloRating-MatchSystem/**</code></pre>
+          <p>
+            <strong>末尾のアスタリスク2つを必ず付けてください。</strong
+            >サイト内のどのページへも戻れるようにするための書き方です。
+          </p>
+          <div class="note danger">
+            <span class="label">Danger</span>
+            <p><strong>ここを間違えると、エラーも出ずに変な場所へ飛ばされます。</strong></p>
+            <p>
+              登録が無い URL へ戻ろうとすると、Supabase は<strong>エラーを出さずに</strong> Site URL
+              へ差し替えます。ログイン自体は成功しているのに
+              <code>localhost:3000</code>
+              のようなまったく関係のない場所へ飛ばされる、という形で現れます。心当たりのない URL
+              に飛ばされたら、まずこの画面を疑ってください。
+            </p>
+          </div>
+          <div class="note caution">
+            <span class="label">Caution</span>
+            <p>
+              <strong>広すぎる登録をしない。</strong><code>https://&lt;A&gt;.github.io/**</code>
+              のようにリポジトリ名を省いた形で登録すると、あなたの GitHub
+              アカウントで公開している<strong>他のサイトすべて</strong>にログイン情報を渡せてしまいます。必ず
+              <code>/EloRating-MatchSystem/**</code> まで含めてください。
+            </p>
+          </div>
+
+          <div class="check">
+            <span class="label">できたことの確認</span>
+            <ul>
+              <li>
+                <input type="checkbox" id="c4a" /><label for="c4a"
+                  >Discord が有効になっている</label
+                >
+              </li>
+              <li>
+                <input type="checkbox" id="c4b" /><label for="c4b"
+                  >Site URL が B と一致している</label
+                >
+              </li>
+              <li>
+                <input type="checkbox" id="c4c" /><label for="c4c"
+                  >Redirect URLs にリポジトリ名を含む行がある</label
+                >
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        <section id="s5">
+          <h2><span class="step-no">Step 05</span>接続情報を登録する</h2>
+          <p>プログラムがデータベースへ接続するための通り道を用意します。</p>
+
+          <h3>接続文字列を2種類取得する</h3>
+          <p>
+            <strong>Project Settings → Database → Connection string</strong>
+            を開きます。タブが並んでいるので、<strong>Session pooler</strong> と
+            <strong>Transaction pooler</strong> の2つをそれぞれコピーします。
+          </p>
+          <pre><code>postgresql://postgres.&lt;D&gt;:[YOUR-PASSWORD]@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres</code></pre>
+          <p>
+            <code>[YOUR-PASSWORD]</code> の部分を
+            <span class="tok secret">E</span> に置き換えます。角カッコも消してください。
+          </p>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>種類</th>
+                  <th>末尾のポート</th>
+                  <th>控える先</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Session pooler</td>
+                  <td class="num"><code>:5432</code></td>
+                  <td><span class="tok secret">K</span></td>
+                </tr>
+                <tr>
+                  <td>Transaction pooler</td>
+                  <td class="num"><code>:6543</code></td>
+                  <td><span class="tok secret">L</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="note caution">
+            <span class="label">Caution</span>
+            <p>
+              <strong>違いはポート番号だけです。</strong
+              >取り違えないよう、番号を確認してから控えてください。
+            </p>
+            <p>
+              また、ホスト名が <code>.pooler.supabase.com</code> であることを確認してください。<code
+                >db.&lt;D&gt;.supabase.co</code
+              >
+              という形のものは別の接続方法で、後の手順で失敗します。
+            </p>
+          </div>
+
+          <h3>Edge Function にシークレットを登録する</h3>
+          <ol>
+            <li><strong>Project Settings → Edge Functions</strong> を開きます</li>
+            <li><strong>Secrets → Add new secret</strong> を押します</li>
+            <li>
+              Name に <code>APP_DB_POOL_URL</code>、Value に
+              <span class="tok secret">L</span>（<code>:6543</code> の方）を入れます
+            </li>
+            <li><strong>Save</strong> を押します</li>
+          </ol>
+          <div class="note caution">
+            <span class="label">Caution</span>
+            <p>
+              <strong>名前は一字一句正確に。</strong
+              ><code>SUPABASE_DB_URL</code> という名前では登録できません。<code>SUPABASE_</code>
+              で始まる名前は Supabase が予約しているためです。
+            </p>
+          </div>
+
+          <div class="check">
+            <span class="label">できたことの確認</span>
+            <ul>
+              <li>
+                <input type="checkbox" id="c5a" /><label for="c5a"
+                  >K と L を控えた（ポート番号が 5432 と 6543 で違う）</label
+                >
+              </li>
+              <li>
+                <input type="checkbox" id="c5b" /><label for="c5b"
+                  ><code>APP_DB_POOL_URL</code> が登録されている</label
+                >
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        <section id="s6">
+          <h2><span class="step-no">Step 06</span>GitHub に設定値を登録する</h2>
+          <p>
+            ここまでに集めた値を GitHub
+            側へ渡します。値の入れ場所が2種類あるので、間違えないでください。
+          </p>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>種類</th>
+                  <th>性質</th>
+                  <th>ここに入れるもの</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Variables</strong></td>
+                  <td>誰でも見られる</td>
+                  <td>サイトに埋め込まれる値</td>
+                </tr>
+                <tr>
+                  <td><strong>Secrets</strong></td>
+                  <td>登録後は本人にも見えない</td>
+                  <td>秘密の値</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            自分のリポジトリの
+            <strong>Settings → Secrets and variables → Actions</strong> を開きます。
+          </p>
+
+          <h3>Variables を3つ登録する</h3>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>VITE_SUPABASE_URL</code></td>
+                  <td><span class="tok">C</span> Project URL</td>
+                </tr>
+                <tr>
+                  <td><code>VITE_SUPABASE_ANON_KEY</code></td>
+                  <td><span class="tok">F</span> Publishable key</td>
+                </tr>
+                <tr>
+                  <td><code>VITE_BASE_PATH</code></td>
+                  <td><code>/EloRating-MatchSystem/</code></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="note caution">
+            <span class="label">Caution</span>
+            <p>
+              <strong><code>VITE_BASE_PATH</code> は前後のスラッシュを両方付けてください。</strong>
+            </p>
+            <ul>
+              <li><code>EloRating-MatchSystem</code> — 誤り（スラッシュ無し）</li>
+              <li><code>/EloRating-MatchSystem</code> — 誤り（末尾のスラッシュ無し）</li>
+            </ul>
+            <p>誤ると、サイトを開いても<strong>真っ白な画面</strong>になります。</p>
+          </div>
+          <div class="note danger">
+            <span class="label">Danger</span>
+            <p>
+              <strong>ここに秘密の値を入れないでください。</strong
+              ><code>VITE_</code>
+              で始まる値は、サイトを開いた人が誰でも読み取れます。これは仕組み上どうにもなりません。<span
+                class="tok secret"
+                >G</span
+              >
+              Service role key をここに入れると全世界に公開されます。
+            </p>
+          </div>
+
+          <h3>Secrets を4つ登録する</h3>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>SUPABASE_ACCESS_TOKEN</code></td>
+                  <td><span class="tok secret">H</span>（<code>sbp_</code> で始まる）</td>
+                </tr>
+                <tr>
+                  <td><code>SUPABASE_PROJECT_REF</code></td>
+                  <td><span class="tok">D</span>（英小文字20文字）</td>
+                </tr>
+                <tr>
+                  <td><code>SUPABASE_DB_PASSWORD</code></td>
+                  <td><span class="tok secret">E</span></td>
+                </tr>
+                <tr>
+                  <td><code>SUPABASE_DB_URL</code></td>
+                  <td><span class="tok secret">K</span>（<code>:5432</code> の方）</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="note caution">
+            <span class="label">よくある間違い</span>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>欄</th>
+                    <th>入れるべきもの</th>
+                    <th>間違えやすいもの</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>SUPABASE_ACCESS_TOKEN</code></td>
+                    <td><code>sbp_</code> で始まる値</td>
+                    <td>API キー</td>
+                  </tr>
+                  <tr>
+                    <td><code>SUPABASE_PROJECT_REF</code></td>
+                    <td>英小文字20文字だけ</td>
+                    <td>URL 全体</td>
+                  </tr>
+                  <tr>
+                    <td><code>SUPABASE_DB_URL</code></td>
+                    <td>ポート <code>5432</code></td>
+                    <td>ポート <code>6543</code></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="check">
+            <span class="label">できたことの確認</span>
+            <ul>
+              <li>
+                <input type="checkbox" id="c6a" /><label for="c6a"
+                  >Variables が3つ、Secrets が4つ登録されている</label
+                >
+              </li>
+              <li>
+                <input type="checkbox" id="c6b" /><label for="c6b"
+                  >Variables に秘密の値が入っていない</label
+                >
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        <section id="s7">
+          <h2><span class="step-no">Step 07</span>GitHub Pages を有効にする</h2>
+          <ol>
+            <li><strong>Settings → Pages</strong> を開きます</li>
+            <li><strong>Source</strong> を <strong>GitHub Actions</strong> に変更します</li>
+          </ol>
+          <p>既定では「Deploy from a branch」になっています。変更するとその場で保存されます。</p>
+          <div class="note danger">
+            <span class="label">Danger</span>
+            <p>
+              <strong
+                >ここが「Deploy from a
+                branch」のままだと、プログラムの元ファイルがそのまま配信され、真っ白な画面になります。</strong
+              >サイトを開いて何も表示されないときは、まずここを確認してください。
+            </p>
+          </div>
+          <div class="check">
+            <span class="label">できたことの確認</span>
+            <ul>
+              <li>
+                <input type="checkbox" id="c7a" /><label for="c7a"
+                  >Source が GitHub Actions になっている</label
+                >
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        <section id="s8">
+          <h2><span class="step-no">Step 08</span>公開する</h2>
+
+          <h3>実行する</h3>
+          <ol>
+            <li><strong>Actions</strong> タブを開きます</li>
+            <li>左の一覧から <strong>Deploy</strong> を選びます</li>
+            <li>右側の <strong>Run workflow</strong> を押します</li>
+            <li>
+              入力欄が出ます。<strong>何も変更せず</strong>、もう一度
+              <strong>Run workflow</strong> を押します
+            </li>
+          </ol>
+          <div class="note">
+            <span class="label">なぜ自動で公開されないのか</span>
+            <p>
+              うっかり公開してしまうことを防ぐため、<strong>手動でボタンを押したときだけ</strong>公開する仕組みにしてあります。プログラムを変更しても、この操作をするまで公開中のサイトは変わりません。
+            </p>
+          </div>
+
+          <h3>待つ</h3>
+          <p>処理には <strong>8〜12分</strong> かかります。次の順に進みます。</p>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>順番</th>
+                  <th>名前</th>
+                  <th>内容</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="num">1</td>
+                  <td>verify</td>
+                  <td>プログラムに問題がないか検査する</td>
+                </tr>
+                <tr>
+                  <td class="num">2</td>
+                  <td>backend</td>
+                  <td>データベースを準備する</td>
+                </tr>
+                <tr>
+                  <td class="num">3</td>
+                  <td>frontend</td>
+                  <td>サイトを公開する</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>すべてに緑のチェックが付けば成功です。</p>
+
+          <h3>失敗したとき</h3>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>エラーに含まれる文字</th>
+                  <th>原因</th>
+                  <th>対処</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>Invalid access token format</code></td>
+                  <td><code>SUPABASE_ACCESS_TOKEN</code> が <code>sbp_</code> で始まっていない</td>
+                  <td>手順2のトークン発行をやり直す</td>
+                </tr>
+                <tr>
+                  <td><code>Invalid project ref format</code></td>
+                  <td><code>SUPABASE_PROJECT_REF</code> に URL 全体を入れた</td>
+                  <td>英小文字20文字だけにする</td>
+                </tr>
+                <tr>
+                  <td><code>Network is unreachable</code></td>
+                  <td><code>SUPABASE_DB_URL</code> が Pooler のものでない</td>
+                  <td>手順5の Session pooler を入れ直す</td>
+                </tr>
+                <tr>
+                  <td><code>password authentication failed</code></td>
+                  <td>パスワードが違う</td>
+                  <td><code>[YOUR-PASSWORD]</code> の置換を確認</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            値を直したら、最初からやり直してください。<strong
+              >何度実行しても問題ありません。</strong
+            >
+          </p>
+
+          <div class="check">
+            <span class="label">できたことの確認</span>
+            <ul>
+              <li>
+                <input type="checkbox" id="c8a" /><label for="c8a"
+                  >Deploy の3つすべてに緑のチェックが付いた</label
+                >
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        <section id="s9">
+          <h2><span class="step-no">Step 09</span>動作を確認する</h2>
+
+          <h3>サイトを開く</h3>
+          <p>
+            <span class="tok">B</span>
+            をブラウザで開きます。ランキング画面が表示されれば成功です。まだ誰もいないので中身は空です。
+          </p>
+          <p><strong>真っ白な場合</strong>は次を確認してください。</p>
+          <ul>
+            <li>手順7の Source が GitHub Actions になっているか</li>
+            <li>
+              手順6の <code>VITE_BASE_PATH</code> が
+              <code>/EloRating-MatchSystem/</code> になっているか
+            </li>
+            <li>公開直後は反映に数分かかります。10分ほど待ってから再読み込みしてください</li>
+          </ul>
+
+          <h3>ログインしてみる</h3>
+          <p>
+            右上の <strong>ログイン</strong> → <strong>Discord でログイン</strong> → Discord
+            の確認画面で <strong>認証</strong>。自分のサイトに戻ってダッシュボードが出れば成功です。
+          </p>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>症状</th>
+                  <th>確認する場所</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>「無効なクライアント」と出る</td>
+                  <td>手順3の Client ID が数字か</td>
+                </tr>
+                <tr>
+                  <td><code>redirect_uri mismatch</code> と出る</td>
+                  <td>手順3の Redirects</td>
+                </tr>
+                <tr>
+                  <td>関係ない URL へ飛ばされる</td>
+                  <td>手順4の Site URL と Redirect URLs</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>チームを作ってみる</h3>
+          <p>
+            <strong>マイチーム</strong> を開き、チーム名を入れて
+            <strong>チームを作成</strong>。チーム名とレート
+            <code>1500</code> が表示されれば、システムは正しく動いています。
+          </p>
+
+          <div class="check">
+            <span class="label">できたことの確認</span>
+            <ul>
+              <li><input type="checkbox" id="c9a" /><label for="c9a">サイトが表示される</label></li>
+              <li>
+                <input type="checkbox" id="c9b" /><label for="c9b">Discord でログインできる</label>
+              </li>
+              <li><input type="checkbox" id="c9c" /><label for="c9c">チームを作成できる</label></li>
+            </ul>
+          </div>
+        </section>
+
+        <section id="s10">
+          <h2><span class="step-no">Step 10</span>自分を管理者にする</h2>
+          <p>
+            管理者になると、システム設定の変更やチームの制限ができます。<strong>手順9で一度ログインしてから</strong>行ってください。
+          </p>
+
+          <h3>設定する</h3>
+          <p>
+            Supabase の <strong>SQL Editor</strong> を開き、<strong>New query</strong>
+            に次を貼り付けます。
+          </p>
+          <pre><code>UPDATE auth.users
+   SET raw_app_meta_data = raw_app_meta_data || '{"role":"admin"}'::jsonb
+ WHERE email = '&lt;あなたのDiscordのメールアドレス&gt;';</code></pre>
+          <p>
+            <strong>Run</strong> を押し、<code>Success. 1 rows</code> のような表示が出れば成功です。
+          </p>
+          <p>
+            <code>0 rows</code>
+            と出た場合は、メールアドレスが違うか、まだ一度もログインしていません。次で確認できます。
+          </p>
+          <pre><code>SELECT email FROM auth.users;</code></pre>
+
+          <h3>反映させる</h3>
+          <div class="note caution">
+            <span class="label">Caution</span>
+            <p>
+              <strong>一度ログアウトして、もう一度ログインしてください。</strong
+              >権限はログイン時に発行される証明書に書き込まれるため、再ログインするまで反映されません。
+            </p>
+          </div>
+          <p>ヘッダーに <strong>管理</strong> というリンクが増えていれば成功です。</p>
+
+          <div class="check">
+            <span class="label">できたことの確認</span>
+            <ul>
+              <li>
+                <input type="checkbox" id="c10a" /><label for="c10a"
+                  >ヘッダーに「管理」が表示されている</label
+                >
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        <section id="s11">
+          <h2><span class="step-no">Step 11</span>定期処理を有効にする</h2>
+
+          <h3>なぜ必要か</h3>
+          <p>このシステムには、決まった時間ごとに自動で動く処理があります。</p>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>処理</th>
+                  <th>内容</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>マッチング</td>
+                  <td>待機中のチーム同士を組み合わせる</td>
+                </tr>
+                <tr>
+                  <td>期限切れの処理</td>
+                  <td>申告や承認が期限を過ぎた試合を自動で決着させる</td>
+                </tr>
+                <tr>
+                  <td>お掃除</td>
+                  <td>期限切れの招待や古い待機を消す</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="note danger">
+            <span class="label">Danger</span>
+            <p><strong>この手順を飛ばすと、静かに壊れます。</strong></p>
+            <p>
+              未設定でもエラーは出ません。しかし<strong>期限切れの試合が永久に終わらなくなり</strong>、そのチームは以後まったくマッチングできなくなります。エラーが出ないため気付きにくく、利用者から「対戦できない」と言われて初めて分かる、という形になります。
+            </p>
+          </div>
+
+          <h3>設定する</h3>
+          <p><strong>SQL Editor</strong> で次を実行します。2か所を自分の値に置き換えます。</p>
+          <pre><code>SELECT vault.create_secret(
+  'https://&lt;D&gt;.supabase.co/functions/v1',
+  'edge_function_base_url'
+);
+SELECT vault.create_secret('&lt;G:Service role key&gt;', 'service_role_key');</code></pre>
+
+          <h3>動いているか確認する</h3>
+          <p>設定から数分待ってから、次を実行します。</p>
+          <pre><code>SELECT jobname, status, start_time
+  FROM cron.job_run_details
+ ORDER BY start_time DESC
+ LIMIT 10;</code></pre>
+          <p>
+            <code>status</code> が
+            <code>succeeded</code>
+            の行が並んでいれば成功です。何も表示されない場合はまだ実行時刻が来ていません。10分ほど待ってからもう一度確認してください。
+          </p>
+
+          <div class="check">
+            <span class="label">できたことの確認</span>
+            <ul>
+              <li>
+                <input type="checkbox" id="c11a" /><label for="c11a"
+                  ><code>cron.job_run_details</code> に <code>succeeded</code> の行がある</label
+                >
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        <section id="admin">
+          <h2>管理者の仕事</h2>
+          <p>
+            管理者としてログインすると、ヘッダーに
+            <strong>管理</strong> が現れます。押すと3つの入口が並びます。
+          </p>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>入口</th>
+                  <th>できること</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>チーム管理</strong></td>
+                  <td>迷惑なチームのBANと解除</td>
+                </tr>
+                <tr>
+                  <td><strong>システム設定</strong></td>
+                  <td>人数・期限・レートの調整</td>
+                </tr>
+                <tr>
+                  <td><strong>監査ログ</strong></td>
+                  <td>誰が何をしたかの履歴</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>管理者を増やす</h3>
+          <p>
+            運営を複数人で行う場合、<strong>その人が一度ログインしてから</strong> SQL Editor
+            で実行します。
+          </p>
+          <pre><code>UPDATE auth.users
+   SET raw_app_meta_data = raw_app_meta_data || '{"role":"admin"}'::jsonb
+ WHERE email = '&lt;管理者にする人のメールアドレス&gt;';</code></pre>
+          <p>
+            対象者は一度ログアウトして再ログインすると反映されます。解除する場合は次のとおりです。
+          </p>
+          <pre><code>UPDATE auth.users
+   SET raw_app_meta_data = raw_app_meta_data - 'role'
+ WHERE email = '&lt;解除する人のメールアドレス&gt;';</code></pre>
+          <div class="note caution">
+            <span class="label">Caution</span>
+            <p>
+              <strong>解除は即座には効きません。</strong
+              >権限はログイン時に発行される証明書に書き込まれるため、その人がログアウトするまでは管理者として振る舞えます（最大1時間）。
+            </p>
+            <p>
+              急いで止める必要がある場合は、Supabase の
+              <strong>Authentication → Users</strong> から対象者のセッションを失効させてください。
+            </p>
+          </div>
+
+          <h3>チームをBANする</h3>
+          <p>不正や迷惑行為があったチームを、対戦に参加できない状態にします。</p>
+          <ol>
+            <li><strong>管理 → チーム管理</strong> を開きます</li>
+            <li>上部の <strong>BANの理由</strong> を入力します（1〜500文字・必須）</li>
+            <li>対象チームの <strong>BAN</strong> を押します</li>
+          </ol>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>対象</th>
+                  <th>BANするとどうなるか</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>マッチング</td>
+                  <td>新しく待機に入れなくなる</td>
+                </tr>
+                <tr>
+                  <td>待機中だった場合</td>
+                  <td><strong>その場で待機列から外れる</strong></td>
+                </tr>
+                <tr>
+                  <td>進行中の試合</td>
+                  <td><strong>そのまま続く。</strong>申告・承認は可能</td>
+                </tr>
+                <tr>
+                  <td>ランキング</td>
+                  <td>引き続き表示される</td>
+                </tr>
+                <tr>
+                  <td>メンバー</td>
+                  <td>チームからは追い出されない</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            <strong>BANはチームに対する措置</strong
+            >であり、個人アカウントの停止ではありません。メンバーはチームを脱退すれば、別のチームで活動できます。解除は同じ画面の
+            <strong>解除</strong> を押すだけで、理由の入力は不要です。
+          </p>
+          <div class="note caution">
+            <span class="label">Caution</span>
+            <p>
+              <strong>入力した理由は監査ログに残り、後から編集も削除もできません。</strong
+              >感情的な文言を書かず、第三者が見て判断できる事実を簡潔に記録してください。
+            </p>
+            <p>
+              良い例：<code>2026-08-15 の対戦で虚偽申告。相手チームからの申告により確認</code><br />
+              悪い例：<code>迷惑</code>
+            </p>
+          </div>
+          <p>
+            既にBANされているチームをもう一度BANしても、エラーにはなりません。解除も同様です。押しすぎて壊れることはありません。
+          </p>
+
+          <h3>監査ログを見る</h3>
+          <p><strong>管理 → 監査ログ</strong> を開きます。実行された操作が新しい順に並びます。</p>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>表示</th>
+                  <th>意味</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>TEAM_CREATED</code></td>
+                  <td>チームが作られた</td>
+                </tr>
+                <tr>
+                  <td><code>TEAM_BANNED</code></td>
+                  <td>チームがBANされた</td>
+                </tr>
+                <tr>
+                  <td><code>TEAM_UNBANNED</code></td>
+                  <td>BANが解除された</td>
+                </tr>
+                <tr>
+                  <td><code>MATCH_CREATED</code></td>
+                  <td>試合が組まれた</td>
+                </tr>
+                <tr>
+                  <td><code>MATCH_REPORTED</code></td>
+                  <td>勝利が申告された</td>
+                </tr>
+                <tr>
+                  <td><code>MATCH_REJECTED</code></td>
+                  <td>申告が拒否された</td>
+                </tr>
+                <tr>
+                  <td><code>MATCH_DRAWN</code></td>
+                  <td>引き分けで解散した</td>
+                </tr>
+                <tr>
+                  <td><code>SETTINGS_UPDATED</code></td>
+                  <td>システム設定が変更された</td>
+                </tr>
+                <tr>
+                  <td><code>RATING_RESET</code></td>
+                  <td>レートが一括リセットされた</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            各行の下に「実行者」が出ます。<strong>利用者のID</strong>ならその人の操作、<strong>「システム」</strong>なら定期処理による自動実行です。期限切れの引き分けや自動承認は「システム」になります。
+          </p>
+          <div class="note">
+            <span class="label">記録は消せません</span>
+            <p>
+              監査ログは追記だけの仕組みで、画面からも SQL
+              からも編集・削除する手段を用意していません。誤ってBANした場合も、BANした記録と解除した記録の両方が残ります。運営の判断を後から検証できるようにするための設計です。
+            </p>
+          </div>
+
+          <h3>トラブルへの対処</h3>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>相談内容</th>
+                  <th>見るところ</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>対戦相手が見つからない</td>
+                  <td>待機中のチームが他にいるか。許容レート差が狭すぎないか</td>
+                </tr>
+                <tr>
+                  <td>試合が終わらない</td>
+                  <td><strong>定期処理が動いているか</strong>（最初に疑う）</td>
+                </tr>
+                <tr>
+                  <td>勝ったのにレートが増えない</td>
+                  <td>
+                    監査ログに <code>MATCH_REPORTED</code> はあるか。相手が承認していない可能性
+                  </td>
+                </tr>
+                <tr>
+                  <td>身に覚えのない引き分け</td>
+                  <td><code>MATCH_DRAWN</code> の実行者。「システム」なら期限切れ</td>
+                </tr>
+                <tr>
+                  <td>対戦できなくなった</td>
+                  <td>そのチームがBANされていないか</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h4>定期処理が止まっていないかの確認</h4>
+          <p><strong>最も多い原因です。</strong>SQL Editor で実行します。</p>
+          <pre><code>SELECT jobname, status, start_time
+  FROM cron.job_run_details
+ ORDER BY start_time DESC
+ LIMIT 20;</code></pre>
+          <p>
+            <code>status</code> が
+            <code>failed</code> ばかり、または最近の行が無い場合は止まっています。手順11の Vault
+            登録を確認してください。
+          </p>
+
+          <h4>止まったままの試合を探す</h4>
+          <pre><code>SELECT id, status, report_deadline_at, approve_deadline_at
+  FROM matches
+ WHERE status IN ('PLAYING', 'WINNER_REPORTED')
+ ORDER BY created_at;</code></pre>
+          <p>期限を過ぎているのに残っている行があれば、定期処理が動いていません。</p>
+
+          <h4>特定のチームの状態を調べる</h4>
+          <pre><code>SELECT name, rating, is_banned FROM teams WHERE name = '&lt;チーム名&gt;';</code></pre>
+        </section>
+
+        <section id="settings">
+          <h2>システム設定を変える</h2>
+          <p>
+            管理者としてログインし、ヘッダーの
+            <strong>管理 → 設定</strong>
+            を開きます。変えたい項目にだけ数値を入れて保存します。空欄の項目は変わりません。
+          </p>
+          <p>
+            <strong>変更は即座に全利用者へ反映されます。</strong
+            >進行中の試合の期限は、その試合が作られた時点の設定で計算済みのため変わりません。次の試合から新しい値になります。
+          </p>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>項目</th>
+                  <th>初期値</th>
+                  <th>意味</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>チーム人数の上限</td>
+                  <td class="num">3</td>
+                  <td>1チームの人数。<strong>マッチングに必要な人数でもある</strong></td>
+                </tr>
+                <tr>
+                  <td>初期レート</td>
+                  <td class="num">1500</td>
+                  <td>新しいチームの持ち点</td>
+                </tr>
+                <tr>
+                  <td>K値</td>
+                  <td class="num">32</td>
+                  <td>1試合での点数の動きやすさ</td>
+                </tr>
+                <tr>
+                  <td>許容レート差</td>
+                  <td class="num">400</td>
+                  <td>この差を超える相手とは組まれない</td>
+                </tr>
+                <tr>
+                  <td>招待の有効期限</td>
+                  <td class="num">24</td>
+                  <td>招待コードが使える時間</td>
+                </tr>
+                <tr>
+                  <td>申告期限</td>
+                  <td class="num">60</td>
+                  <td>試合開始から結果を申告するまでの分数</td>
+                </tr>
+                <tr>
+                  <td>承認期限</td>
+                  <td class="num">10</td>
+                  <td>相手の申告を承認するまでの分数</td>
+                </tr>
+                <tr>
+                  <td>拒否の上限回数</td>
+                  <td class="num">2</td>
+                  <td>この回数を超えて拒否すると引き分けで解散</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h4>チーム人数の上限</h4>
+          <p>
+            <strong>この値がそのままマッチングに必要な人数になります。</strong>3
+            にすると、3人揃わないチームはマッチングを開始できません。2人対戦にしたい場合は
+            <code>2</code>
+            に変えてください。人数が揃っていないチームには、マッチング画面で「チーム人数が足りません」と表示され、開始ボタンが押せない状態になります。
+          </p>
+
+          <h4>K値</h4>
+          <p>
+            大きくすると1試合での点数の動きが激しくなります。参加者が少なく早く序列を付けたい場合は大きめ（40〜48）、安定させたい場合は小さめ（16〜24）にします。
+          </p>
+
+          <h4>許容レート差</h4>
+          <p>
+            小さくすると実力の近い相手としか当たらなくなりますが、<strong>相手が見つかりにくくなります。</strong>参加チームが少ないうちは大きめ（600〜800）にしておくとマッチングが成立しやすくなります。
+          </p>
+
+          <h4>レートのリセット</h4>
+          <p>
+            同じ画面の下部にあります。全チームのレートを初期値に戻します。シーズンを区切るときに使います。<strong
+              >元に戻せません。</strong
+            >
+          </p>
+        </section>
+
+        <section id="ops">
+          <h2>日々の運用</h2>
+
+          <h3>プログラムを最新にする</h3>
+          <p>
+            元のプログラムが更新されたとき、自分のコピーにも取り込めます。自分のリポジトリで
+            <strong>Sync fork → Update branch</strong> を押し、手順8のデプロイを実行します。
+          </p>
+          <p>
+            <strong>何が変わるか分からない場合は急いで更新しないでください。</strong
+            >今のまま動いているなら、それで問題ありません。
+          </p>
+
+          <h3>画面の変更だけを反映する</h3>
+          <p>
+            見た目だけを直した場合は、手順8の入力欄で
+            <strong>「バックエンドの適用を飛ばす」</strong>
+            にチェックを入れてください。データベースの処理を飛ばすため、5分ほどで終わります。
+          </p>
+
+          <h3>データのバックアップ</h3>
+          <p>
+            Supabase の
+            <strong>Database → Backups</strong>
+            から取得できます。無料枠では日次バックアップが7日分保持されます。大事なデータを扱う場合は、有料プランへの変更を検討してください。
+          </p>
+        </section>
+
+        <section id="trouble">
+          <h2>困ったときは</h2>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>症状</th>
+                  <th>最初に見る場所</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>サイトが真っ白</td>
+                  <td>手順7の Source、手順6の <code>VITE_BASE_PATH</code></td>
+                </tr>
+                <tr>
+                  <td>ログインできない</td>
+                  <td>手順4の Client ID が数字か</td>
+                </tr>
+                <tr>
+                  <td>ログイン後に変な URL へ飛ぶ</td>
+                  <td>手順4の Site URL / Redirect URLs</td>
+                </tr>
+                <tr>
+                  <td>「内部エラー」と出る</td>
+                  <td>手順5の <code>APP_DB_POOL_URL</code></td>
+                </tr>
+                <tr>
+                  <td>チームは作れるが対戦が始まらない</td>
+                  <td>手順11の定期処理</td>
+                </tr>
+                <tr>
+                  <td>試合が終わらない</td>
+                  <td>同上</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>やり直す</h3>
+          <p>
+            設定を間違えても、値を直して手順8のデプロイをやり直せば直ります。<strong>何度実行しても問題ありません。</strong>データが消えることもありません。
+          </p>
+
+          <h3>最初からやり直す</h3>
+          <p>
+            どうしても直らない場合は、Supabase
+            のプロジェクトを削除して手順2からやり直すのが確実です。<strong>利用者のデータもすべて消えます</strong>ので、公開前であることを確認してください。
+          </p>
+        </section>
+
+        <section id="glossary">
+          <h2>用語集</h2>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>言葉</th>
+                  <th>意味</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>リポジトリ</td>
+                  <td>プログラムの保管場所。1つのプロジェクトに1つ</td>
+                </tr>
+                <tr>
+                  <td>fork（フォーク）</td>
+                  <td>他人のリポジトリを自分の場所にコピーすること</td>
+                </tr>
+                <tr>
+                  <td>デプロイ</td>
+                  <td>プログラムを実際に動く場所へ配置し、公開すること</td>
+                </tr>
+                <tr>
+                  <td>Actions</td>
+                  <td>GitHub の自動処理の仕組み</td>
+                </tr>
+                <tr>
+                  <td>Pages</td>
+                  <td>GitHub がサイトを公開してくれる機能</td>
+                </tr>
+                <tr>
+                  <td>Variables</td>
+                  <td>誰でも見てよい設定値の置き場所</td>
+                </tr>
+                <tr>
+                  <td>Secrets</td>
+                  <td>秘密の設定値の置き場所。登録後は本人にも見えない</td>
+                </tr>
+                <tr>
+                  <td>project-ref</td>
+                  <td>Supabase のプロジェクトを識別する英小文字20文字</td>
+                </tr>
+                <tr>
+                  <td>Pooler</td>
+                  <td>データベースへの接続をまとめて効率よく扱う仕組み</td>
+                </tr>
+                <tr>
+                  <td>Edge Function</td>
+                  <td>Supabase 上で動く小さなプログラム</td>
+                </tr>
+                <tr>
+                  <td>Vault</td>
+                  <td>Supabase の中で秘密の値を安全に保管する場所</td>
+                </tr>
+                <tr>
+                  <td>Cron</td>
+                  <td>決まった時刻に自動で処理を動かす仕組み</td>
+                </tr>
+                <tr>
+                  <td>Elo レーティング</td>
+                  <td>対戦結果から強さを数値化する計算方法。チェスで使われる</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <footer>
+          <p>
+            チェック状態はこのブラウザにのみ保存されます。開発者向けの手順は、リポジトリ内の
+            <code>docs/project/SetupRunbook.md</code> にあります。
+          </p>
+        </footer>
+      </main>
+    </div>
+
+    <script>
+      // 確認リストの状態を保存する。手順が長く、日をまたぐことがあるため。
+      // 保存できない環境（プライベートモード等）でも操作自体は動くようにする。
+      (function () {
+        var KEY = "elorating-fork-guide-progress";
+        var boxes = document.querySelectorAll(".check input[type=checkbox]");
+        var saved = {};
+        try {
+          saved = JSON.parse(localStorage.getItem(KEY) || "{}");
+        } catch (e) {
+          saved = {};
+        }
+
+        boxes.forEach(function (box) {
+          if (saved[box.id]) box.checked = true;
+          box.addEventListener("change", function () {
+            saved[box.id] = box.checked;
+            try {
+              localStorage.setItem(KEY, JSON.stringify(saved));
+            } catch (e) {
+              /* 保存できなくても続行 */
+            }
+          });
+        });
+      })();
+    </script>
+  </body>
+</html>
