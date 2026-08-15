@@ -44,6 +44,7 @@ Playwright を使用し、実際のブラウザ操作に近い形で検証する
 | TC-E2E-007 | チーム脱退       | 一般メンバー    | 脱退操作                 | チームから脱退する                 | `leaves the team`                                |
 | TC-E2E-008 | リーダー脱退の制限   | リーダー・他メンバー在籍 | 脱退操作                 | 移譲を促すメッセージが表示され、脱退できない    | `blocks the leader from leaving before transfer` |
 | TC-E2E-023 | **ログアウト**    | ログイン済     | ログアウト操作              | ランキングへ遷移し、ヘッダーが未ログインの表示へ戻る | `logs out and returns to the ranking`            |
+| TC-E2E-024 | **保護ルートへの直接遷移** | ログイン済     | `/team`・`/settings` を直接開く | 指定したURLのまま該当画面が表示される（`/dashboard` へ化けない） | `keeps the requested route on a direct visit`    |
 
 ## 3.2 マッチングと試合
 

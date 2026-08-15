@@ -181,6 +181,23 @@ test.describe("team flow", () => {
     await expect(page.getByText("チーム人数が足りません")).toBeVisible();
   });
 
+  test("keeps the requested route on a direct visit", async ({ page }) => {
+    // TC-E2E-024 ログイン済みでの保護ルートへの直接遷移。
+    //
+    // ★セッション確定前にルータのマッチを作り直すと、ガードが未ログインと誤判定して
+    //   /login へ飛ばし、そこから /dashboard へ跳ね返る。行き先が常に /dashboard に
+    //   化けるため、遷移先を見ないテストでは検出できない。URL で固定する。
+    const user = await createTestUser("Direct");
+    await openApp(page, user);
+
+    await page.goto("/team");
+    await expect(page).toHaveURL(/\/team$/);
+    await expect(page.getByRole("heading", { name: "マイチーム" })).toBeVisible();
+
+    await page.goto("/settings");
+    await expect(page).toHaveURL(/\/settings$/);
+  });
+
   test("logs out and returns to the ranking", async ({ page }) => {
     // TC-E2E-023 ログアウト後はヘッダーが未ログインの状態へ戻る。
     //

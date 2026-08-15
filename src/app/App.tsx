@@ -1,7 +1,7 @@
 // アプリケーション初期化・Provider（05_Frontend.md 4章・6章）。
 import { RouterProvider, createRouter } from "@tanstack/react-router";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { routeTree } from "../routeTree.gen";
 import { queryClient } from "./queryClient";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -25,7 +25,7 @@ function InnerApp() {
   const { session, isLoading } = useSession();
   const ensureProfile = useEnsureProfile();
 
-  // ★セッションが変わったらルータのマッチを作り直す。
+  // ★セッションが「変わったとき」だけルータのマッチを作り直す。
   //
   //   RouterProvider の context を差し替えても、読み込み済みのマッチが持つ
   //   コンテキストは再計算されない。beforeLoad はナビゲーション時にしか
@@ -33,12 +33,32 @@ function InnerApp() {
   //   invalidate を呼ばないと、ログアウト後もヘッダーが旧セッションのまま
   //   「ログアウト」を出し続ける。ガードも旧セッションで通ったままになる。
   //
-  //   依存はトークンではなく利用者IDにする。セッションオブジェクトは
-  //   トークン更新のたびに同一性が変わるため、そのまま依存にすると
-  //   1時間ごとに全マッチを作り直すことになる。
+  //   ★初回に呼んではならない。isLoading の間は下で RouterProvider を描画しないため、
+  //     ルータのコンテキストは createRouter 時の { session: null } のままである。
+  //     そこへ invalidate を投げると _app のガードが未ログインと判定して /login へ飛ばし、
+  //     セッション確定後に /login のガードが /dashboard へ跳ね返す。
+  //     結果、保護ルートへの直接遷移がすべて /dashboard に化ける。
+  //     初回の読み込みはルータ自身が正しいコンテキストで行うので、何もしなくてよい。
+  //
+  //   ★比較対象は利用者IDにする。セッションオブジェクトはトークン更新のたびに
+  //     同一性が変わるため、そのまま比べると1時間ごとに全マッチを作り直すことになる。
+  const lastUserId = useRef<string | null | undefined>(undefined);
   useEffect(() => {
+    if (isLoading) return;
+
+    const userId = session?.user.id ?? null;
+
+    // undefined は「まだ一度も観測していない」を表す。null（未ログイン）とは区別する。
+    if (lastUserId.current === undefined) {
+      lastUserId.current = userId;
+      return;
+    }
+
+    if (lastUserId.current === userId) return;
+
+    lastUserId.current = userId;
     void router.invalidate();
-  }, [session?.user.id]);
+  }, [isLoading, session?.user.id]);
 
   // ログイン確立後に ensure-profile を呼ぶ（05_Frontend.md 7章 / 04_BackendInterface.md 4.1）。
   useEffect(() => {
