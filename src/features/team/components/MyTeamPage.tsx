@@ -40,6 +40,11 @@ export function MyTeamPage() {
   }
 
   const isLeader = detail?.leaderId === profileId;
+
+  // BAN中は編成を変えられない（Issue #9 / 04 12.1）。
+  // ★判定の正本はバックエンドである。ここでの出し分けは、押せば必ず失敗する
+  //   操作を活かしておかないための案内にすぎない。
+  const isBanned = detail?.isBanned === true;
   const others = detail?.members.filter((m) => m.id !== profileId) ?? [];
 
   return (
@@ -74,10 +79,20 @@ export function MyTeamPage() {
         </ul>
       </div>
 
-      {/* 招待発行はリーダーのみ（04 9.3）。画面側の出し分けは利便性のためである。 */}
-      {isLeader ? <InvitePanel teamId={team.id} /> : null}
+      {isBanned ? (
+        <div
+          role="status"
+          className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
+        >
+          このチームはBANされています。解除されるまで、メンバーの追加・脱退・リーダーの移譲・
+          マッチングはできません。心当たりが無い場合は運営へお問い合わせください。
+        </div>
+      ) : null}
 
-      {isLeader && others.length > 0 ? (
+      {/* 招待発行はリーダーのみ（04 9.3）。画面側の出し分けは利便性のためである。 */}
+      {isLeader && !isBanned ? <InvitePanel teamId={team.id} /> : null}
+
+      {isLeader && !isBanned && others.length > 0 ? (
         <div className="space-y-2">
           <h2 className="text-sm font-medium">リーダーの移譲</h2>
           <div className="flex flex-wrap gap-2">
@@ -101,7 +116,7 @@ export function MyTeamPage() {
         {/* 単独リーダーは脱退できる。他メンバーが居る場合は TEAM-008 が返る（04 9.5）。 */}
         <button
           type="button"
-          disabled={leaveTeam.isPending}
+          disabled={leaveTeam.isPending || isBanned}
           onClick={() => leaveTeam.mutate()}
           className="rounded border border-red-300 px-4 py-2 text-sm text-red-600 disabled:opacity-50 dark:border-red-800 dark:text-red-400"
         >

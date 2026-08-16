@@ -29,6 +29,7 @@ const okStubs = (overrides: QueryStub[] = []): QueryStub[] => [
   ["SELECT team_id, role FROM team_members WHERE profile_id = $1", [
     { team_id: "team-1", role: "LEADER" },
   ]],
+  ["SELECT is_banned FROM teams", [{ is_banned: false }]],
   ["SELECT id FROM team_members WHERE profile_id = $1 AND team_id = $2", [{ id: "member-2" }]],
 ];
 
@@ -199,6 +200,25 @@ describe("transfer-leader", () => {
       assertEquals((await res.json()).error.code, "VALIDATION-001");
     } finally {
       resetJwtVerifier();
+    }
+  });
+
+  it("refuses to transfer the leader of a banned team", async () => {
+    // Issue #9 移譲も編成の変更である。凍結中に代表者だけ挿げ替えられると、
+    // 誰に対する措置なのかが曖昧になる。
+    setJwtVerifier(leaderVerifier);
+    const db = createMockDb(okStubs([["SELECT is_banned FROM teams", [{ is_banned: true }]]]));
+    setDbPool(db.pool as never);
+
+    try {
+      const res = await post({ newLeaderProfileId: "member-2" });
+      assertEquals(res.status, 409);
+      assertEquals((await res.json()).error.code, "TEAM-006");
+      assertEquals(db.find("UPDATE team_members"), undefined);
+      assertEquals(db.rolledBack(), true);
+    } finally {
+      resetJwtVerifier();
+      resetDbPool();
     }
   });
 });

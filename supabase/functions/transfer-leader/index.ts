@@ -37,6 +37,21 @@ export async function handler(req: Request): Promise<Response> {
 
         const teamId = membership.rows[0].team_id;
 
+        // BANされたチームは編成を変えられない（Issue #9 / 04_BackendInterface.md 12.1）。
+        // 移譲も編成の変更である。凍結中に代表者だけ挿げ替えられると、
+        // 誰に対する措置なのかが曖昧になる。
+        const team = await tx.queryObject<{ is_banned: boolean }>(
+          `SELECT is_banned FROM teams WHERE id = $1`,
+          [teamId],
+        );
+
+        if (team.rows.length === 0) {
+          throw businessError("TEAM-001", "Team not found.", 404);
+        }
+        if (team.rows[0].is_banned) {
+          throw businessError("TEAM-006", "Team is banned.", 409);
+        }
+
         // 自己譲渡は不正な移譲先として扱う（TC-TEAM-048）。
         if (newLeaderProfileId === claims.sub) {
           throw businessError("TEAM-009", "Invalid transfer target.", 409);

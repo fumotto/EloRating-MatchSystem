@@ -32,6 +32,23 @@ export async function handler(req: Request): Promise<Response> {
 
       const { team_id: teamId, role } = membership.rows[0];
 
+      // BANされたチームは編成を変えられない（Issue #9 / 04_BackendInterface.md 12.1）。
+      //
+      // ★脱退を許すと、BANの実効性が失われる。全員が抜けて別のチームを作り直せば
+      //   制裁を回避できてしまう。BANはチームに対する措置であり、
+      //   解除まで編成を凍結する。
+      const team = await tx.queryObject<{ is_banned: boolean }>(
+        `SELECT is_banned FROM teams WHERE id = $1`,
+        [teamId],
+      );
+
+      if (team.rows.length === 0) {
+        throw businessError("TEAM-001", "Team not found.", 404);
+      }
+      if (team.rows[0].is_banned) {
+        throw businessError("TEAM-006", "Team is banned.", 409);
+      }
+
       // 進行中の試合。終端状態（COMPLETED / DRAWN）は進行中とみなさない（TC-TEAM-042）。
       const activeMatch = await tx.queryObject<{ id: string }>(
         `SELECT id FROM matches

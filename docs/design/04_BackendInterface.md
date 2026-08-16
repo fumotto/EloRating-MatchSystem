@@ -681,7 +681,7 @@ TEAM_MEMBER_UPDATED / なし
 
 ### Error Codes
 
-`AUTH-001`、`TEAM-007`、`TEAM-008`、`TEAM-010`、`SYSTEM-001`
+`AUTH-001`、`TEAM-001`、`TEAM-006`、`TEAM-007`、`TEAM-008`、`TEAM-010`、`SYSTEM-001`
 
 ### Test Cases
 
@@ -751,7 +751,7 @@ TEAM_MEMBER_UPDATED / なし
 
 ### Error Codes
 
-`AUTH-001`、`TEAM-005`、`TEAM-009`、`SYSTEM-001`
+`AUTH-001`、`TEAM-001`、`TEAM-005`、`TEAM-006`、`TEAM-009`、`SYSTEM-001`
 
 ### Test Cases
 
@@ -1386,7 +1386,31 @@ Edge Functions はDB直結でありRLSを迂回するため、各Functionの冒�
 
 ### Purpose
 
-チームをBANする。BAN後はマッチング参加・招待発行ができない。
+チームをBANする。**BANはチームの活動を凍結する措置である**（Issue #9）。
+
+### BANの効果範囲
+
+| 操作 | BAN中 | 実装 |
+| --- | --- | --- |
+| マッチング待機の登録 | 不可（`TEAM-006`） | `queue-match` |
+| 待機列への滞留 | BAN時に削除する | `admin-ban-team` |
+| 自動マッチングの対象 | 除外する | `_shared/matchmaking.ts` |
+| 招待の発行 | 不可（`TEAM-006`） | `create-team-invite` |
+| 招待の受諾（メンバー追加） | 不可（`TEAM-006`） | `accept-team-invite` |
+| 脱退（メンバー減） | 不可（`TEAM-006`） | `leave-team` |
+| リーダーの移譲 | 不可（`TEAM-006`） | `transfer-leader` |
+| 進行中の試合 | **中断しない**。申告・承認は可能 | － |
+| ランキングへの表示 | 表示する | － |
+
+**★編成の変更をすべて塞ぐ。** 脱退を許すと、全員が抜けて別のチームを作り直すことで
+制裁を回避できてしまう。移譲を許すと、凍結中に代表者だけ挿げ替えられ、
+誰に対する措置なのかが曖昧になる。
+
+**★進行中の試合は中断しない。** 対戦相手を巻き添えにしないためである。
+BANの効果は試合終了後に現れる。
+
+**★個人アカウントの停止ではない。** メンバーはBAN解除後に脱退すれば、
+別のチームで活動できる。
 
 ### Authentication / Authorization
 

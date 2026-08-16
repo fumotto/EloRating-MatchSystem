@@ -28,6 +28,7 @@ const authenticatedVerifier = () =>
 const okStubs = (overrides: QueryStub[] = []): QueryStub[] => [
   ...overrides,
   ["SELECT team_id, role FROM team_members", [{ team_id: "team-1", role: "MEMBER" }]],
+  ["SELECT is_banned FROM teams", [{ is_banned: false }]],
   ["FROM matches", []],
   ["SELECT COUNT(*)::int AS count FROM team_members", [{ count: 3 }]],
 ];
@@ -207,6 +208,25 @@ describe("leave-team", () => {
       assertEquals((await res.json()).error.code, "AUTH-001");
     } finally {
       resetJwtVerifier();
+    }
+  });
+
+  it("refuses to leave a banned team", async () => {
+    // Issue #9 BANされたチームは編成を変えられない。
+    // ★脱退を許すと、全員が抜けて作り直すことで制裁を回避できてしまう。
+    setJwtVerifier(authenticatedVerifier);
+    const db = createMockDb(okStubs([["SELECT is_banned FROM teams", [{ is_banned: true }]]]));
+    setDbPool(db.pool as never);
+
+    try {
+      const res = await post();
+      assertEquals(res.status, 409);
+      assertEquals((await res.json()).error.code, "TEAM-006");
+      assertEquals(db.find("DELETE FROM team_members"), undefined);
+      assertEquals(db.rolledBack(), true);
+    } finally {
+      resetJwtVerifier();
+      resetDbPool();
     }
   });
 });
