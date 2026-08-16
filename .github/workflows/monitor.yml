@@ -1,0 +1,161 @@
+# 稼働監視（11_Deployment.md 13章 / RiskManagement R-004 / Issue #3）。
+#
+# ★監視は対象から独立させる。DB内（pg_cron）へ置くと、Vault 未登録や pg_net の停止で
+#   アラート自体が黙って止まる。それは今回検知したかった障害と同じ形であり、
+#   watcher が watchee と同じ仕組みに乗ってはならない。
+#
+# ★「異常時だけ通知する」設計は、通知機構が死ぬと無音になる。
+#   週次のハートビートを送り、**沈黙そのものを異常の合図**にする。
+#   GitHub は60日間リポジトリに活動が無いと schedule を自動停止するため、
+#   これが無いと監視が止まったことに気付けない。
+name: Monitor
+
+on:
+  schedule:
+    # 30分間隔。滞留は正常なら5分以内に解消するため、これで十分に速い。
+    - cron: "*/30 * * * *"
+    # 週次ハートビート。月曜 09:00 JST（UTC 00:00）。
+    - cron: "0 0 * * 1"
+  # 手動確認用。通知経路が生きているかを確かめるのに使う。
+  workflow_dispatch:
+    inputs:
+      send_heartbeat:
+        description: "正常でもハートビートを送る（通知経路の確認用）"
+        type: boolean
+        default: true
+
+concurrency:
+  group: monitor
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # SUPABASE_DB_URL は Pooler（Session mode / 5432）の接続文字列である。
+      # 直接接続は IPv6 でしか解決されず、ランナーから到達できない。
+      - name: Collect metrics
+        id: metrics
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "::error::SUPABASE_DB_URL が未登録のため監視できない（SetupRunbook 9.1）"
+            exit 1
+          fi
+
+          psql "$SUPABASE_DB_URL" -qtAX -f scripts/monitor-metrics.sql > metrics.txt
+          cat metrics.txt
+
+          # key=value を後続ステップの出力へ移す。
+          while IFS='=' read -r key value; do
+            [ -n "$key" ] && echo "$key=$value" >> "$GITHUB_OUTPUT"
+          done < metrics.txt
+
+      # 閾値判定。ここでは落とさず、判定結果だけを出す。
+      # 落とすと通知本文へ数値を載せられなくなる。
+      - name: Evaluate
+        id: evaluate
+        run: |
+          overdue=$(( ${{ steps.metrics.outputs.overdue_report }} + ${{ steps.metrics.outputs.overdue_approve }} ))
+          conn=${{ steps.metrics.outputs.connections }}
+          max=${{ steps.metrics.outputs.max_connections }}
+          vault='${{ steps.metrics.outputs.vault_configured }}'
+          http_total=${{ steps.metrics.outputs.cron_http_total }}
+          http_error=${{ steps.metrics.outputs.cron_http_error }}
+
+          problems=""
+
+          # R-004。自動解決が動いていれば滞留は5分以内に解消する。
+          if [ "$overdue" -gt 0 ]; then
+            problems="${problems}・期限切れの試合が ${overdue} 件残っています（自動解決が止まっている可能性）%0A"
+          fi
+
+          # Vault 未登録なら Cron は何も呼ばない。エラーも出ないため気付けない。
+          if [ "$vault" != "yes" ]; then
+            problems="${problems}・Cron の Vault が未登録です（SetupRunbook 8.1）%0A"
+          fi
+
+          # 毎分実行が2本あるため、1時間で0件は明らかに異常である。
+          if [ "$http_total" -eq 0 ]; then
+            problems="${problems}・直近1時間、Cron が Edge Function を一度も呼んでいません%0A"
+          elif [ "$http_error" -gt 0 ]; then
+            problems="${problems}・Cron の呼び出しが ${http_error} 件失敗しています（鍵の誤りの可能性）%0A"
+          fi
+
+          # 接続数は上限の80%を超えたら警告する。
+          if [ "$max" -gt 0 ] && [ $(( conn * 100 / max )) -ge 80 ]; then
+            problems="${problems}・DB接続数が ${conn}/${max} です（上限に近い）%0A"
+          fi
+
+          if [ -n "$problems" ]; then
+            echo "status=alert" >> "$GITHUB_OUTPUT"
+            echo "problems=$problems" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=ok" >> "$GITHUB_OUTPUT"
+          fi
+
+      # 週次ハートビートを送るかどうか。
+      # ★これが届かなくなること自体が「監視が止まった」の合図である。
+      - name: Decide heartbeat
+        id: heartbeat
+        run: |
+          if [ '${{ github.event_name }}' = 'schedule' ] && [ '${{ github.event.schedule }}' = '0 0 * * 1' ]; then
+            echo "send=yes" >> "$GITHUB_OUTPUT"
+          elif [ '${{ github.event_name }}' = 'workflow_dispatch' ] && [ '${{ inputs.send_heartbeat }}' = 'true' ]; then
+            echo "send=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "send=no" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Notify alert
+        if: steps.evaluate.outputs.status == 'alert'
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then
+            echo "::error::DISCORD_WEBHOOK_URL が未登録のため通知できない"
+            exit 1
+          fi
+
+          # ★本文はここで組み立てる。YAML の run ブロック内に字下げ無しの行を
+          #   置くとブロックが終端し、ワークフロー全体が構文エラーになる。
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          body=$(printf '%s' '${{ steps.evaluate.outputs.problems }}' | sed 's/%0A/\n/g')
+
+          content=$(printf '⚠️ **EloRating: 異常を検知しました**\n\n%s\n対応手順は導入・運営ガイドの「トラブルへの対処」を参照してください。\n詳細: %s' "$body" "$run_url")
+
+          jq -n --arg content "$content" '{content: $content}' > payload.json
+          curl -sS -X POST "$WEBHOOK" -H "Content-Type: application/json" -d @payload.json
+
+      - name: Notify heartbeat
+        if: steps.heartbeat.outputs.send == 'yes' && steps.evaluate.outputs.status == 'ok'
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then
+            echo "::error::DISCORD_WEBHOOK_URL が未登録のため通知できない"
+            exit 1
+          fi
+
+          content=$(printf '✅ **EloRating: 今週も正常です**（週次のお知らせ）\n\n・期限切れの試合：なし\n・チーム数：%s\n・待機中：%s チーム\n・直近7日の試合：確定 %s 件 / 引き分け %s 件\n・DB接続：%s / %s\n\n★このお知らせが届かない週があれば、監視そのものが止まっています。' \
+            '${{ steps.metrics.outputs.teams }}' \
+            '${{ steps.metrics.outputs.waiting_teams }}' \
+            '${{ steps.metrics.outputs.completed_7d }}' \
+            '${{ steps.metrics.outputs.drawn_7d }}' \
+            '${{ steps.metrics.outputs.connections }}' \
+            '${{ steps.metrics.outputs.max_connections }}')
+
+          jq -n --arg content "$content" '{content: $content}' > payload.json
+          curl -sS -X POST "$WEBHOOK" -H "Content-Type: application/json" -d @payload.json
+
+      # 異常時はワークフローも失敗させる。GitHub の失敗通知メールが
+      # Discord とは別の経路として働く（通知の二重化）。
+      - name: Fail on alert
+        if: steps.evaluate.outputs.status == 'alert'
+        run: |
+          echo "::error::監視で異常を検知した"
+          exit 1

@@ -448,6 +448,20 @@
 
 ---
 
+## ADR-029
+
+| 項目    | 内容 |
+| ----- | -- |
+| 日付    | 2026-08-16 |
+| タイトル  | 稼働監視を GitHub Actions へ置き、Discord へ通知する |
+| ステータス | Accepted |
+| 理由    | R-004（自動解決バッチの停止）の検知手段が無く、デプロイ時の health-check と人手の確認しか無かった。デプロイしない期間は無監視である。実際に本番で Vault 未登録のまま Cron が空回りし、誰も気付けない状態が続いた（Issue #3）。 |
+| 決定内容  | 監視は `.github/workflows/monitor.yml` から30分間隔で実行し、異常時は Discord Webhook へ通知する。**DB内（pg_cron）へ置かない。**アラート機構が監視対象と同じ仕組み（pg_cron / pg_net / Vault）に乗ると、対象が壊れる原因でアラートも同時に黙るためである。通知先を Discord とするのは、本システムの管理者が必ず Discord アカウントを持ち（ログイン手段が Discord のみ・ADR-022）、プッシュ通知が届くためである。`profiles` はメールを保持しないため、アプリからのメール送信は選択肢に無い。 |
+| 影響文書  | 11_Deployment.md（13章）、docs/project/monitoring_guide.md、docs/project/governance/RiskManagement.md（R-004）、docs/ForkGuide.md |
+| 備考    | **週次ハートビートを併せて送る。**「異常時だけ通知する」設計は通知機構自体が死ぬと無音になり、正常と区別できない。GitHub は60日間リポジトリに活動が無いと schedule を自動停止するため、この経路は実際に停止しうる。定期的な「正常」通知を出し、**沈黙そのものを異常の合図**とする。判定に `cron.job_run_details.status` を使ってはならない（ADR 外の理由は RiskManagement 6.1.1）。異常時はワークフローも失敗させ、GitHub の失敗通知メールを Discord とは別経路の予備とする。 |
+
+---
+
 # 6. AI実装ルール
 
 * 設計変更を行う前に本書へADRを追加する。

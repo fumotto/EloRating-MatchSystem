@@ -1946,6 +1946,72 @@ SELECT vault.create_secret('&lt;G:Secret key&gt;', 'service_role_key');</code></
             </p>
           </div>
 
+          <h3>異常の通知を受け取る（推奨）</h3>
+          <p>
+            放っておくと、<strong>自動処理が止まっても誰も気付けません。</strong>エラーが表示されないためです。Discord
+            へ通知が届くようにしておくと、利用者から苦情が来る前に対処できます。
+          </p>
+
+          <h4>手順1：Discord で受け取り口を作る</h4>
+          <ol>
+            <li>通知を受け取りたい Discord サーバーを開きます</li>
+            <li>
+              <strong>サーバー設定 → 連携サービス → ウェブフック → 新しいウェブフック</strong>
+            </li>
+            <li>名前（例：<code>EloRating 監視</code>）と投稿先チャンネルを選びます</li>
+            <li><strong>ウェブフックURLをコピー</strong> を押します</li>
+          </ol>
+          <p>管理者だけが見えるチャンネルを作って、そこへ投稿させるのがよいです。</p>
+
+          <h4>手順2：GitHub へ登録する</h4>
+          <p>
+            リポジトリの
+            <strong>Settings → Secrets and variables → Actions → Secrets</strong> で、<code
+              >DISCORD_WEBHOOK_URL</code
+            >
+            という名前で登録します。
+          </p>
+
+          <h4>手順3：通知が届くか確かめる</h4>
+          <ol>
+            <li><strong>Actions</strong> タブ → 左から <strong>Monitor</strong> を選びます</li>
+            <li>
+              <strong>Run workflow</strong> を押し、そのまま
+              <strong>Run workflow</strong> を実行します
+            </li>
+            <li>1分ほどで Discord にメッセージが届きます</li>
+          </ol>
+          <div class="note caution">
+            <span class="label">Caution</span>
+            <p>
+              <strong>届かなければ、URLを登録し直してください。</strong
+              >ここで確認しておかないと、本当に異常が起きたときに通知が来ないことに気付けません。
+            </p>
+          </div>
+
+          <h4>何が届くか</h4>
+          <pre><code>⚠️ EloRating: 異常を検知しました
+
+・期限切れの試合が 3 件残っています（自動解決が止まっている可能性）</code></pre>
+          <pre><code>✅ EloRating: 今週も正常です（週次のお知らせ）
+
+・期限切れの試合：なし
+・チーム数：9
+・直近7日の試合：確定 3 件 / 引き分け 1 件</code></pre>
+
+          <div class="note danger">
+            <span class="label">Danger</span>
+            <p>
+              <strong>毎週の連絡が来なくなったら、それが異常です。</strong
+              >正常なときにも週1回お知らせが届くのは、通知の仕組み自体が壊れていないことを確かめるためです。「異常のときだけ知らせる」形にすると、通知が壊れたときに静かなまま気付けません。
+            </p>
+            <p>
+              <strong>月曜に連絡が来なかった週は、Actions タブを確認してください。</strong>なお
+              GitHub
+              は、リポジトリに60日間まったく変更が無いと自動処理を止めます。その場合も連絡が来なくなるので、同じように気付けます。
+            </p>
+          </div>
+
           <h3>トラブルへの対処</h3>
           <div class="table-scroll">
             <table>
