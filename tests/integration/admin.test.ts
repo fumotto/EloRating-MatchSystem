@@ -366,7 +366,8 @@ describe("admin-update-system-settings", () => {
     setSettingsPool(db.pool as never);
 
     try {
-      for (const body of [{ ratingK: 1 }, { ratingK: 128 }, { teamMaxMembers: 2 }]) {
+      // teamMaxMembers の下限は 1 である。1人チームを許す（Issue #4 / Migration 0017）。
+      for (const body of [{ ratingK: 1 }, { ratingK: 128 }, { teamMaxMembers: 1 }]) {
         assertEquals((await post(updateSettings, body)).status, 200);
       }
     } finally {
@@ -387,7 +388,7 @@ describe("admin-update-system-settings", () => {
       const invalid = [
         { ratingK: 0 },
         { ratingK: 129 },
-        { teamMaxMembers: 1 },
+        { teamMaxMembers: 0 },
         { initialRating: 99 },
         { maxRejectCount: -1 },
         { matchRatingRange: 0 },

@@ -15,7 +15,8 @@ const FIELDS: {
   min: number;
   max?: number;
 }[] = [
-  { key: "teamMaxMembers", label: "チーム人数の上限", min: 2 },
+  // 1人チームを許す（Issue #4 / Migration 0017）。
+  { key: "teamMaxMembers", label: "チーム人数の上限", min: 1 },
   { key: "initialRating", label: "初期レート", min: 100 },
   { key: "ratingK", label: "K値", min: 1, max: 128 },
   { key: "matchRatingRange", label: "許容レート差", min: 1 },

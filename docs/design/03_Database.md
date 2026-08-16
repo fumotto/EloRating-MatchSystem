@@ -904,7 +904,7 @@ IX_rating_history_completed (completed_at DESC)
 ```text
 PK_system_settings (id)
 CHECK: id = 1
-CHECK: team_max_members > 1
+CHECK: team_max_members >= 1
 CHECK: initial_rating >= 100
 CHECK: rating_k BETWEEN 1 AND 128
 CHECK: match_rating_range > 0

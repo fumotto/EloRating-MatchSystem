@@ -7,7 +7,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap;
 
-SELECT plan(25);
+SELECT plan(27);
 
 -- テスト用データ。auth.users への外部キーがあるため profiles は先に用意する。
 INSERT INTO auth.users (id, instance_id, aud, role, email)
@@ -250,6 +250,19 @@ SELECT throws_ok(
 SELECT throws_ok(
   $$UPDATE system_settings SET rating_k = 129 WHERE id = 1$$,
   '23514', NULL, 'rejects invalid settings at the database level'
+);
+
+-- チーム人数上限の下限は 1 である（Issue #4 / Migration 0017）。
+-- 0009 では 2 以上を要求していた。1人チームでの運用を許すため緩めた境界であり、
+-- Migration の適用漏れをここで検出する。
+SELECT lives_ok(
+  $$UPDATE system_settings SET team_max_members = 1 WHERE id = 1$$,
+  'allows a one-person team as the member limit'
+);
+
+SELECT throws_ok(
+  $$UPDATE system_settings SET team_max_members = 0 WHERE id = 1$$,
+  '23514', NULL, 'rejects a member limit below one'
 );
 
 SELECT * FROM finish();

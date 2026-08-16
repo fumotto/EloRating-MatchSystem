@@ -10,7 +10,8 @@ import { withCors } from "../_shared/cors.ts";
 // ★範囲は 03_Database.md の system_settings CHECK制約と一致させる。
 //   ここで通してDB側で落ちると、原因が ADMIN-002 ではなく SYSTEM-001 になってしまう。
 const SETTINGS: Record<string, { column: string; min: number; max?: number }> = {
-  teamMaxMembers: { column: "team_max_members", min: 2 },
+  // 1人チームを許す（Issue #4 / Migration 0017）。
+  teamMaxMembers: { column: "team_max_members", min: 1 },
   initialRating: { column: "initial_rating", min: 100 },
   ratingK: { column: "rating_k", min: 1, max: 128 },
   matchRatingRange: { column: "match_rating_range", min: 1 },
