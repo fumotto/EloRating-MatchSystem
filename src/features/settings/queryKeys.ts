@@ -2,4 +2,6 @@
 export const settingsKeys = {
   all: ["settings"] as const,
   current: () => [...settingsKeys.all, "current"] as const,
+  // 公開表示設定（Issue #8）。未ログインでも取得するため別キーにする。
+  public: () => [...settingsKeys.all, "public"] as const,
 };

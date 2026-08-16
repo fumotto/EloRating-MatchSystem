@@ -3,14 +3,27 @@ import { useState } from "react";
 import { useSystemSettings } from "../../settings/hooks/useSystemSettings";
 import { useAdminResetRatings, useAdminUpdateSettings } from "../hooks/useAdminActions";
 import { SystemSettingsTable } from "../../settings/components/SystemSettingsTable";
+import { PresentationSettingsForm } from "./PresentationSettingsForm";
 import { ErrorNotice } from "../../../components/feedback/ErrorNotice";
 import { apiErrorCode } from "../../../utils/apiErrorCode";
 import type { UpdateSystemSettingsRequest } from "../../../types/api";
 
 // 入力欄の定義。範囲は system_settings の CHECK制約に合わせる（03_Database.md 10.8）。
 // 範囲外は ADMIN-002 が返るため、画面側でも同じ境界を示して往復を減らす。
+//
+// ★キーは数値項目に限る。表示設定（siteTitle 等）は文字列であり、
+//   本フォームの「入力のあった項目を Number() で送る」経路に乗らない。
+//   そちらは PresentationSettingsForm が扱う（Issue #8）。
+type NumericSettingKey = {
+  [K in keyof UpdateSystemSettingsRequest]-?: UpdateSystemSettingsRequest[K] extends
+    | number
+    | undefined
+    ? K
+    : never;
+}[keyof UpdateSystemSettingsRequest];
+
 const FIELDS: {
-  key: keyof UpdateSystemSettingsRequest;
+  key: NumericSettingKey;
   label: string;
   min: number;
   max?: number;
@@ -55,6 +68,9 @@ export function AdminSettingsPage() {
 
       {isPending ? <p className="text-sm text-slate-500">読み込み中…</p> : null}
       {settings ? <SystemSettingsTable settings={settings} /> : null}
+
+      {/* 表示設定は入力の性質が数値と異なるため別フォームにする（Issue #8）。 */}
+      {settings ? <PresentationSettingsForm settings={settings} /> : null}
 
       <form onSubmit={submit} className="space-y-3">
         <h2 className="text-sm font-medium">変更する項目のみ入力してください</h2>

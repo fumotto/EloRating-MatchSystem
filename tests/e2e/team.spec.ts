@@ -181,6 +181,18 @@ test.describe("team flow", () => {
     await expect(page.getByText("チーム人数が足りません")).toBeVisible();
   });
 
+  test("shows the top page entry points to anonymous visitors", async ({ page }) => {
+    // TC-E2E-025 トップページ（Issue #8）。未ログインで3つの導線が出る。
+    await page.goto("/");
+
+    await expect(page.getByRole("link", { name: "ログインせずに入場" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "ルールを読む" })).toBeVisible();
+
+    // 「ログインせずに入場」からランキングへ進める（ADR-018）。
+    await page.getByRole("link", { name: "ログインせずに入場" }).click();
+    await expect(page).toHaveURL(/\/ranking$/);
+  });
+
   test("keeps the requested route on a direct visit", async ({ page }) => {
     // TC-E2E-024 ログイン済みでの保護ルートへの直接遷移。
     //
@@ -198,18 +210,24 @@ test.describe("team flow", () => {
     await expect(page).toHaveURL(/\/settings$/);
   });
 
-  test("logs out and returns to the ranking", async ({ page }) => {
-    // TC-E2E-023 ログアウト後はヘッダーが未ログインの状態へ戻る。
+  test("logs out and returns to the top page", async ({ page }) => {
+    // TC-E2E-023 ログアウト後はトップページへ戻り、ヘッダーが未ログインの状態になる。
     //
     // ★セッションを消すだけではマッチのコンテキストが古いままになり、
     //   「ログアウト」が出続ける。App.tsx の invalidate がこれを防ぐ。
+    //
+    // 遷移先はトップページである（Issue #8）。以前は /ranking だった。
     const user = await createTestUser("Leaver");
     await openApp(page, user);
 
     await page.getByRole("button", { name: "ログアウト" }).click();
 
-    await expect(page).toHaveURL(/\/ranking$/);
-    await expect(page.getByRole("link", { name: "ログイン" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "ログアウト" })).toBeHidden();
+    await expect(page).toHaveURL(/\/$/);
+
+    // ★ヘッダーに限定して判定する。トップページ本体にも「ログイン」があり、
+    //   「ログインせずに入場」も部分一致するため、素のセレクタでは複数一致になる。
+    const header = page.getByRole("banner");
+    await expect(header.getByRole("link", { name: "ログイン", exact: true })).toBeVisible();
+    await expect(header.getByRole("button", { name: "ログアウト" })).toBeHidden();
   });
 });

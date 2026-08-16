@@ -889,6 +889,9 @@ IX_rating_history_completed (completed_at DESC)
 | Column                  | Type        | NULL | PK | Default | Description        |
 | ----------------------- | ----------- | ---- | -- | ------- | ------------------ |
 | id                      | INTEGER     | No   | ✓  | 1       | 固定値                |
+| site_title              | TEXT        | No   |    | EloRating-MatchSystem | トップページのサイト名 |
+| background_image_path   | TEXT        | Yes  |    | NULL    | トップページ背景。`public/` 配下の相対パス |
+| rules_markdown          | TEXT        | No   |    | ''      | ルールページ本文（Markdown） |
 | team_max_members        | INTEGER     | No   |    | 3       | チーム人数上限            |
 | initial_rating          | INTEGER     | No   |    | 1500    | 初期レート              |
 | rating_k                | INTEGER     | No   |    | 32      | K値                 |
@@ -912,7 +915,13 @@ CHECK: invite_expiration_hours > 0
 CHECK: report_timeout_minutes > 0
 CHECK: approve_timeout_minutes > 0
 CHECK: max_reject_count >= 0
+CHECK: length(btrim(site_title)) BETWEEN 1 AND 60
+CHECK: background_image_path IS NULL OR (相対パスのみ / 絶対URL・`//`・`..` を禁止 / 200文字以内)
+CHECK: length(rules_markdown) <= 20000
 ```
+
+表示設定3列は View `public_settings` を通して未認証にも公開する（Issue #8）。
+**基表そのものを匿名へ公開してはならない。** K値・各種期限まで読めてしまう。
 
 `rating_k` の上限を128とすることで、K値の境界値テストが定義可能になる。
 

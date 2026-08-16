@@ -1,8 +1,10 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+// Route（05_Frontend.md 3章）。ルート定義とガードのみ。
+//
+// ★以前は /ranking へリダイレクトしていたが、トップページを設けた（Issue #8）。
+//   ランキングへは、トップの「ログインせずに入場」から進む。
+import { createFileRoute } from "@tanstack/react-router";
+import { TopPage } from "../../features/site/components/TopPage";
 
-// ルートは公開ランキングへ寄せる（ADR-018）。
 export const Route = createFileRoute("/_public/")({
-  beforeLoad: () => {
-    throw redirect({ to: "/ranking" });
-  },
+  component: TopPage,
 });

@@ -13,6 +13,17 @@ test.describe("anonymous visitor", () => {
     await expect(page).toHaveURL(/\/ranking$/);
   });
 
+  test("serves the rules page to anonymous visitors", async ({ page }) => {
+    // TC-E2E-026 ルールページは誰でも閲覧できる（Issue #8）。
+    await page.goto("/rules");
+
+    await expect(page.getByRole("heading", { name: "ルール", exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/\/rules$/);
+
+    // ヘッダーの導線もログイン状態を問わず出る。
+    await expect(page.getByRole("link", { name: "ルール" })).toBeVisible();
+  });
+
   test("lists teams that have never played", async ({ page }) => {
     // TC-E2E-025 試合未実施のチームも一覧に出る。勝率は空欄で示す。
     await page.goto("/ranking");

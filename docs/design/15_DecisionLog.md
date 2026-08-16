@@ -428,7 +428,7 @@
 | タイトル  | フロントエンド主要ライブラリのメジャーバージョンを固定する |
 | ステータス | Accepted |
 | 理由    | `12_TechnologyStack.md` 3章は「React（最新版）」のように記載しており、具体的なバージョンを定めていない。メジャー間で破壊的変更のあるライブラリ（Tailwind CSS v3→v4、Zod v3→v4 等）があるため、採用時点の版を記録しないと再現性が失われる。 |
-| 決定内容  | B-011 の時点で採用したメジャーバージョンを以下に固定する。更新は本ADRの改訂をもって行う。<br>React 19 / Vite 8 / TypeScript 7 / TanStack Router v1 / TanStack Query v5 / Zustand v5 / React Hook Form v7 / Zod v4 / Tailwind CSS v4（`@tailwindcss/vite` プラグイン方式、`tailwind.config.js` を持たない）/ Vitest v4 / oxlint v1 / oxfmt v0 |
+| 決定内容  | B-011 の時点で採用したメジャーバージョンを以下に固定する。更新は本ADRの改訂をもって行う。<br>React 19 / Vite 8 / TypeScript 7 / TanStack Router v1 / TanStack Query v5 / Zustand v5 / React Hook Form v7 / Zod v4 / Tailwind CSS v4（`@tailwindcss/vite` プラグイン方式、`tailwind.config.js` を持たない）/ Vitest v4 / oxlint v1 / oxfmt v0<br>**追加（Issue #8 / 2026-08-16）**：marked v18 / DOMPurify v3。ルールページの Markdown 描画に使う。marked で HTML 化し DOMPurify でサニタイズする。両者は必ず対で使い、`dangerouslySetInnerHTML` は `components/content/Markdown.tsx` の1箇所に閉じ込める。 |
 | 影響文書  | 12_TechnologyStack.md（3章） |
 | 備考    | oxfmt は 0.x であり安定版に達していない。破壊的変更が生じた場合は Format Check を一時的に無効化し、本ADRを改訂する。Tailwind CSS v4 は設定をCSS側（`@import "tailwindcss"`）で行うため、v3 系の `tailwind.config.js` を前提とした手順書は適用できない。 |
 

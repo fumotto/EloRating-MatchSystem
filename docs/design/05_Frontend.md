@@ -157,8 +157,9 @@ TanStack Router を採用する。すべての画面はRouter管理下で動作�
 RootLayout
 │
 ├── PublicLayout（認証不要）
-│      ├── /                 Top
+│      ├── /                 Top（サイト名・背景・3つの導線 / Issue #8）
 │      ├── /login            Login
+│      ├── /rules            Rules（Markdown表示 / Issue #8）
 │      └── /ranking          Ranking
 │
 ├── AppLayout（認証必須）
@@ -179,6 +180,9 @@ RootLayout
 │
 └── /*                       Not Found（404）
 ```
+
+トップページとルールページは未認証で表示する。設定値は `public_settings` ビューから取得する。
+基表 `system_settings` は認証済みにしか公開しない（03_Database.md 10.8）。
 
 ## 5.2 ランキングを公開ルートへ配置する理由
 
@@ -216,7 +220,7 @@ Profile Query には管理者情報を含めない。DBとJWTの二重管理に�
 | Layout       | 責務                                          |
 | ------------ | ------------------------------------------- |
 | RootLayout   | Provider、Theme、Error Boundary、Suspense、Toast |
-| PublicLayout | 未ログイン向けヘッダー、ログイン導線、認証済み時は AppLayout と同一のナビゲーション |
+| PublicLayout | 未ログイン向けヘッダー、ログイン導線、認証済み時は AppLayout と同一のナビゲーション。トップページ（`/`）とルールページ（`/rules`）を配下に持つ |
 | AppLayout    | 共通ヘッダー、ナビゲーション、通知、**Realtime購読の一括管理**       |
 | AdminLayout  | 管理画面のナビゲーション                                |
 

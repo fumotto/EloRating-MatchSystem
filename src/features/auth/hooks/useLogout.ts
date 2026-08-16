@@ -21,9 +21,10 @@ export function useLogout() {
       //   RouterProvider の context が null に変わっても再判定されない。
       //   そのため明示的に遷移する。これが無いと「押しても何も起きない」ように見える。
       //
-      // 遷移先は未認証で閲覧できる /ranking とする（ADR-018）。
+      // 遷移先はトップページとする（Issue #8）。
+      // 以前は /ranking だったが、トップを設けたのでそちらへ戻す。
       // /login にすると、ログアウト直後に再ログインを促す形になり不自然である。
-      await navigate({ to: "/ranking" });
+      await navigate({ to: "/" });
     } catch {
       setMessage(errorMessage("SYSTEM-001"));
     } finally {

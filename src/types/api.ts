@@ -212,10 +212,26 @@ export type UpdateSystemSettingsRequest = {
   reportTimeoutMinutes?: number;
   approveTimeoutMinutes?: number;
   maxRejectCount?: number;
+  // 表示設定（Issue #8 / Migration 0018）。
+  siteTitle?: string;
+  // public/ 配下の相対パス。空文字を送ると解除される。
+  backgroundImagePath?: string;
+  rulesMarkdown?: string;
 };
+
+// public_settings ビューの列（Migration 0018）。未ログインでも取得できる。
+// ★system_settings とは別物である。運用設定は含まない。
+export interface PublicSettings {
+  site_title: string;
+  background_image_path: string | null;
+  rules_markdown: string;
+}
 
 // 列名は system_settings のもの（03_Database.md 10.8）。
 export interface SystemSettings {
+  site_title: string;
+  background_image_path: string | null;
+  rules_markdown: string;
   team_max_members: number;
   initial_rating: number;
   rating_k: number;

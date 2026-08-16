@@ -14,3 +14,68 @@ body {
 .dark body {
   @apply bg-slate-950 text-slate-100;
 }
+
+/* Markdown 本文の体裁（Issue #8）。
+ *
+ * ★Tailwind の preflight は見出しの大きさもリストの記号も落とす。
+ *   ルール本文は運営が書いた Markdown をそのまま見せる場所であり、
+ *   階層が見えないと読めないため、ここで戻す。
+ *   影響範囲を .markdown 配下に限り、アプリのUIへは及ぼさない。 */
+.markdown h1 {
+  @apply mt-6 mb-2 text-xl font-semibold;
+}
+.markdown h2 {
+  @apply mt-6 mb-2 text-lg font-semibold;
+}
+.markdown h3 {
+  @apply mt-4 mb-1 text-base font-semibold;
+}
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  @apply mt-4 mb-1 text-sm font-semibold;
+}
+.markdown p {
+  @apply my-2;
+}
+.markdown ul {
+  @apply my-2 list-disc pl-6;
+}
+.markdown ol {
+  @apply my-2 list-decimal pl-6;
+}
+.markdown li {
+  @apply my-1;
+}
+.markdown a {
+  @apply text-indigo-600 underline dark:text-indigo-400;
+}
+.markdown strong {
+  @apply font-semibold;
+}
+.markdown blockquote {
+  @apply my-3 border-l-4 border-slate-300 pl-4 text-slate-600 dark:border-slate-700 dark:text-slate-400;
+}
+.markdown code {
+  @apply rounded bg-slate-100 px-1 py-0.5 font-mono text-xs dark:bg-slate-800;
+}
+.markdown pre {
+  @apply my-3 overflow-x-auto rounded bg-slate-100 p-3 dark:bg-slate-800;
+}
+.markdown pre code {
+  @apply bg-transparent p-0;
+}
+.markdown hr {
+  @apply my-6 border-slate-200 dark:border-slate-800;
+}
+/* 表は横に溢れうる。本文ごと横スクロールさせない。 */
+.markdown table {
+  @apply my-3 block w-full overflow-x-auto border-collapse text-sm;
+}
+.markdown th,
+.markdown td {
+  @apply border border-slate-200 px-3 py-1.5 text-left dark:border-slate-800;
+}
+.markdown th {
+  @apply bg-slate-50 font-medium dark:bg-slate-900;
+}

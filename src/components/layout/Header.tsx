@@ -20,6 +20,10 @@ export function Header({ children }: HeaderProps) {
         <Link to="/ranking" className="text-sm text-slate-600 dark:text-slate-300">
           ランキング
         </Link>
+        {/* ルールは誰でも閲覧できる（Issue #8）。ログイン状態で出し分けない。 */}
+        <Link to="/rules" className="text-sm text-slate-600 dark:text-slate-300">
+          ルール
+        </Link>
         <div className="ml-auto flex items-center gap-3">
           {children}
           <button

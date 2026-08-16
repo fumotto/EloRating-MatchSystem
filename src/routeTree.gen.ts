@@ -19,6 +19,7 @@ import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as PublicIndexRouteImport } from './routes/_public/index'
 import { Route as PublicLoginRouteImport } from './routes/_public/login'
 import { Route as PublicRankingRouteImport } from './routes/_public/ranking'
+import { Route as PublicRulesRouteImport } from './routes/_public/rules'
 import { Route as AdminAdminIndexRouteImport } from './routes/_admin/admin.index'
 import { Route as AdminAdminAuditRouteImport } from './routes/_admin/admin.audit'
 import { Route as AdminAdminSettingsRouteImport } from './routes/_admin/admin.settings'
@@ -75,6 +76,11 @@ const PublicRankingRoute = PublicRankingRouteImport.update({
   path: '/ranking',
   getParentRoute: () => PublicRoute,
 } as any)
+const PublicRulesRoute = PublicRulesRouteImport.update({
+  id: '/rules',
+  path: '/rules',
+  getParentRoute: () => PublicRoute,
+} as any)
 const AdminAdminIndexRoute = AdminAdminIndexRouteImport.update({
   id: '/admin/',
   path: '/admin/',
@@ -124,6 +130,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AppSettingsRoute
   '/login': typeof PublicLoginRoute
   '/ranking': typeof PublicRankingRoute
+  '/rules': typeof PublicRulesRoute
   '/admin/audit': typeof AdminAdminAuditRoute
   '/admin/settings': typeof AdminAdminSettingsRoute
   '/admin/teams': typeof AdminAdminTeamsRoute
@@ -141,6 +148,7 @@ export interface FileRoutesByTo {
   '/settings': typeof AppSettingsRoute
   '/login': typeof PublicLoginRoute
   '/ranking': typeof PublicRankingRoute
+  '/rules': typeof PublicRulesRoute
   '/admin/audit': typeof AdminAdminAuditRoute
   '/admin/settings': typeof AdminAdminSettingsRoute
   '/admin/teams': typeof AdminAdminTeamsRoute
@@ -161,6 +169,7 @@ export interface FileRoutesById {
   '/_app/settings': typeof AppSettingsRoute
   '/_public/login': typeof PublicLoginRoute
   '/_public/ranking': typeof PublicRankingRoute
+  '/_public/rules': typeof PublicRulesRoute
   '/_public/': typeof PublicIndexRoute
   '/_admin/admin/audit': typeof AdminAdminAuditRoute
   '/_admin/admin/settings': typeof AdminAdminSettingsRoute
@@ -181,6 +190,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/login'
     | '/ranking'
+    | '/rules'
     | '/admin/audit'
     | '/admin/settings'
     | '/admin/teams'
@@ -198,6 +208,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/login'
     | '/ranking'
+    | '/rules'
     | '/admin/audit'
     | '/admin/settings'
     | '/admin/teams'
@@ -217,6 +228,7 @@ export interface FileRouteTypes {
     | '/_app/settings'
     | '/_public/login'
     | '/_public/ranking'
+    | '/_public/rules'
     | '/_public/'
     | '/_admin/admin/audit'
     | '/_admin/admin/settings'
@@ -304,6 +316,13 @@ declare module '@tanstack/react-router' {
       path: '/ranking'
       fullPath: '/ranking'
       preLoaderRoute: typeof PublicRankingRouteImport
+      parentRoute: typeof PublicRoute
+    }
+    '/_public/rules': {
+      id: '/_public/rules'
+      path: '/rules'
+      fullPath: '/rules'
+      preLoaderRoute: typeof PublicRulesRouteImport
       parentRoute: typeof PublicRoute
     }
     '/_admin/admin/': {
@@ -408,12 +427,14 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 interface PublicRouteChildren {
   PublicLoginRoute: typeof PublicLoginRoute
   PublicRankingRoute: typeof PublicRankingRoute
+  PublicRulesRoute: typeof PublicRulesRoute
   PublicIndexRoute: typeof PublicIndexRoute
 }
 
 const PublicRouteChildren: PublicRouteChildren = {
   PublicLoginRoute: PublicLoginRoute,
   PublicRankingRoute: PublicRankingRoute,
+  PublicRulesRoute: PublicRulesRoute,
   PublicIndexRoute: PublicIndexRoute,
 }
 
