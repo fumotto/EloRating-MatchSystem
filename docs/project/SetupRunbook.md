@@ -640,34 +640,58 @@ verify（CI）→ backend（Migration / Edge Functions デプロイ）
 
 Staging での継続的な動作確認:
 
-### Cron ジョブの確認
+クエリの正本は `docs/project/monitoring_guide.md` である。本節は最低限の確認だけを示す。
 
-```bash
-# (運用)管理画面から SQL Editor で実行
-SELECT jobname, schedule, last_run_success FROM cron.job;
-SELECT jobname, start_time, status 
-  FROM cron.job_run_details 
-  ORDER BY start_time DESC LIMIT 20;
+### ★Cron の `succeeded` を信用してはならない
+
+`cron.job_run_details.status` は「SQLを実行できたこと」しか示さない。Vault 未登録でも、
+鍵が誤って Function が 403 を返していても `succeeded` になる（Issue #3）。判定は
+HTTP 応答そのもので行う。
+
+```sql
+SELECT status_code, left(content, 120) AS body, created
+  FROM net._http_response ORDER BY created DESC LIMIT 10;
+```
+
+`200` 以外が続く場合は 8.1 の Vault 登録を見直す。
+
+### Cron ジョブの登録確認
+
+`cron.job` に `last_run_success` 列は無い。`cron.job_run_details` には `jobname` 列が
+無いため `cron.job` と `jobid` で結合する。
+
+```sql
+SELECT jobname, schedule, active FROM cron.job ORDER BY jobname;
+
+SELECT j.jobname, d.status, d.return_message, d.start_time
+  FROM cron.job_run_details d
+  JOIN cron.job j ON j.jobid = d.jobid
+ ORDER BY d.start_time DESC LIMIT 20;
 ```
 
 ### Edge Functions のログ
 
-Supabase ダッシュボード → Edge Functions → 函数名 → Logs タブで確認。
+Supabase ダッシュボード → Edge Functions → 関数名 → Logs タブで確認。
 
-エラーレート・レイテンシをアラートに含める（13.5）。
+### 待機列と滞留の確認
 
-### マッチングキューの状態
+`matching_queue` に状態列は無い。行が存在することが待機中である。
+`matches` の状態列は `status` であり、値は `PLAYING` / `WINNER_REPORTED` /
+`COMPLETED` / `DRAWN` である（`result_status` や `pending` は存在しない）。
 
-Staging のダッシュボードまたは DB から確認:
+```sql
+SELECT COUNT(*) AS waiting_teams, MIN(queued_at) AS oldest FROM matching_queue;
 
-```bash
-# 待機中のキュー長を確認
-SELECT COUNT(*) as queue_size FROM matching_queue WHERE status = 'waiting';
-
-# 確定待ちのマッチを確認
-SELECT COUNT(*) as pending_matches 
-  FROM matches WHERE result_status = 'pending';
+SELECT COUNT(*) FILTER (
+         WHERE status = 'PLAYING' AND report_deadline_at < NOW() - INTERVAL '5 minutes'
+       ) AS overdue_report,
+       COUNT(*) FILTER (
+         WHERE status = 'WINNER_REPORTED' AND approve_deadline_at < NOW() - INTERVAL '5 minutes'
+       ) AS overdue_approve
+  FROM matches;
 ```
+
+滞留件数が増え続ける場合、自動解決が動いていない（R-004）。
 
 ## 13.5 監視・アラート設定（オプション）
 

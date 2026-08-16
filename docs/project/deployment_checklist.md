@@ -136,14 +136,25 @@ Last Updated: 2026-08-16
   - 期待: チーム名・初期レート表示
 
 - [ ] **チーム招待**
-  - 別の Discord アカウントでログイン
-  - チーム招待を送信
-  - 期待: 招待が届き、受諾できる
+  - リーダーが「招待コードを発行」を押し、表示された26文字を控える
+  - **コードは発行時にしか表示されない。**再表示はできない（04 9.3）
+  - 別の Discord アカウントでログインし、「招待コード」欄へ貼って「チームに参加」
+  - 期待: 参加でき、役割が MEMBER になる
 
 - [ ] **マッチング・レート更新**
-  - 2チームでマッチングキューに参加
-  - マッチ成立 → 承認 → スコア入力 → 試合確定
-  - 期待: 両チームのレート・成績が更新される
+
+  **⚠️ 各チームが必須人数を満たしている必要がある。** 必須人数は
+  `system_settings.team_max_members`（初期値3）と等しい（09 4.1）。
+  満たないチームは開始ボタンが非活性になり、待機に入れない。
+  **検証には最低6アカウント（3人×2チーム）が要る。**
+  人数を用意できない場合は、管理画面で上限を一時的に下げる。
+
+  - 2チームのリーダーがそれぞれ「マッチングを開始」
+  - 勝者チームの誰かが「自チームの勝利を申告」
+  - 敗者チームの誰かが「承認する」
+  - 期待: 試合が「確定」になり、両チームのレートが更新される
+
+  **スコアの入力は無い。** 勝敗のみを記録する仕組みである。
 
 - [ ] **ランキング反映確認**
   - `/ranking` ページを再読み込み
@@ -155,22 +166,36 @@ Last Updated: 2026-08-16
   - Supabase ダッシュボード → Edge Functions → 各 Function のログ
   - エラーが無いこと
 
-- [ ] **Cron ジョブが実行されている**
-  - SQL Editor で実行（Staging Supabase ダッシュボード）：
-    ```sql
-    SELECT jobname, schedule, last_run_success FROM cron.job;
-    SELECT jobname, start_time, status 
-      FROM cron.job_run_details 
-      ORDER BY start_time DESC LIMIT 10;
-    ```
-  - 期待: 4 ジョブが登録済み、直近の実行がすべて成功
+- [ ] **Cron が Edge Function を実際に呼んでいる**
 
-- [ ] **マッチングキューが正常**
+  **⚠️ `cron.job_run_details` の `succeeded` を判定に使ってはならない。** Vault 未登録でも、
+  鍵が誤って 403 が返っていても `succeeded` になる（Issue #3）。HTTP 応答で判定する。
+
   ```sql
-  SELECT COUNT(*) FROM matching_queue WHERE status = 'waiting';
-  SELECT COUNT(*) FROM matches WHERE result_status = 'pending';
+  SELECT status_code, left(content, 120) AS body, created
+    FROM net._http_response ORDER BY created DESC LIMIT 10;
   ```
-  - 期待: 異常な積み上がりがない
+  - 期待: `200`。`403` なら Vault の鍵が誤り、行が無ければ Vault 未登録（SetupRunbook 8.1）
+
+- [ ] **Cron ジョブが4本登録されている**
+  ```sql
+  SELECT jobname, schedule, active FROM cron.job ORDER BY jobname;
+  ```
+  - 期待: `matchmaker` / `auto-resolve-matches` / `cleanup-matching-queue` / `cleanup-expired-invites`
+
+- [ ] **待機列と滞留が正常**
+  ```sql
+  SELECT COUNT(*) AS waiting_teams, MIN(queued_at) AS oldest FROM matching_queue;
+
+  SELECT COUNT(*) FILTER (
+           WHERE status = 'PLAYING' AND report_deadline_at < NOW() - INTERVAL '5 minutes'
+         ) AS overdue_report,
+         COUNT(*) FILTER (
+           WHERE status = 'WINNER_REPORTED' AND approve_deadline_at < NOW() - INTERVAL '5 minutes'
+         ) AS overdue_approve
+    FROM matches;
+  ```
+  - 期待: 滞留は 0 に近い。増え続ける場合は自動解決が動いていない（R-004）
 
 - [ ] **DB 接続が正常**
   - Connection Pool の接続数が上限の 80% を超えていない
@@ -202,9 +227,12 @@ Last Updated: 2026-08-16
 | `verify` ジョブが失敗（typecheck） | TypeScript/Deno の型エラー | ログを確認し、型エラーを修正 |
 | `Apply migrations` が失敗 | Migration 構文エラーまたは既存スキーマとの衝突 | `pre-migration-schema-<run_id>` を確認、forward fix を検討 |
 | `Deploy Edge Functions` が失敗 | ビルドエラーまたは鍵の欠落 | ビルドログを確認、secrets を再登録 |
-| `Post-migration health check` が失敗 | Cron が起動していない、または Vault の登録漏れ | SetupRunbook 8.1、10.4 を確認 |
-| ログイン後に 403 エラー | Edge Function に Service Role Key が無い | Supabase secrets が登録済みか確認 |
-| マッチングが止まる | Cron が止まっている | `cron.job_run_details` を確認、Vault 登録確認 |
+| `Post-migration health check` が失敗 | `SUPABASE_DB_URL` が Pooler の文字列でない | ホスト名が `.pooler.supabase.com` か確認（直接接続は IPv6 のみでランナーから到達不可） |
+| health check に `Vault が未登録` の警告 | Cron 用 Vault の登録漏れ | SetupRunbook 8.1 |
+| Cron から 403 が返る | Vault の鍵が Legacy の `service_role` になっている | `sb_secret_` 形式へ差し替える（SetupRunbook 8.1） |
+| 更新操作が CORS エラー | `verify_jwt` が有効なまま、または CORS 未対応 | `supabase/config.toml` と `_shared/cors.ts`（11_Deployment.md 6章） |
+| 更新操作が `内部エラー`（SYSTEM-001） | Edge Function が DB へ接続できない | `APP_DB_POOL_URL` を確認（Transaction mode / 6543） |
+| マッチングが止まる | Cron が実際には呼ばれていない | **`succeeded` ではなく `net._http_response` を見る**（フェーズ6） |
 
 ---
 
