@@ -307,7 +307,9 @@ describe("admin-update-system-settings", () => {
     max_reject_count: 2,
   };
 
-  const okStubs = (after: Record<string, number> = { ...before, rating_k: 64 }): QueryStub[] => [
+  const okStubs = (
+    after: Record<string, number | string | null> = { ...before, rating_k: 64 },
+  ): QueryStub[] => [
     ["SELECT team_max_members", [before]],
     ["UPDATE system_settings", [after]],
   ];
@@ -377,6 +379,51 @@ describe("admin-update-system-settings", () => {
     }
   });
 
+  it("updates the presentation settings", async () => {
+    // Issue #8 表示設定。数値と同じ経路で更新できること。
+    setSettingsVerifier(adminVerifier);
+    setSettingsBroadcaster(() => Promise.resolve());
+    const db = createMockDb(okStubs({ ...before, site_title: "My Site" }));
+    setSettingsPool(db.pool as never);
+
+    try {
+      const res = await post(updateSettings, {
+        siteTitle: "  My Site  ",
+        rulesMarkdown: "# ルール\n\n1. 正直に申告する",
+        backgroundImagePath: "bg.png",
+      });
+      assertEquals(res.status, 200);
+
+      const update = db.find("UPDATE system_settings")!;
+      // タイトルとURLは前後の空白を落とす。
+      assertEquals(update.params.includes("My Site"), true);
+      // ★本文は落とさない。整形の一部でありうる。
+      assertEquals(update.params.includes("# ルール\n\n1. 正直に申告する"), true);
+    } finally {
+      resetSettingsVerifier();
+      resetSettingsPool();
+      resetSettingsBroadcaster();
+    }
+  });
+
+  it("clears the background image when an empty string is sent", async () => {
+    // Issue #8 背景画像の解除。空文字は NULL を意味する。
+    setSettingsVerifier(adminVerifier);
+    setSettingsBroadcaster(() => Promise.resolve());
+    const db = createMockDb(okStubs({ ...before, background_image_path: null }));
+    setSettingsPool(db.pool as never);
+
+    try {
+      const res = await post(updateSettings, { backgroundImagePath: "" });
+      assertEquals(res.status, 200);
+      assertEquals(db.find("UPDATE system_settings")!.params, [null]);
+    } finally {
+      resetSettingsVerifier();
+      resetSettingsPool();
+      resetSettingsBroadcaster();
+    }
+  });
+
   it("rejects settings outside the database constraints", async () => {
     // TC-ADMIN-029 / 030 / 032 / 034
     // ★ここで通すとDB側のCHECKで落ち、ADMIN-002 ではなく SYSTEM-001 になる。
@@ -394,6 +441,18 @@ describe("admin-update-system-settings", () => {
         { matchRatingRange: 0 },
         { ratingK: 32.5 },
         { ratingK: "64" },
+        // 表示設定（Issue #8 / Migration 0018）。制約はDBの CHECK と一致させる。
+        { siteTitle: "" },
+        { siteTitle: "   " },
+        { siteTitle: "a".repeat(61) },
+        { siteTitle: 1 },
+        // ★スキームを絞る。javascript: や data: を背景画像へ渡させない。
+        { backgroundImagePath: "javascript:alert(1)" },
+        { backgroundImagePath: "data:image/png;base64,AAAA" },
+        { backgroundImagePath: "//example.com/a.png" },
+        { backgroundImagePath: "../secret.png" },
+        { rulesMarkdown: "a".repeat(20001) },
+        { rulesMarkdown: 1 },
       ];
 
       for (const body of invalid) {
