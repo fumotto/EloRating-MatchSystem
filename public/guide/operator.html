@@ -943,7 +943,7 @@
                   <td><span class="tok">F</span></td>
                 </tr>
                 <tr>
-                  <td>Secret key / service_role</td>
+                  <td>Secret key（<code>sb_secret_...</code>）</td>
                   <td>絶対に公開しない</td>
                   <td><span class="tok secret">G</span></td>
                 </tr>
@@ -1690,26 +1690,79 @@
   'https://&lt;D&gt;.supabase.co/functions/v1',
   'edge_function_base_url'
 );
-SELECT vault.create_secret('&lt;G:Service role key&gt;', 'service_role_key');</code></pre>
+SELECT vault.create_secret('&lt;G:Secret key&gt;', 'service_role_key');</code></pre>
+
+          <div class="note danger">
+            <span class="label">Danger</span>
+            <p>
+              <strong>鍵は <code>sb_secret_</code> で始まる方です。</strong>同じ画面の
+              <strong>Legacy API keys</strong> にある <code>service_role</code>（<code
+                >eyJhbG...</code
+              >
+              で始まる長い文字列）ではありません。
+            </p>
+            <p>
+              見分けがつかない場合は実際に試すのが確実です。<code>200</code> が返る方が正解です。
+            </p>
+            <pre><code>curl -s -X POST https://&lt;D&gt;.supabase.co/functions/v1/matchmaker \
+  -H "Authorization: Bearer &lt;試す鍵&gt;" -w " [%{http_code}]\n"</code></pre>
+          </div>
 
           <h3>動いているか確認する</h3>
-          <p>設定から数分待ってから、次を実行します。</p>
-          <pre><code>SELECT jobname, status, start_time
-  FROM cron.job_run_details
- ORDER BY start_time DESC
- LIMIT 10;</code></pre>
-          <p>
-            <code>status</code> が
-            <code>succeeded</code>
-            の行が並んでいれば成功です。何も表示されない場合はまだ実行時刻が来ていません。10分ほど待ってからもう一度確認してください。
-          </p>
+
+          <div class="note danger">
+            <span class="label">Danger</span>
+            <p>
+              <strong>Cron の「成功」表示を信用しないでください。</strong
+              ><code>cron.job_run_details</code> の <code>succeeded</code> が示すのは「SQL
+              を実行できたこと」だけで、<strong
+                >鍵が違って拒否されていても <code>succeeded</code> になります。</strong
+              >
+            </p>
+          </div>
+
+          <p>通信の結果そのものを見ます。設定から2分ほど待ってから実行してください。</p>
+          <pre><code>SELECT status_code, left(content, 120) AS body, created
+  FROM net._http_response
+ ORDER BY created DESC
+ LIMIT 5;</code></pre>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>表示される番号</th>
+                  <th>意味</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    <strong><code>200</code></strong>
+                  </td>
+                  <td><strong>成功。これが出れば完了です</strong></td>
+                </tr>
+                <tr>
+                  <td><code>403</code></td>
+                  <td>鍵が違います。上の curl で正しい鍵を確かめてください</td>
+                </tr>
+                <tr>
+                  <td><code>401</code></td>
+                  <td>鍵が空か、形式が違います</td>
+                </tr>
+                <tr>
+                  <td>何も出ない</td>
+                  <td>まだ登録できていません</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
 
           <div class="check">
             <span class="label">できたことの確認</span>
             <ul>
               <li>
                 <input type="checkbox" id="c11a" /><label for="c11a"
-                  ><code>cron.job_run_details</code> に <code>succeeded</code> の行がある</label
+                  ><code>net._http_response</code> に <code>200</code> の行がある</label
                 >
               </li>
             </ul>

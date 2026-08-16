@@ -1,0 +1,85 @@
+# Pre-commit hooks（11_Deployment.md 14章）
+#
+# ローカルで commit する前に秘密情報と一時ファイルを検出し、混入を防ぐ。
+# GitHub Actions（CI の secrets-guard）と同じチェックをローカルで先行実行する。
+#
+# 使い方:
+#   pip install pre-commit
+#   pre-commit install          # .git/hooks へ自動インストール
+#   # 以後、git commit のたびに自動実行される
+#
+# 手動実行:
+#   pre-commit run --all-files  # 全ファイルをチェック（CI と同じ範囲）
+#   pre-commit run gitleaks --all-files  # gitleaks のみ実行
+
+repos:
+  # 秘密情報の検出（11_Deployment.md 14章）。
+  # GitHub CI の secrets-guard ジョブと同一のツール。
+  - repo: https://github.com/gitleaks/pre-commit-hook
+    rev: v8.24.3
+    hooks:
+      - id: gitleaks
+        name: Scan for secrets (gitleaks)
+        description: Detect secrets and sensitive information in the code
+        entry: gitleaks detect --source . --redact --no-banner --config .gitleaks.toml
+        language: golang
+        stages: [commit]
+        # large files, logs, compiled artifacts はスキップ
+        exclude: |
+          (?x)^(
+            dist/|build/|node_modules/|coverage/|
+            \.git/|\.supabase/
+          )
+
+  # 追跡してはならないファイルの混入検出（GitHub CI の secrets-guard の1段目）。
+  # ファイル名で検出する（値の検出ではなく）。
+  - repo: local
+    hooks:
+      - id: check-tracked-secrets-and-tempfiles
+        name: Check for tracked secrets and temporary files
+        description: Ensure .env and temp files are not committed
+        # ★スクリプトはブロックスカラー（|）で書く。
+        #   プレーンスカラー（entry: bash -c '...' の直書き）にすると、本文中の
+        #   "Error: " のコロン+空白を YAML がマッピングと解釈し、ファイル全体が
+        #   構文エラーになる。oxfmt --check が落ち、CI の verify が通らなくなる。
+        entry: |
+          bash -c '
+            tracked=$(git ls-files \
+              | grep -E "(^|/)\.env($|\.)|supabase/\.(temp|branches)/|\.env\.ci$" \
+              | grep -v "^\.env\.example$" || true)
+            if [ -n "$tracked" ]; then
+              echo "Error: The following files should not be tracked:"
+              echo "$tracked"
+              echo ""
+              echo "Add them to .gitignore and remove from git:"
+              echo "  git rm --cached <file>"
+              exit 1
+            fi
+            exit 0
+          '
+        language: system
+        # git ls-files でリポジトリ全体を見るため、変更ファイル名は渡さない。
+        # 渡すと pre-commit が引数を分割して複数回呼び、同じ検査を繰り返す。
+        pass_filenames: false
+        stages: [commit]
+
+  # その他の一般的なチェック
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: check-yaml
+        description: Check YAML files for syntax errors
+        exclude: |
+          (?x)^(
+            vite.config.ts|vitest.config.ts|playwright.config.ts
+          )
+      - id: check-json
+        description: Check JSON files for syntax errors
+      - id: check-toml
+        description: Check TOML files for syntax errors
+      - id: check-merge-conflict
+        description: Check for merge conflict markers
+      - id: trailing-whitespace
+        description: Trim trailing whitespace
+      - id: end-of-file-fixer
+        description: Ensure files end with a newline

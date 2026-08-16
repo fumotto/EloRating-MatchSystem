@@ -310,12 +310,50 @@ SELECT vault.create_secret(
   'https://＜project-ref＞.supabase.co/functions/v1',
   'edge_function_base_url'
 );
-SELECT vault.create_secret('＜Service Role Key＞', 'service_role_key');
+SELECT vault.create_secret('＜Secret key（sb_secret_ で始まる方）＞', 'service_role_key');
+```
+
+### ★どちらの鍵を登録するかを間違えないこと
+
+Supabase の API キーには2系統がある。**新形式（`sb_secret_...`）を登録する。**
+Legacy API keys の `service_role`（`eyJhbG...` の JWT）ではない。
+
+`_shared/auth.ts` の `isServiceRole` は、受け取った Bearer トークンを
+`Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")` と**完全一致で比較**する。この環境変数は
+Supabase が自動注入するもので、新しいAPIキー体系のプロジェクトでは
+`sb_secret_...` が入る。Legacy の JWT を登録すると一致せず、Function は `AUTH-004` / 403 を返す。
+
+どちらが正しいかは実測できる。`200` が返る方が正解である。
+
+```bash
+curl -s -X POST https://＜project-ref＞.supabase.co/functions/v1/matchmaker \
+  -H "Authorization: Bearer ＜試す鍵＞" -w " [%{http_code}]\n"
 ```
 
 **登録するまで Cron は何もしない。** 未登録を失敗にすると毎分エラーが積まれるため、
 `invoke_edge_function` は値が無ければ黙って戻る設計にしてある。したがって
 「登録し忘れても気付けない」点に注意する。登録後に下の確認を必ず行う。
+
+### ★`cron.job_run_details` の `succeeded` を信用してはならない
+
+`status` は「SQLが実行できたこと」しか示さない。次のいずれでも `succeeded` になる。
+
+* Vault 未登録で、何も呼び出していない
+* 鍵が違い、Function が 403 を返している
+
+**HTTP の応答そのものを見ること。** `pg_net` が保存している。
+
+```sql
+SELECT status_code, left(content, 120) AS body, created
+  FROM net._http_response ORDER BY created DESC LIMIT 5;
+```
+
+| status_code | 意味 |
+| ----------- | ------------------------------------ |
+| `200`       | 正しく動作している                    |
+| `403`       | 鍵が違う。上記の curl で正しい鍵を特定する |
+| `401`       | Vault の値が空、または Bearer の形式不正 |
+| 行が無い     | Vault 未登録。Cron が呼んでいない       |
 
 ```sql
 SELECT jobname, schedule FROM cron.job ORDER BY jobname;
@@ -481,7 +519,190 @@ CI の `secrets-guard` ジョブが、ファイル名と値の両面から混入
 
 ---
 
-# 12. 更新ルール
+# 12. Pre-commit フック（秘密情報のローカル検出）
+
+GitHub Actions の `secrets-guard` ジョブと同じチェックを、commit 前にローカルで実行できるようにするための設定である。誤って秘密をコミットするのを防ぐ。
+
+## 手順
+
+### 12.1 pre-commit のインストール
+
+```bash
+pip install pre-commit
+```
+
+macOS の場合:
+```bash
+brew install pre-commit
+```
+
+### 12.2 フック自動インストール
+
+```bash
+cd /path/to/EloRating-MatchSystem
+pre-commit install
+```
+
+`.git/hooks/pre-commit` へ自動インストールされ、以後 `git commit` のたびにチェックが実行される。
+
+### 12.3 手動実行（確認用）
+
+既存のコミット全体をチェックしたい場合:
+
+```bash
+pre-commit run --all-files
+```
+
+特定のフックのみ実行（例：gitleaks）:
+
+```bash
+pre-commit run gitleaks --all-files
+```
+
+## 確認
+
+以下のファイルが実行を通さないことを確認する:
+
+```bash
+# テスト: .env に秘密を入れて commit を試みる
+echo "SECRET_KEY=exposed" > .env
+git add .env
+git commit -m "test: .env"  # ← ここで pre-commit が失敗する（意図通り）
+
+# テスト後、テストファイルを撤去
+git reset
+rm .env
+```
+
+## 完了の判定
+
+`pre-commit run --all-files` が成功し、`✓ Scan for secrets (gitleaks)` と `✓ Check for tracked secrets and temporary files` が緑になること。
+
+---
+
+# 13. Staging 環境への検証デプロイ
+
+S4（MVP完成）以後、本番へ公開する前に Staging 環境で事前検証を行う。本章は `deploy.yml` の実行手順と検証ステップをまとめる。
+
+## 13.1 前提条件
+
+- 作業5〜9（Supabase クラウド・GitHub Pages・Secrets 登録）が完了していること
+- Staging 用に別の Supabase プロジェクトが作成済みであること（作業5）
+- GitHub Secrets に `SUPABASE_PROJECT_REF`, `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD` が登録されていることこと
+
+## 13.2 Deploy 実行手順
+
+1. GitHub のリポジトリを開き **Actions** タブへ移動
+2. 左サイドバーから **Deploy** ワークフローを選ぶ
+3. **Run workflow** を押す
+4. ポップアップの `skip_backend` は**チェックしない**（バックエンドも適用する）
+5. **Run workflow** を実行
+
+ワークフロー実行ログを確認し、以下のステップがすべて緑になることを待つ:
+
+```text
+verify（CI）→ backend（Migration / Edge Functions デプロイ）
+  → health-check（Cron と接続確認）→ frontend（フロントエンド公開）
+```
+
+特に以下のステップが成功していることを確認する:
+
+| ステップ | 意味 | 失敗時の対応 |
+| ----- | --- | -------- |
+| `Capture pre-migration schema` | Migration 適用前のスキーマを保存（復旧の基準） | GitHub Secrets を再確認 |
+| `Apply migrations` | DB スキーマ更新 | `pre-migration-schema-<run_id>` を確認し、forward fix を検討 |
+| `Deploy Edge Functions` | Edge Functions をデプロイ | ビルドエラーをログから確認 |
+| `Post-migration health check` | Cron の稼働と DB 接続を確認 | `scripts/health-check.sql` を直接実行して検証 |
+
+## 13.3 Staging 上での E2E 検証
+
+デプロイ完了後、実装が仕様通りに動くことを確認する。
+
+### メインシナリオ
+
+| # | テスト項目 | 手順 | 期待 |
+| - | ------- | --- | --- |
+| 1 | ランキング公開表示 | Staging のランキングページを開く（ログインなし） | チーム一覧が表示される |
+| 2 | チーム作成 | Discord で Staging にログイン、ダッシュボードからチーム作成 | チーム名・レート・成績が表示される |
+| 3 | チーム招待 | 別の Discord アカウントで Staging にログイン、チーム招待を送信 | 被招待者がメッセージを受け取る（Webhook / Email） |
+| 4 | マッチング | キュー登録 → マッチ成立 → スコア記入 → 試合確定 | 両チームのレートが更新される |
+| 5 | ランキング更新 | マッチ確定から数分待つ | ランキングが新レートで更新される |
+
+### トラブル時の確認
+
+| 症状 | 確認先 | 対応 |
+| --- | ----- | --- |
+| マッチ承認が止まる | `cron.job_run_details` を確認（13.4） | Vault の登録確認（作業8.1） |
+| Webhook が届かない | Supabase ダッシュボード → Webhooks | Webhook URL を確認 |
+| Edge Function エラーになる | ログから詳細を確認 | デバッグログを Enable にして rerun |
+
+## 13.4 監視・ログ確認
+
+Staging での継続的な動作確認:
+
+### Cron ジョブの確認
+
+```bash
+# (運用)管理画面から SQL Editor で実行
+SELECT jobname, schedule, last_run_success FROM cron.job;
+SELECT jobname, start_time, status 
+  FROM cron.job_run_details 
+  ORDER BY start_time DESC LIMIT 20;
+```
+
+### Edge Functions のログ
+
+Supabase ダッシュボード → Edge Functions → 函数名 → Logs タブで確認。
+
+エラーレート・レイテンシをアラートに含める（13.5）。
+
+### マッチングキューの状態
+
+Staging のダッシュボードまたは DB から確認:
+
+```bash
+# 待機中のキュー長を確認
+SELECT COUNT(*) as queue_size FROM matching_queue WHERE status = 'waiting';
+
+# 確定待ちのマッチを確認
+SELECT COUNT(*) as pending_matches 
+  FROM matches WHERE result_status = 'pending';
+```
+
+## 13.5 監視・アラート設定（オプション）
+
+本番運用を想定し、以下のメトリクスを監視対象に含めることを推奨する。
+
+| メトリクス | 正常範囲 | 超過時の対応 |
+| ------ | ------ | -------- |
+| Edge Functions エラーレート | < 1 % | ログ確認、再デプロイ検討 |
+| `cron.job_run_details` 成功率 | > 95 % | Vault 確認、接続文字列検証 |
+| マッチングキュー長 | < 100 | マッチメイカーの確認、Cron が止まっていないか |
+| DB 接続数 | < 接続上限の 80% | Connection Pool サイズを再検討 |
+| API レスポンスタイム | < 2 sec | DB クエリ最適化、インデックス確認 |
+
+監視ツール（Prometheus / Grafana / Datadog など）の導入は中長期課題とする。
+
+## 完了の判定
+
+- デプロイが緑になること
+- メインシナリオ5項目が全て期待通りに動作すること
+- Edge Functions ログにエラーが無いこと
+- `cron.job_run_details` が成功記録を持つこと
+
+---
+
+# 14. 本番環境へのリリース
+
+Staging での検証が完了したら、本番用 Supabase プロジェクトへデプロイする。手順は 13.2 と同じ。ただし以下に注意する:
+
+- GitHub Secrets の `SUPABASE_PROJECT_REF` を**本番プロジェクトの値へ差し替える**前に、確認ボックスをつくり二重チェックを行う
+- リリース日時は営業時間（ユーザーが利用している時間帯）の直後か、メンテナンス告知後が望ましい
+- 本番適用後 1 時間は、ダッシュボードでメトリクスを監視する
+
+---
+
+# 15. 更新ルール
 
 本書は手順の正本である。外部サービスの画面変更などで手順が実態と合わなくなった場合は本書を修正する。
 

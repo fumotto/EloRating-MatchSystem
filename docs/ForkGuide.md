@@ -243,7 +243,7 @@ https://abcdefghijklmnopqrst.supabase.co
 | 名前 | 性質 | 用途 |
 | --- | --- | --- |
 | **Publishable key** (`sb_publishable_...`) | 公開してよい | サイトに埋め込む |
-| **Secret key / service_role** (`sb_secret_...` または長い文字列) | ⚠️ 絶対に公開しない | 手順11で使う |
+| **Secret key** (`sb_secret_...`) | ⚠️ 絶対に公開しない | 手順11で使う |
 
 > **F：Publishable key** → 控える
 > **G：Service role key** → 控える ⚠️
@@ -732,14 +732,29 @@ SELECT email FROM auth.users;
      'https://＜D：project-ref＞.supabase.co/functions/v1',
      'edge_function_base_url'
    );
-   SELECT vault.create_secret('＜G：Service role key＞', 'service_role_key');
+   SELECT vault.create_secret('＜G：Secret key＞', 'service_role_key');
    ```
 
 3. **Run** を押します
 
+### ⚠️ 鍵は `sb_secret_` で始まる方です
+
+手順2.5 で控えた **Secret key**（`sb_secret_...`）を使います。
+同じ画面の **Legacy API keys** にある `service_role`（`eyJhbG...` で始まる長い文字列）
+**ではありません。**
+
+見分けがつかない場合は、実際に試すのが確実です。`200` が返る方が正解です。
+
+```bash
+curl -s -X POST https://＜D＞.supabase.co/functions/v1/matchmaker \
+  -H "Authorization: Bearer ＜試す鍵＞" -w " [%{http_code}]\n"
+```
+
 ## 11.3 動いているか確認する
 
-設定から数分待ってから、次を実行します。
+### ⚠️ 「成功」の表示を信用しないでください
+
+次の SQL は Cron の実行結果を出しますが、**これは当てになりません。**
 
 ```sql
 SELECT jobname, status, start_time
@@ -748,10 +763,27 @@ SELECT jobname, status, start_time
  LIMIT 10;
 ```
 
-`status` が `succeeded` の行が並んでいれば成功です。
+`status` が `succeeded` でも、実際には何も処理されていないことがあります。
+この表示が示すのは「SQL を実行できたこと」だけで、その先で
+**鍵が違って拒否されていても `succeeded` になります。**
 
-何も表示されない場合は、まだ実行時刻が来ていません。10分ほど待ってから
-もう一度確認してください。
+### 正しい確認方法
+
+通信の結果そのものを見ます。設定から2分ほど待ってから実行してください。
+
+```sql
+SELECT status_code, left(content, 120) AS body, created
+  FROM net._http_response
+ ORDER BY created DESC
+ LIMIT 5;
+```
+
+| 表示される番号 | 意味 |
+| --- | --- |
+| **`200`** | **成功。これが出れば完了です** |
+| `403` | 鍵が違います。上の curl で正しい鍵を確かめてください |
+| `401` | 鍵が空か、形式が違います |
+| 何も出ない | まだ登録できていません。手順11.2 をやり直してください |
 
 ## 11.4 できたことの確認
 
