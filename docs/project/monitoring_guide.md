@@ -1,423 +1,417 @@
 # Monitoring and Observability Guide
 
-Version: 1.0
+Version: 2.0
 Status: Active
 Last Updated: 2026-08-16
 
 ---
 
-## 概要
+# 1. 目的
 
-本書は、Staging / Production での継続的な監視とロギングの設定方針をまとめる。正常系のメトリクスを把握して異常を早期に検出し、デバッグ時に過去のログから原因を追跡できるように設計する。
+本書は、Staging / Production での継続的な監視手順をまとめる。
 
-## 原則
+**本書は正本ではない。** 監視項目の定義は `docs/design/11_Deployment.md` 13章、リスクとその対策は
+`docs/project/governance/RiskManagement.md` が正本である。本書はそれらを「実際に打つコマンド」へ
+翻訳したものである。
 
-1. **ログレベルの分け方**
-   - `ERROR` / `FATAL`: ユーザーへの影響がある、または対応が必要な状況
-   - `WARN`: 推奨されない使い方やリソース枯渇の兆候
-   - `INFO`: 業務進行の重要なチェックポイント（ユーザー認証・試合確定など）
-   - `DEBUG`: 開発中のデバッグのみ（本番では出力しない）
+## 1.1 掲載する SQL の条件
 
-2. **個人情報の保護**
-   - ユーザーID は匿名化またはハッシュ化して記録
-   - メール・Discord ID・プロフィール名は出力しない
-   - エラーメッセージもユーザーへ露出する内容は避ける
+**本書の SQL は、実スキーマに対して実行できることを確認したものだけを載せる。**
 
-3. **ログの保持と検索**
-   - 最低 7 日間のログは検索可能にする
-   - 運用中に異常が起きたときは「いつ頃から」を特定するため
-   - 法的要件がある場合は 90 日を目安にする
+動かないクエリを載せると、異常時に「クエリが通らない」ことの調査から始まり、
+本来の障害対応が遅れる。列名やテーブル名を変更した場合は本書も併せて更新すること。
+
+主要な識別子は次のとおりである。誤りやすいものを挙げる。
+
+| 誤 | 正 | 備考 |
+| --- | --- | --- |
+| `matches.result_status` | `matches.status` | 値は `PLAYING` / `WINNER_REPORTED` / `COMPLETED` / `DRAWN`（ADR-008） |
+| `matches.updated_at` | `matches.completed_at` ほか | `matches` に `updated_at` は無い |
+| `matching_queue.status` | （列が無い） | 待機列に載っていること自体が待機状態である |
+| `matching_queue.created_at` | `matching_queue.queued_at` | |
+| `team_rating_history` | `rating_history` | |
+| `auth_logs` / `rating_queue` | （存在しない） | 認証ログは Supabase Auth 側にある |
+| `cron.job.last_successful_run` | （列が無い） | `cron.job_run_details` から引く |
+| `cron.job_run_details.error_message` | `return_message` | |
+| `cron.job_run_details.jobname` | （列が無い） | `cron.job` と `jobid` で結合する |
 
 ---
 
-## 1. Edge Functions のログ
+# 2. 最優先で見る指標
 
-### 1.1 ロギング方法
+## 2.1 自動処理が実際に動いているか（R-004）
 
-Edge Functions（`supabase/functions/`）は `console.log` で出力する。
+**本システムで最も重要な監視項目である。** 自動解決が止まると期限切れの試合が確定せず、
+1チーム同時1試合の制約により、当事者は以後まったくマッチングできなくなる。
 
-```typescript
-// Good: 業務的に意味のあるチェックポイント
-console.log(`[accept-team-invite] User ${hashedUserId} accepted invite from team ${teamId}`);
+### ★`cron.job_run_details` の `succeeded` を信用してはならない
 
-// Good: エラーとその原因
-console.error(`[queue-match] DB error: ${error.message}`);
+`status` が示すのは「SQL を実行できたこと」だけである。次のいずれでも `succeeded` になる。
 
-// Bad: 個人情報をそのまま出力
-console.log(`[login] User ${userId} (${email}) logged in`);  // ❌ Email を出力
+* Vault 未登録で、Edge Function を一度も呼んでいない
+* 鍵が誤っており、Function が 403 を返している
+
+いずれも「Cron は正常」に見えたまま、業務は一切進まない。実際に本番で発生した
+（Issue #3）。判定は次の2つで行う。
+
+### 判定1：HTTP 応答を見る
+
+```sql
+SELECT status_code, left(content, 120) AS body, created
+  FROM net._http_response
+ ORDER BY created DESC
+ LIMIT 10;
 ```
 
-### 1.2 確認方法
+| status_code | 意味 |
+| ----------- | ---------------------------------------- |
+| `200`       | 正常 |
+| `403`       | Vault の鍵が誤っている（`sb_secret_` 形式か確認する） |
+| `401`       | Vault の値が空、または Bearer の形式不正 |
+| 行が無い     | Vault 未登録。Cron が呼んでいない |
 
-**Staging / Production:**
+### 判定2：期限超過の滞留件数を見る
 
-Supabase ダッシュボード → Edge Functions → 函数名 → **Logs** タブ
+こちらが最終的な判定基準である（RiskManagement R-004）。
 
-実時間で関数の呼び出しとエラーが表示される。
+```sql
+SELECT COUNT(*) FILTER (
+         WHERE status = 'PLAYING' AND report_deadline_at < NOW() - INTERVAL '5 minutes'
+       ) AS overdue_report,
+       COUNT(*) FILTER (
+         WHERE status = 'WINNER_REPORTED' AND approve_deadline_at < NOW() - INTERVAL '5 minutes'
+       ) AS overdue_approve
+  FROM matches;
+```
 
-**ローカル開発:**
+**正常：どちらも 0 に近い。** 増え続けている場合、自動解決は動いていない。
+
+`scripts/health-check.sql` が同じ内容を含む。デプロイ時は `deploy.yml` が自動実行する。
+手動実行は次のとおり。
 
 ```bash
-supabase functions serve --env-file .env
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f scripts/health-check.sql
 ```
 
-ターミナルに `console.log` の出力が直接表示される。
+## 2.2 Cron ジョブの登録状況
 
-### 1.3 監視対象メトリクス
+4本が登録されていること。`cron.job` に `last_successful_run` 列は無いため、
+実行履歴は `cron.job_run_details` を `jobid` で結合して引く。
 
-Supabase の `pg_stat_statements` や外部監視ツールから確認:
+```sql
+SELECT jobname, schedule, active FROM cron.job ORDER BY jobname;
 
-| メトリクス | 測定方法 | 正常範囲 | アラート閾値 |
-| ------ | ----- | ------ | -------- |
-| 関数の呼び出し数 | ログ行数（時間単位） | 用途に応じて | 異常な急増・急減 |
-| エラーレート | ERROR 行数 / 総行数 | < 1% | > 5% |
-| レスポンスタイム | ログのタイムスタンプから計算 | < 2 sec | > 5 sec |
-| 実行時パニック | `panicked`, `panic` を含むログ | 0 | > 0 |
-
-### 1.4 ログ検索クエリ例
-
-Supabase の Logs から検索:
-
+SELECT j.jobname,
+       d.status,
+       d.return_message,
+       d.start_time
+  FROM cron.job_run_details d
+  JOIN cron.job j ON j.jobid = d.jobid
+ ORDER BY d.start_time DESC
+ LIMIT 20;
 ```
-# 過去1時間のエラーをすべて表示
-function_name: 'queue-match' AND level: 'error' AND timestamp >= 1h ago
 
-# 特定チームのマッチング動作を追跡
-function_name: 'queue-match' AND 'team_id_xyz'
-
-# Database errors only
-level: 'error' AND 'DB error'
-```
+`status` が `failed` の場合は `return_message` に理由が入る。
+`succeeded` でも安心してはならない理由は 2.1 のとおりである。
 
 ---
 
-## 2. Database の監視
+# 3. マッチングと試合の状態
 
-### 2.1 接続数
+## 3.1 待機列
 
-**目的:** Connection Pool が枯渇して新しい接続要求が失敗する状況を検出
-
-```sql
--- Staging / Production の SQL Editor で実行
-SELECT 
-  sum(numbackends) as total_connections,
-  max(numbackends) as max_connections_on_db
-FROM pg_stat_database
-WHERE datname = current_database();
-
--- 詳細: 接続ユーザーごと
-SELECT usename, count(*) FROM pg_stat_activity GROUP BY usename;
-```
-
-**正常範囲:** < 10（ローカル）/ < 上限の 80%（Staging/Prod）
-
-**超過時:** Connection Pool サイズを増加、または接続を長時間保つ処理を検査
-
-### 2.2 クエリパフォーマンス
-
-**目的:** 遅いクエリを検出して最適化の対象にする
+`matching_queue` に状態列は無い。**行が存在することが待機中である。**
 
 ```sql
--- 実行時間が長いクエリ TOP 10
-SELECT 
-  query,
-  mean_exec_time,
-  calls,
-  total_exec_time
-FROM pg_stat_statements
-ORDER BY mean_exec_time DESC
-LIMIT 10;
+SELECT COUNT(*) AS waiting_teams,
+       MIN(queued_at) AS oldest_waiting
+  FROM matching_queue;
 ```
 
-**目安:** 平均実行時間が 1 sec を超えるクエリはログと共にレビュー対象
+**正常：** 相手が居れば数秒で解消する。1チームしか待機していない場合は
+待ち続けるのが正常であり、異常ではない（`09_MatchmakingSpecification.md` 4章）。
 
-### 2.3 Cron ジョブの実行状況
-
-**最も重要:** Cron が止まるとマッチが確定せず、ユーザーが動けなくなる
+**異常の兆候：** 2チーム以上が長時間待機したまま。レート差が
+`system_settings.match_rating_range` を超えていないかを確認する。
 
 ```sql
--- Cron ジョブ一覧（4 ジョブが登録されているはず）
-SELECT jobname, schedule, last_successful_run FROM cron.job;
-
--- 直近の実行履歴（最後の 20 行）
-SELECT 
-  jobname, 
-  start_time, 
-  status, 
-  CASE WHEN status = 'failed' THEN error_message ELSE '' END as error
-FROM cron.job_run_details
-ORDER BY start_time DESC
-LIMIT 20;
+SELECT t.name, t.rating, q.queued_at
+  FROM matching_queue q
+  JOIN teams t ON t.id = q.team_id
+ ORDER BY q.queued_at;
 ```
 
-**正常:** すべてのジョブが 成功 status、最後の実行が 3 分以内
-
-**異常:** status が failed、または直近 1 時間に実行記録がない → SetupRunbook 10.4 の Vault 登録を確認
-
-### 2.4 インデックスの監視
-
-**目的:** インデックスが効いていないまたは不足しているクエリを検出
+## 3.2 進行中の試合
 
 ```sql
--- 未使用のインデックスを表示
-SELECT schemaname, tablename, indexname, idx_scan
-FROM pg_stat_user_indexes
-WHERE idx_scan = 0
-ORDER BY tablename;
-
--- インデックス効率（テーブルスキャンが多いか）
-SELECT schemaname, tablename, n_tup_ins, n_tup_upd, n_tup_del
-FROM pg_stat_user_tables
-ORDER BY n_tup_upd DESC;
+SELECT status, COUNT(*)
+  FROM matches
+ WHERE status IN ('PLAYING', 'WINNER_REPORTED')
+ GROUP BY status;
 ```
 
-異常が見つかったら、Design ドキュメントと照らし合わせて インデックス追加を検討
+期限を過ぎたまま残っているものは 2.1 の滞留件数で見る。
 
-### 2.5 ディスク使用量
+## 3.3 決着の内訳
 
-**目的:** ディスク枯渇を事前に検出
+`DRAWN` の急増は、申告期限・承認期限が短すぎる兆候である。
 
 ```sql
--- テーブル size 一覧（大きい順）
-SELECT 
-  schemaname,
-  tablename,
-  pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) AS size
-FROM pg_tables
-WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
-ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;
+SELECT status, COUNT(*)
+  FROM matches
+ WHERE completed_at > NOW() - INTERVAL '24 hours'
+ GROUP BY status;
 ```
 
-**目安:** 合計が割り当てストレージの 75% を超えたらバックアップと履歴削除を検討
+`DRAWN` が `COMPLETED` を上回る状態が続く場合、`system_settings` の
+`report_timeout_minutes` / `approve_timeout_minutes` の見直しを検討する。
 
-### 2.6 スロー クエリログ
+## 3.4 レート更新の追跡
 
-**Staging / Production setup:**
+レート履歴は `rating_history` である（`team_rating_history` ではない）。
 
 ```sql
--- ログを有効化（1 sec 以上のクエリを記録）
-ALTER SYSTEM SET log_min_duration_statement = 1000;
-SELECT pg_reload_conf();
-
--- ログを確認（pg_dump から）
+SELECT COUNT(*) AS rating_updates
+  FROM rating_history
+ WHERE created_at > NOW() - INTERVAL '24 hours';
 ```
+
+**確定した試合1件につき2行**が入る（勝者と敗者）。`COMPLETED` の件数の2倍に
+なっていなければ、レート更新のどこかで失敗している。
+
+引き分け（`DRAWN`）ではレートを更新しないため、`rating_history` へ行は入らない
+（`08_RatingSpecification.md` 4章）。
 
 ---
 
-## 3. マッチングシステムの監視
+# 4. データベース
 
-### 3.1 キュー状態
+## 4.1 接続数
 
-マッチングの最初のステップ。キューに積まれたまま確定しない試合がないか監視
-
-```sql
--- 待機中のキュー
-SELECT 
-  COUNT(*) as waiting_teams,
-  MIN(created_at) as oldest_waiting
-FROM matching_queue
-WHERE status = 'waiting';
-
--- 異常: 30 分以上待機しているキューがあれば、マッチメイカー Cron を確認
-```
-
-**正常:** 待機時間 < 2 分
-
-### 3.2 未確定マッチ
+Edge Functions は Function ごとに別プロセスで動くため、接続が積み上がりやすい。
+上限に達すると Auth（GoTrue）まで巻き添えで落ちる。
 
 ```sql
--- 確定待ちの試合
-SELECT COUNT(*) FROM matches WHERE result_status = 'pending';
-
--- 期限を超過しているマッチ（1 時間以上確定していない）
-SELECT id, created_at, updated_at
-FROM matches
-WHERE result_status = 'pending' 
-  AND updated_at < NOW() - INTERVAL '1 hour'
-ORDER BY created_at ASC;
+SELECT COUNT(*) AS connections,
+       (SELECT setting::int FROM pg_settings WHERE name = 'max_connections') AS max_connections
+  FROM pg_stat_activity;
 ```
 
-**正常:** pending が 0、または最大でも < 10
+**正常：** 上限の 80% 未満。
 
-**異常:** pending が増え続ける → Cron が止まっている可能性が高い
+**超過時：** Edge Functions が Connection Pooler を経由しているかを確認する
+（`APP_DB_POOL_URL` / `11_Deployment.md` 5.1）。直接接続では上限に張り付く。
 
-### 3.3 レート更新の遅延
+## 4.2 遅いクエリ
 
 ```sql
--- 直近1時間のマッチ成立数
-SELECT COUNT(*) FROM matches WHERE created_at > NOW() - INTERVAL '1 hour';
-
--- 直近1時間のレート更新（ランキング更新）
-SELECT COUNT(*) FROM team_rating_history 
-WHERE created_at > NOW() - INTERVAL '1 hour';
+SELECT calls, round(mean_exec_time::numeric, 1) AS mean_ms, left(query, 80) AS query
+  FROM pg_stat_statements
+ ORDER BY mean_exec_time DESC
+ LIMIT 10;
 ```
 
-**期待:** 試合成立数 > レート更新数（同期はありえても追い抜くことはないはず）
+平均実行時間が 1 秒を超えるものはインデックスの追加を検討する。
+
+## 4.3 テーブルサイズ
+
+```sql
+SELECT relname AS table_name,
+       pg_size_pretty(pg_total_relation_size(relid)) AS size
+  FROM pg_stat_user_tables
+ ORDER BY pg_total_relation_size(relid) DESC
+ LIMIT 10;
+```
+
+`audit_logs` と `rating_history` は追記のみで増え続ける。
+無料枠の上限に近づいた場合、まずこの2つを確認する。
 
 ---
 
-## 4. API レスポンスタイムと エラーレート
+# 5. Edge Functions のログ
 
-### 4.1 レスポンスタイムの測定
+## 5.1 出力方法
 
-ローカルまたは Staging で Playwright テストの実行時間を記録:
+`console.log` / `console.error` で出力する。Supabase ダッシュボードの
+**Edge Functions → 関数名 → Logs** で確認できる。ローカルでは
+`supabase functions serve` のターミナルへ直接出る。
+
+## 5.2 ★個人情報を出力してはならない
+
+メールアドレス、Discord のユーザーID、表示名をログへ出さない。
 
 ```typescript
-// Playwright: レスポンスタイムをログに出す
-test('match flow timing', async ({ page }) => {
-  const startTime = Date.now();
-  await page.goto('http://localhost:5173/dashboard');
-  const navigationTime = Date.now() - startTime;
-  
-  console.log(`Dashboard load: ${navigationTime}ms`);
-  expect(navigationTime).toBeLessThan(3000);  // 3 sec 以下
-});
+// 良い例：業務上の区切りが分かる
+console.log(`[queue-match] queued team=${teamId}`);
+
+// 悪い例：個人が特定できる
+console.log(`[login] ${email} logged in`);
 ```
 
-### 4.2 エラー率
+利用者IDを出す必要がある場合は `profiles.id`（UUID）に留める。
+これは Discord 側の識別子ではないため、外部と突き合わせられない。
 
-GitHub Actions CI でテスト実行時に E2E エラー数を追跡:
+## 5.3 保持期間
 
-```bash
-# Playwright レポートのサマリー
-bun run test:e2e 2>&1 | grep -E "passed|failed|skipped"
-```
+**ログの保持期間は Supabase のプラン依存であり、本プロジェクトで制御していない。**
+無料プランでは概ね1日である。長期保存が必要になった時点でプランの変更を検討する。
 
-期待値: `failed: 0`
+外部ストレージへのアーカイブは**行っていない**。Storage は MVP では使用しない
+（`11_Deployment.md` 2章）。
 
 ---
 
-## 5. 外部サービスの監視
+# 6. 監視していないもの
 
-### 5.1 Discord 認証
+**実装していない機能を監視項目に挙げない。** 存在しない仕組みを確認しようとして
+時間を失うためである。
 
-エラー率:
-```sql
--- 過去1時間の Discord ログイン試行回数と失敗
-SELECT 
-  COUNT(*) as total_attempts,
-  COUNT(CASE WHEN error IS NOT NULL THEN 1 END) as failures
-FROM auth_logs
-WHERE provider = 'discord' AND created_at > NOW() - INTERVAL '1 hour';
-```
-
-### 5.2 Webhook（マッチ確定通知）
-
-Supabase ダッシュボード → Database → Webhooks
-
-- [ ] Webhook の送信履歴を確認
-- [ ] 失敗率が < 5% であること
-- [ ] Retry が成功していること
+| 項目 | 状況 |
+| --- | --- |
+| Database Webhooks | **使用しない。** Realtime は Broadcast 方式であり、Edge Function がコミット後に明示送信する（`0016_realtime.sql`） |
+| Storage / S3 | **使用しない**（`11_Deployment.md` 2章） |
+| 認証ログのテーブル | アプリ側に持たない。Supabase ダッシュボードの Authentication → Logs で見る |
+| APM（Datadog / New Relic 等） | 未導入 |
+| p95 レスポンスタイム | 測定基盤が無い。導入する場合は外部監視から測る |
 
 ---
 
-## 6. アラート設定
+# 7. アラート
 
-### 6.1 推奨アラート（メール / Slack 通知）
+## 7.1 現状
 
-| 項目 | 閾値 | 重大度 | 対応 |
+**自動通知の仕組みは無い。** 現在は次の2つでしか気付けない。
+
+* デプロイ時の `health-check.sql`（`deploy.yml` が自動実行）
+* 人が手動で本書のクエリを実行する
+
+つまり**デプロイしない期間は無監視である。** これは Issue #3 の残作業として
+未解決のまま残っている。
+
+## 7.2 導入する場合の選択肢
+
+| 案 | 内容 | 長所 | 短所 |
 | --- | --- | --- | --- |
-| Edge Functions エラーレート | > 5% | **Critical** | 即座に対応 |
-| DB 接続数 | > 上限の 90% | **Critical** | Connection Pool 拡張 |
-| Cron 実行失敗 | > 0 | **Critical** | Vault / 接続文字列を確認 |
-| マッチング待機時間 | > 5 min | **Warning** | マッチメイカーロジックを確認 |
-| API レスポンスタイム (p95) | > 5 sec | **Warning** | クエリ最適化を検討 |
-| ディスク使用量 | > 80% | **Warning** | バックアップと履歴削除 |
+| A | CI の夜間定期実行（`ci.yml` の schedule）に本番 health-check を追加 | 追加サービス不要。既存の仕組みに乗る | 本番DBへCIから接続する経路が増える。通知は Actions の失敗のみ |
+| B | pg_cron で滞留件数を定期チェックし、閾値超過を `audit_logs` へ記録 | 外部依存なし | 外部通知ができない。人が見に行く必要がある |
+| C | 外部監視サービス＋通知用 Edge Function | 通知が届く。無料枠あり | サービスが1つ増える |
 
-### 6.2 Datadog / Prometheus / Grafana の導入（中長期）
+**閾値の案：** `overdue_report + overdue_approve > 0` が 15 分以上継続。
+自動解決は1分間隔のため、正常なら5分以内に解消する。
 
-現在、Supabase ネイティブのメトリクスと PostgreSQL の view で監視している。
+## 7.3 何を通知するか
 
-将来的には、以下の導入を検討:
-
-- **Prometheus:** DB メトリクスと Edge Functions のカスタムメトリクスを集約
-- **Grafana:** ダッシュボード可視化
-- **Datadog / New Relic:** マネージドサービス（運用負荷を軽減）
+Cron の成否ではなく、**滞留件数**を基準にする。成否は「処理が行われなかったこと」を
+区別できないためである（RiskManagement 6.1.1）。
 
 ---
 
-## 7. ログの保持と分析
+# 8. 障害時の調べ方
 
-### 7.1 ログレベル別の保持期間
+## 8.1 「マッチングできない」
 
-| レベル | 保持期間 | 検索対象 |
-| --- | ------ | ------ |
-| ERROR / FATAL | 90 日 | Supabase Logs + S3 アーカイブ |
-| WARN | 30 日 | Supabase Logs |
-| INFO | 7 日 | Supabase Logs |
-| DEBUG | 1 日 | ローカルのみ |
+順に確認する。**上から順に、頻度の高い原因から並べてある。**
 
-### 7.2 ログ検索コマンド例
+1. **自動処理が動いているか**（最も多い原因）
 
-```bash
-# grep 相当の検索（Supabase CLI）
-supabase functions logs --follow [function-name]
+   2.1 の判定1・判定2を実行する。
 
-# jq で JSON 解析（ログ JSON 形式の場合）
-curl -s https://<project>.supabase.co/functions/v1/logs \
-  -H "Authorization: Bearer $ANON_KEY" \
-  | jq '.[] | select(.level == "error")'
+2. **そのチームが待機列に入っているか**
+
+   ```sql
+   SELECT q.queued_at
+     FROM matching_queue q
+     JOIN teams t ON t.id = q.team_id
+    WHERE t.name = '＜チーム名＞';
+   ```
+
+3. **進行中の試合を持っていないか**
+
+   1チーム同時1試合である。進行中があれば待機に入れない。
+
+   ```sql
+   SELECT id, status, report_deadline_at
+     FROM matches
+    WHERE (team_a_id = (SELECT id FROM teams WHERE name = '＜チーム名＞')
+        OR team_b_id = (SELECT id FROM teams WHERE name = '＜チーム名＞'))
+      AND status NOT IN ('COMPLETED', 'DRAWN');
+   ```
+
+4. **人数が必須人数に達しているか**
+
+   必須人数は `system_settings.team_max_members` と等しい（`09` 4.1）。
+
+   ```sql
+   SELECT s.team_max_members,
+          (SELECT COUNT(*) FROM team_members m
+            JOIN teams t ON t.id = m.team_id WHERE t.name = '＜チーム名＞') AS members
+     FROM system_settings s;
+   ```
+
+5. **BAN されていないか**
+
+   ```sql
+   SELECT name, is_banned FROM teams WHERE name = '＜チーム名＞';
+   ```
+
+## 8.2 「レートが更新されない」
+
+1. **試合の状態を見る**
+
+   ```sql
+   SELECT id, status, winner_team_id, reported_at, approved_at, completed_at
+     FROM matches
+    WHERE id = '＜match id＞';
+   ```
+
+   `WINNER_REPORTED` のままであれば、相手が承認していない。正常な待ち状態である。
+
+2. **確定しているのに履歴が無い場合**
+
+   ```sql
+   SELECT * FROM rating_history WHERE match_id = '＜match id＞';
+   ```
+
+   `COMPLETED` なのに0行であれば、確定処理の途中で失敗している。
+   Edge Functions のログ（`approve-match` / `auto-resolve-matches`）を確認する。
+
+3. **引き分けの場合**
+
+   `DRAWN` ではレートを更新しない。履歴が無いのが正しい。
+
+## 8.3 監査ログから追う
+
+誰が何をしたかは `audit_logs` に残る。`actor_profile_id` が NULL のものは
+システム（定期処理）による操作である。
+
+```sql
+SELECT action, target_type, target_id,
+       COALESCE(actor_profile_id::text, 'システム') AS actor,
+       created_at
+  FROM audit_logs
+ ORDER BY created_at DESC
+ LIMIT 30;
 ```
 
 ---
 
-## 8. インシデント対応時のログ活用
+# 9. 日次で見る項目
 
-### 8.1 「ユーザーがマッチできない」場合
+本書のうち、毎日確認するのは次の3つで足りる。
 
-1. **ユーザーの操作ログを追跡**
-   ```sql
-   SELECT * FROM matching_queue WHERE user_id = <user> ORDER BY created_at DESC;
-   SELECT * FROM matches WHERE team_a_id = <team> OR team_b_id = <team> ORDER BY created_at DESC;
-   ```
+| 項目 | 節 | 異常の判定 |
+| --- | --- | --- |
+| 期限超過の滞留件数 | 2.1 | 0 より大きい状態が続く |
+| DB 接続数 | 4.1 | 上限の 80% を超える |
+| 直近24時間の決着内訳 | 3.3 | `DRAWN` が `COMPLETED` を上回る |
 
-2. **マッチメイカーの実行ログを確認**
-   ```sql
-   SELECT start_time, status, error_message 
-   FROM cron.job_run_details 
-   WHERE jobname LIKE '%matchmaker%' 
-   ORDER BY start_time DESC LIMIT 10;
-   ```
-
-3. **Edge Function ログ**
-   - Supabase Logs から過去 24 時間の `queue-match` と `matchmaker` エラーを検索
-
-### 8.2 「レートが更新されない」場合
-
-1. **試合の状態確認**
-   ```sql
-   SELECT id, result_status, updated_at FROM matches WHERE id = <match> LIMIT 1;
-   ```
-
-2. **Cron 実行確認**
-   ```sql
-   SELECT * FROM cron.job_run_details WHERE jobname = 'auto-resolve-matches' ORDER BY start_time DESC LIMIT 5;
-   ```
-
-3. **rating_queue の確認**（あれば）
-   ```sql
-   SELECT * FROM rating_queue WHERE match_id = <match>;
-   ```
+`scripts/health-check.sql` はこの3つを含む。1本実行すれば足りる。
 
 ---
 
-## 9. 本番運用チェックリスト
+# 10. 参考
 
-本番運用を開始したら、以下を毎日確認する:
-
-- [ ] エラーレート ( Edge Functions )
-- [ ] Cron 実行履歴（失敗がないか）
-- [ ] マッチング待機時間
-- [ ] DB 接続数
-- [ ] ディスク使用量
-
-メトリクスをダッシュボード化して実時間監視が理想的。
-
----
-
-## 参考資料
-
-- Supabase ドキュメント: https://supabase.com/docs/guides/database/log-in-logs
-- PostgreSQL Performance Tips: https://www.postgresql.org/docs/current/runtime-config-logging.html
-- `docs/design/11_Deployment.md` — 本番運用方針
-- `docs/project/SetupRunbook.md` — インシデント対応手順
+* `docs/design/11_Deployment.md` 13章 — 監視項目の正本
+* `docs/project/governance/RiskManagement.md` — R-004 とその判定基準
+* `docs/project/SetupRunbook.md` 8.1 — Vault 登録手順
+* `scripts/health-check.sql` — 本書の主要クエリをまとめたもの
