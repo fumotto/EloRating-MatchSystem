@@ -43,8 +43,12 @@ Playwright を使用し、実際のブラウザ操作に近い形で検証する
 | TC-E2E-006 | リーダー移譲      | 複数メンバー    | 移譲操作                 | リーダーが入れ替わる                | `transfers the leader role`                      |
 | TC-E2E-007 | チーム脱退       | 一般メンバー    | 脱退操作                 | チームから脱退する                 | `leaves the team`                                |
 | TC-E2E-008 | リーダー脱退の制限   | リーダー・他メンバー在籍 | 脱退操作                 | 移譲を促すメッセージが表示され、脱退できない    | `blocks the leader from leaving before transfer` |
-| TC-E2E-023 | **ログアウト**    | ログイン済     | ログアウト操作              | ランキングへ遷移し、ヘッダーが未ログインの表示へ戻る | `logs out and returns to the ranking`            |
+| TC-E2E-023 | **ログアウト**    | ログイン済     | ログアウト操作              | トップページへ遷移し、ヘッダーが未ログインの表示へ戻る | `logs out and returns to the top page`           |
 | TC-E2E-024 | **保護ルートへの直接遷移** | ログイン済     | `/team`・`/settings` を直接開く | 指定したURLのまま該当画面が表示される（`/dashboard` へ化けない） | `keeps the requested route on a direct visit`    |
+| TC-E2E-044 | **トップページ**      | 未ログイン     | `/` を開く                 | ログイン／入場／ルールの3導線が表示される | `shows the top page entry points to anonymous visitors` |
+| TC-E2E-045 | **ルールページの公開**   | 未ログイン     | `/rules` を開く            | 閲覧でき、ヘッダーにも導線がある | `serves the rules page to anonymous visitors` |
+| TC-E2E-046 | **お知らせの表示**     | お知らせ登録済   | 任意の画面を開く              | ヘッダーに帯が表示される | `shows the announcement banner to anonymous visitors` |
+| TC-E2E-047 | **お知らせ未登録**     | お知らせが空    | 任意の画面を開く              | 帯が表示されない | `hides the banner when the announcement is empty` |
 
 ## 3.2 マッチングと試合
 
@@ -64,10 +68,15 @@ Playwright を使用し、実際のブラウザ操作に近い形で検証する
 | TC-E2E-020 | 試合中の制限          | 進行中             | キュー登録を試行           | 登録できない                        | `blocks matchmaking while a match is in progress`      |
 | TC-E2E-021 | 解散後の再マッチング      | 直前の試合が `DRAWN`  | キュー登録              | 登録できる                         | `allows matchmaking again after a draw`                |
 | TC-E2E-022 | **必須人数未満の制限**    | 必須人数に満たないチーム     | マッチング画面を開く         | 不足の案内と開始ボタンが同時に表示され、ボタンは非活性である | `blocks matchmaking for a team below the required size` |
+| TC-E2E-043 | **マッチング成立の演出**   | 2チームが待機          | 相手が見つかる            | 相手名・両チームのレート・勝敗時の変動が表示され、試合へ遷移できる | `shows the match details and moves to the match` |
 
 TC-E2E-009 / 011 / 012 / 020 / 021 は、チームが必須人数（`team_max_members`）を満たしていることを前提とする（`09_MatchmakingSpecification.md` 4.1）。テストは招待経路でチームを定員まで埋めてから待機を行う。
 
 TC-E2E-018 と TC-E2E-019 は、テスト実行時間を短縮するため管理APIで期限を最小値へ変更してから実施する。
+
+**★本書には節をまたいだID重複が残っている**（009 / 018 / 019 / 022 / 023 / 024 / 029 / 038）。
+節ごとに採番したことに由来する既存の不整合であり、実装済みテストのコメントは
+一意な番号を用いている。新規追加は 043 以降の空き番号を使うこと。
 
 ## 3.3 ランキング
 

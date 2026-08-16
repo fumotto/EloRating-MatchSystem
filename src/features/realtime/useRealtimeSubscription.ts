@@ -12,6 +12,8 @@ import { matchKeys, queueKeys } from "../match/queryKeys";
 import { rankingKeys } from "../ranking/queryKeys";
 import { settingsKeys } from "../settings/queryKeys";
 import { teamKeys } from "../team/queryKeys";
+import { useMatchFoundStore } from "../../stores/matchFoundStore";
+import { showNotification } from "../../utils/browserNotification";
 
 type ChannelName = "ranking" | "match" | "team" | "system";
 
@@ -46,6 +48,25 @@ export function useRealtimeSubscription(isAuthenticated: boolean) {
             const event = (message as { event?: string }).event;
             if (event === "MATCH_COMPLETED" || event === "MATCH_DRAWN") {
               invalidate(rankingKeys.all);
+            }
+
+            // マッチング成立の演出と通知（Issue #5）。
+            //
+            // ★購読はここに一本化する（10章）。演出側で別途購読すると、
+            //   解除漏れと二重購読が起きる。ストアへ通知するだけに留める。
+            //
+            // ★自チームが当事者かはここで判定しない。ブロードキャストは
+            //   全員へ届くが、演出側が試合詳細と自チームを突き合わせる。
+            if (event === "MATCH_CREATED") {
+              const matchId = (message as { payload?: { matchId?: string } }).payload?.matchId;
+              if (typeof matchId === "string") {
+                useMatchFoundStore.getState().notify(matchId);
+                showNotification(
+                  "対戦相手が決まりました",
+                  "試合画面で結果を申告してください。",
+                  matchId,
+                );
+              }
             }
           });
           break;

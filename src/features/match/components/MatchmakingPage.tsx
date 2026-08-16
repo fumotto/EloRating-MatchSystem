@@ -10,6 +10,7 @@ import { useMatchList } from "../hooks/useMatchList";
 import { EmptyState } from "../../../components/feedback/EmptyState";
 import { ErrorNotice } from "../../../components/feedback/ErrorNotice";
 import { apiErrorCode } from "../../../utils/apiErrorCode";
+import { requestNotificationPermission } from "../../../utils/browserNotification";
 
 export function MatchmakingPage() {
   const { session } = useRouteContext({ from: "/_app" });
@@ -103,7 +104,13 @@ export function MatchmakingPage() {
           <button
             type="button"
             disabled={!canQueue || queueMatch.isPending}
-            onClick={() => queueMatch.mutate({ teamId: team.id })}
+            onClick={() => {
+              // ★通知の許可はここで求める。利用者の操作が起点であり、
+              //   相手を待つ場面なので通知が要る理由も伝わる。
+              //   読み込み直後に求めると多くのブラウザが拒否扱いにする。
+              void requestNotificationPermission();
+              queueMatch.mutate({ teamId: team.id });
+            }}
             className="rounded bg-indigo-600 px-4 py-2 text-sm text-white disabled:opacity-50"
           >
             {queueMatch.isPending ? "登録中…" : "マッチングを開始"}

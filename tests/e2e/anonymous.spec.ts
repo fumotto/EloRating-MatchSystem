@@ -14,7 +14,7 @@ test.describe("anonymous visitor", () => {
   });
 
   test("serves the rules page to anonymous visitors", async ({ page }) => {
-    // TC-E2E-026 ルールページは誰でも閲覧できる（Issue #8）。
+    // TC-E2E-045 ルールページは誰でも閲覧できる（Issue #8）。
     await page.goto("/rules");
 
     await expect(page.getByRole("heading", { name: "ルール", exact: true })).toBeVisible();
@@ -25,7 +25,7 @@ test.describe("anonymous visitor", () => {
   });
 
   test("shows the announcement banner to anonymous visitors", async ({ page }) => {
-    // TC-E2E-027 お知らせの帯（Issue #7）。未ログインにも届ける必要がある
+    // TC-E2E-046 お知らせの帯（Issue #7）。未ログインにも届ける必要がある
     // （メンテナンス告知など）。設定は public_settings 経由で読む。
     await setAnnouncement("E2E メンテナンス告知", "WARN");
     try {
@@ -39,7 +39,7 @@ test.describe("anonymous visitor", () => {
   });
 
   test("hides the banner when the announcement is empty", async ({ page }) => {
-    // TC-E2E-028 空なら帯そのものを出さない。
+    // TC-E2E-047 空なら帯そのものを出さない。
     // ★空の帯が残ると常時1行分の余白が空き、壊れているように見える。
     await setAnnouncement("", "INFO");
 

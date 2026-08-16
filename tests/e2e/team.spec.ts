@@ -182,7 +182,7 @@ test.describe("team flow", () => {
   });
 
   test("shows the top page entry points to anonymous visitors", async ({ page }) => {
-    // TC-E2E-025 トップページ（Issue #8）。未ログインで3つの導線が出る。
+    // TC-E2E-044 トップページ（Issue #8）。未ログインで3つの導線が出る。
     await page.goto("/");
 
     await expect(page.getByRole("link", { name: "ログインせずに入場" })).toBeVisible();

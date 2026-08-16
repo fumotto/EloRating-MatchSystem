@@ -5,6 +5,7 @@ import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { Header } from "../components/layout/Header";
 import { MainNav } from "../components/layout/MainNav";
 import { useRealtimeSubscription } from "../features/realtime/useRealtimeSubscription";
+import { MatchFoundOverlay } from "../features/match/components/MatchFoundOverlay";
 
 function AppLayout() {
   const { session } = Route.useRouteContext();
@@ -20,6 +21,10 @@ function AppLayout() {
       <main className="mx-auto max-w-4xl px-4 py-6">
         <Outlet />
       </main>
+
+      {/* マッチング成立演出（Issue #5）。どの画面にいても出す必要があるため
+          レイアウトへ置く。未認証は対戦しないので AppLayout 側だけでよい。 */}
+      <MatchFoundOverlay profileId={session?.user.id} />
     </>
   );
 }

@@ -79,3 +79,27 @@ body {
 .markdown th {
   @apply bg-slate-50 font-medium dark:bg-slate-900;
 }
+
+/* マッチング成立演出（Issue #5）。
+ *
+ * ★motion-safe: を付けて使う。prefers-reduced-motion の利用者には動かさない。
+ *   前庭障害のある人にとって、大きく動く演出は不快や体調不良の原因になる。 */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes popIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
