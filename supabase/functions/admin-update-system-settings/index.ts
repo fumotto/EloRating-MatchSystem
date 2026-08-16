@@ -42,11 +42,28 @@ const TEXT_SETTINGS: Record<
     pattern: /^(?!.*\.\.)(?!.*\/\/)[A-Za-z0-9][A-Za-z0-9._/-]*$/,
   },
   rulesMarkdown: { column: "rules_markdown", minLength: 0, maxLength: 20000, nullable: false },
+  // お知らせ（Issue #7 / Migration 0019）。空なら帯を出さない。
+  announcementText: {
+    column: "announcement_text",
+    minLength: 0,
+    maxLength: 200,
+    nullable: false,
+  },
+};
+
+// 選択肢が決まっている設定。文字列だが自由入力ではない。
+// ★許可値をここで閉じる。DB の CHECK と一致させること。
+const ENUM_SETTINGS: Record<string, { column: string; values: readonly string[] }> = {
+  announcementLevel: {
+    column: "announcement_level",
+    values: ["INFO", "WARN", "ALERT"] as const,
+  },
 };
 
 const ALL_COLUMNS = [
   ...Object.values(SETTINGS).map((s) => s.column),
   ...Object.values(TEXT_SETTINGS).map((s) => s.column),
+  ...Object.values(ENUM_SETTINGS).map((s) => s.column),
 ].join(", ");
 
 export async function handler(req: Request): Promise<Response> {
@@ -108,6 +125,18 @@ export async function handler(req: Request): Promise<Response> {
         column: spec.column,
         value: spec.column === "rules_markdown" ? value : trimmed,
       });
+    }
+
+    // 選択肢が決まっている設定（Issue #7）。
+    for (const [key, spec] of Object.entries(ENUM_SETTINGS)) {
+      const value = body[key];
+      if (value === undefined) continue;
+
+      if (typeof value !== "string" || !spec.values.includes(value)) {
+        return businessError("ADMIN-002", "Invalid system settings.", 400);
+      }
+
+      updates.push({ column: spec.column, value });
     }
 
     if (updates.length === 0) {

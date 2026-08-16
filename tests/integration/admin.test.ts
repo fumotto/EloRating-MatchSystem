@@ -406,6 +406,45 @@ describe("admin-update-system-settings", () => {
     }
   });
 
+  it("accepts every announcement level", async () => {
+    // Issue #7 帯の3種類。値は Migration 0019 の CHECK と一致する。
+    setSettingsVerifier(adminVerifier);
+    setSettingsBroadcaster(() => Promise.resolve());
+
+    try {
+      for (const level of ["INFO", "WARN", "ALERT"]) {
+        const db = createMockDb(okStubs({ ...before, announcement_level: level }));
+        setSettingsPool(db.pool as never);
+        const res = await post(updateSettings, { announcementLevel: level });
+        assertEquals(res.status, 200);
+        assertEquals(db.find("UPDATE system_settings")!.params, [level]);
+        resetSettingsPool();
+      }
+    } finally {
+      resetSettingsVerifier();
+      resetSettingsPool();
+      resetSettingsBroadcaster();
+    }
+  });
+
+  it("allows clearing the announcement text", async () => {
+    // Issue #7 空文字は「帯を下げる」操作である。NULL にはしない（列は NOT NULL）。
+    setSettingsVerifier(adminVerifier);
+    setSettingsBroadcaster(() => Promise.resolve());
+    const db = createMockDb(okStubs({ ...before, announcement_text: "" }));
+    setSettingsPool(db.pool as never);
+
+    try {
+      const res = await post(updateSettings, { announcementText: "" });
+      assertEquals(res.status, 200);
+      assertEquals(db.find("UPDATE system_settings")!.params, [""]);
+    } finally {
+      resetSettingsVerifier();
+      resetSettingsPool();
+      resetSettingsBroadcaster();
+    }
+  });
+
   it("clears the background image when an empty string is sent", async () => {
     // Issue #8 背景画像の解除。空文字は NULL を意味する。
     setSettingsVerifier(adminVerifier);
@@ -453,6 +492,12 @@ describe("admin-update-system-settings", () => {
         { backgroundImagePath: "../secret.png" },
         { rulesMarkdown: "a".repeat(20001) },
         { rulesMarkdown: 1 },
+        // お知らせ（Issue #7 / Migration 0019）。
+        { announcementText: "a".repeat(201) },
+        // ★帯の種類は3つに閉じる。DBのCHECKと一致させる。
+        { announcementLevel: "CRITICAL" },
+        { announcementLevel: "info" },
+        { announcementLevel: 1 },
       ];
 
       for (const body of invalid) {

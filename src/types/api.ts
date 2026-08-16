@@ -217,14 +217,22 @@ export type UpdateSystemSettingsRequest = {
   // public/ 配下の相対パス。空文字を送ると解除される。
   backgroundImagePath?: string;
   rulesMarkdown?: string;
+  // お知らせ（Issue #7 / Migration 0019）。空文字なら帯を出さない。
+  announcementText?: string;
+  announcementLevel?: AnnouncementLevel;
 };
 
 // public_settings ビューの列（Migration 0018）。未ログインでも取得できる。
 // ★system_settings とは別物である。運用設定は含まない。
+// お知らせの深刻度（Issue #7 / Migration 0019）。
+export type AnnouncementLevel = "INFO" | "WARN" | "ALERT";
+
 export interface PublicSettings {
   site_title: string;
   background_image_path: string | null;
   rules_markdown: string;
+  announcement_text: string;
+  announcement_level: AnnouncementLevel;
 }
 
 // 列名は system_settings のもの（03_Database.md 10.8）。
@@ -232,6 +240,8 @@ export interface SystemSettings {
   site_title: string;
   background_image_path: string | null;
   rules_markdown: string;
+  announcement_text: string;
+  announcement_level: AnnouncementLevel;
   team_max_members: number;
   initial_rating: number;
   rating_k: number;

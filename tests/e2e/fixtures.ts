@@ -10,6 +10,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL ?? "http://127.0.0.1:54321";
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+const ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY ?? "";
 
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
@@ -133,3 +134,55 @@ export async function waitForProfile(page: Page, userId: string): Promise<void> 
 
 export const test = base;
 export { expect } from "@playwright/test";
+
+// お知らせの設定（Issue #7）。
+//
+// ★service_role では更新できない。0013_rls.sql は system_settings の書き込みを
+//   どのクライアントロールへも与えておらず、更新は Edge Functions がDB直結で行う
+//   （ADR-016）。したがってテストも管理者として実経路を通す。
+//
+//   管理者を都度作るのは冗長に見えるが、権限まわりを迂回しない利点の方が大きい。
+export async function setAnnouncement(text: string, level: "INFO" | "WARN" | "ALERT") {
+  const user = await createTestUser("AnnouncementAdmin");
+  await makeAdmin(user.id);
+
+  // 管理者付与の後にサインインする。role は発行時のJWTへ載る（ADR-020）。
+  const client = createClient(SUPABASE_URL, ANON_KEY, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  const { data, error } = await client.auth.signInWithPassword({
+    email: user.email,
+    password: user.password,
+  });
+  if (error || !data.session) {
+    throw new Error(`管理者でサインインできない: ${error?.message}`);
+  }
+
+  // ★先に ensure-profile を呼ぶ。audit_logs.actor_profile_id は profiles を参照しており、
+  //   プロフィールが無いまま設定を更新すると外部キー違反で SYSTEM-001 になる。
+  //   アプリはログイン確立後にこれを呼ぶ（App.tsx）。テストも同じ順序を踏む。
+  const ensured = await fetch(`${SUPABASE_URL}/functions/v1/ensure-profile`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${data.session.access_token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ displayName: user.displayName }),
+  });
+  if (!ensured.ok) {
+    throw new Error(`プロフィールを用意できない: ${ensured.status} ${await ensured.text()}`);
+  }
+
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/admin-update-system-settings`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${data.session.access_token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ announcementText: text, announcementLevel: level }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`お知らせを設定できない: ${res.status} ${await res.text()}`);
+  }
+}

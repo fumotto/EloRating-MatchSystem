@@ -2,6 +2,7 @@
 import { Link } from "@tanstack/react-router";
 import { Moon, Sun } from "lucide-react";
 import { useThemeStore } from "../../stores/themeStore";
+import { AnnouncementBanner } from "./AnnouncementBanner";
 
 interface HeaderProps {
   children?: React.ReactNode;
@@ -13,6 +14,8 @@ export function Header({ children }: HeaderProps) {
 
   return (
     <header className="border-b border-slate-200 dark:border-slate-800">
+      {/* 運営からのお知らせ（Issue #7）。空なら何も描画しない。 */}
+      <AnnouncementBanner />
       <div className="mx-auto flex max-w-4xl items-center gap-4 px-4 py-3">
         <Link to="/" className="font-semibold">
           EloRating
