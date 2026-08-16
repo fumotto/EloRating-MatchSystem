@@ -224,6 +224,15 @@ export type UpdateSystemSettingsRequest = {
 
 // public_settings ビューの列（Migration 0018）。未ログインでも取得できる。
 // ★system_settings とは別物である。運用設定は含まない。
+// 試合確定後のレート変動（Issue #6）。rating_history の1行に対応する。
+export interface MatchRatingResult {
+  teamId: string;
+  beforeRating: number;
+  afterRating: number;
+  ratingChange: number;
+  result: "WIN" | "LOSE";
+}
+
 // お知らせの深刻度（Issue #7 / Migration 0019）。
 export type AnnouncementLevel = "INFO" | "WARN" | "ALERT";
 

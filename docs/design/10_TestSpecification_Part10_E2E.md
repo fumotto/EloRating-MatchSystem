@@ -69,6 +69,7 @@ Playwright を使用し、実際のブラウザ操作に近い形で検証する
 | TC-E2E-021 | 解散後の再マッチング      | 直前の試合が `DRAWN`  | キュー登録              | 登録できる                         | `allows matchmaking again after a draw`                |
 | TC-E2E-022 | **必須人数未満の制限**    | 必須人数に満たないチーム     | マッチング画面を開く         | 不足の案内と開始ボタンが同時に表示され、ボタンは非活性である | `blocks matchmaking for a team below the required size` |
 | TC-E2E-043 | **マッチング成立の演出**   | 2チームが待機          | 相手が見つかる            | 相手名・両チームのレート・勝敗時の変動が表示され、試合へ遷移できる | `shows the match details and moves to the match` |
+| TC-E2E-048 | **確定時のレート変動表示**  | 申告 → 承認で確定      | 試合画面を確認            | 勝敗の別とレートの変動前後が表示される | `shows the rating change after the match is confirmed` |
 
 TC-E2E-009 / 011 / 012 / 020 / 021 は、チームが必須人数（`team_max_members`）を満たしていることを前提とする（`09_MatchmakingSpecification.md` 4.1）。テストは招待経路でチームを定員まで埋めてから待機を行う。
 

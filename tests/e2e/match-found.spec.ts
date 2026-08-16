@@ -84,3 +84,49 @@ test.describe("match found", () => {
     await ctxB.close();
   });
 });
+
+test.describe("match settled", () => {
+  test("shows the rating change after the match is confirmed", async ({ page, browser }) => {
+    // TC-E2E-048 確定時のレート変動表示（Issue #6）。
+    //
+    // ★申告 → 承認まで通し、実際に確定させてから確認する。
+    //   rating_history は確定時にしか作られないため、経路を省略できない。
+    const nameA = await createFullTeam(page, browser, "SettleA");
+
+    await page.goto("/matchmaking");
+    await page.getByRole("button", { name: "マッチングを開始" }).click();
+    await expect(page.getByText("対戦相手を探しています…")).toBeVisible();
+
+    const ctxB = await browser.newContext();
+    const pageB = await ctxB.newPage();
+    await createFullTeam(pageB, browser, "SettleB");
+    await pageB.goto("/matchmaking");
+    await pageB.getByRole("button", { name: "マッチングを開始" }).click();
+
+    // B が勝利を申告する
+    const overlay = pageB.getByRole("dialog", { name: "対戦相手が決まりました" });
+    await expect(overlay).toBeVisible({ timeout: 15_000 });
+    await overlay.getByRole("button", { name: "試合へ進む" }).click();
+    await expect(pageB).toHaveURL(/\/matches\/[0-9a-f-]+$/);
+    const matchUrl = pageB.url();
+    await pageB.getByRole("button", { name: "自チームの勝利を申告" }).click();
+
+    // A（敗者）が承認する
+    await page.goto(new URL(matchUrl).pathname);
+    await page.getByRole("button", { name: "承認する" }).click();
+
+    // 敗者側にレート減少が出る
+    await expect(page.getByText("敗北")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/1500 → 14\d\d/)).toBeVisible();
+
+    // 勝者側にレート増加が出る
+    await pageB.reload();
+    await expect(pageB.getByText("勝利")).toBeVisible({ timeout: 15_000 });
+    await expect(pageB.getByText(/1500 → 15\d\d/)).toBeVisible();
+
+    // 相手チーム名が食い違っていないこと（取り違え防止）
+    await expect(pageB.getByRole("heading", { level: 1 })).toContainText(nameA);
+
+    await ctxB.close();
+  });
+});

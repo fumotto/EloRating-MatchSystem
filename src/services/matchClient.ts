@@ -149,3 +149,35 @@ export const matchClient = {
     return { teamId: row.team_id, queuedAt: row.queued_at };
   },
 };
+
+// 試合確定後のレート変動（Issue #6）。
+//
+// ★確定していない試合には行が存在しない。引き分け（DRAWN）でも作られない
+//   （08_RatingSpecification.md 4章）。呼び出し側は空配列を正常として扱う。
+export async function fetchMatchRatingResults(
+  matchId: string,
+): Promise<import("../types/api").MatchRatingResult[]> {
+  const { data, error } = await supabase
+    .from("rating_history")
+    .select("team_id, before_rating, after_rating, rating_change, result")
+    .eq("match_id", matchId);
+
+  if (error) throw error;
+
+  return (data ?? []).map((row) => {
+    const r = row as {
+      team_id: string;
+      before_rating: number;
+      after_rating: number;
+      rating_change: number;
+      result: "WIN" | "LOSE";
+    };
+    return {
+      teamId: r.team_id,
+      beforeRating: r.before_rating,
+      afterRating: r.after_rating,
+      ratingChange: r.rating_change,
+      result: r.result,
+    };
+  });
+}

@@ -12,6 +12,8 @@ import { ErrorNotice } from "../../../components/feedback/ErrorNotice";
 import { apiErrorCode } from "../../../utils/apiErrorCode";
 import { remainingTime } from "../../../utils/remainingTime";
 import { matchStatusLabel } from "./matchStatusLabel";
+import { RatingChangeResult } from "./RatingChangeResult";
+import { useMatchRatingResults } from "../hooks/useMatchRatingResults";
 
 export function MatchDetailPage() {
   const { matchId } = useParams({ from: "/_app/matches/$matchId" });
@@ -20,6 +22,10 @@ export function MatchDetailPage() {
   const { data: match, isPending } = useMatchDetail(matchId);
   const { data: myTeam } = useMyTeam(session?.user.id);
   const { data: settings } = useSystemSettings();
+
+  // 確定・引き分けのときだけ取りに行く。進行中は行が存在しない（Issue #6）。
+  const isSettled = match?.status === "COMPLETED" || match?.status === "DRAWN";
+  const { data: ratingResults } = useMatchRatingResults(matchId, Boolean(isSettled));
 
   const reportMatch = useReportMatch(matchId);
   const approveMatch = useApproveMatch(matchId);
@@ -51,6 +57,16 @@ export function MatchDetailPage() {
             : null}
         </p>
       </div>
+
+      {/* 確定・引き分け時のレート変動（Issue #6）。
+          ★全画面を占有しない。相手の承認で不意に確定することがあるためである。 */}
+      {isSettled ? (
+        <RatingChangeResult
+          results={ratingResults ?? []}
+          myTeamId={myTeamId}
+          isDrawn={match.status === "DRAWN"}
+        />
+      ) : null}
 
       {/* 14.7 の期限表示 */}
       <div className="rounded-lg border border-slate-200 p-4 text-sm dark:border-slate-800">

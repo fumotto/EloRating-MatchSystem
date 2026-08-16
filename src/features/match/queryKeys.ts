@@ -5,6 +5,8 @@ export const matchKeys = {
   all: ["match"] as const,
   list: (filter: { status?: MatchStatus[] } = {}) => [...matchKeys.all, "list", filter] as const,
   detail: (matchId: string) => [...matchKeys.all, "detail", matchId] as const,
+  // 確定後のレート変動（Issue #6）。
+  ratingResults: (matchId: string) => [...matchKeys.all, "rating", matchId] as const,
 };
 
 export const queueKeys = {
