@@ -39,6 +39,8 @@ const FIELDS: {
   { key: "reportTimeoutMinutes", label: "申告期限（分）", min: 1 },
   { key: "approveTimeoutMinutes", label: "承認期限（分）", min: 1 },
   { key: "maxRejectCount", label: "拒否の上限回数", min: 0 },
+  // シーズン終了時に進行中の試合を待つ長さ（Issue #9）。
+  { key: "seasonGraceMinutes", label: "シーズン終了の猶予（分）", min: 1, max: 1440 },
 ];
 
 export function AdminSettingsPage() {

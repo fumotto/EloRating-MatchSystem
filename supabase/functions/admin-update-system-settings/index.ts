@@ -19,6 +19,8 @@ const SETTINGS: Record<string, { column: string; min: number; max?: number }> = 
   reportTimeoutMinutes: { column: "report_timeout_minutes", min: 1 },
   approveTimeoutMinutes: { column: "approve_timeout_minutes", min: 1 },
   maxRejectCount: { column: "max_reject_count", min: 0 },
+  // シーズン終了の猶予（Issue #9 / Migration 0021）。上限はDBのCHECKと一致させる。
+  seasonGraceMinutes: { column: "season_grace_minutes", min: 1, max: 1440 },
 };
 
 // 表示設定（Issue #8 / Migration 0018）。文字列であるため数値とは検証が異なる。

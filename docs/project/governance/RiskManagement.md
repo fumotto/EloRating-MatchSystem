@@ -124,6 +124,8 @@ Status: Active
 | R-009 | 品質     | 設計書間の不整合により、AIが誤った仕様で実装する                                                  | High     | Medium | P1  | Mitigating |
 | R-010 | プロジェクト | 承認期限・申告期限の初期値が運用実態に合わず、正常な試合が引き分けとして解散される                                  | Medium   | Medium | P2  | Monitoring |
 | R-011 | 品質     | 既存実装（Migration・Edge Functions）が設計書と乖離しており、Migrationの適用および全Edge Functionの実行が失敗する | Critical | High   | P0  | Mitigating |
+| R-012 | 運用     | シーズン終了の確定（`finalize-season`）が停止すると、`matchmaking_paused` が真のまま残り**全利用者がマッチングできない**。取りやめも管理者が気付かなければ行われない | High     | Medium | P1  | Monitoring |
+| R-013 | 運用     | 確定後の「通常営業に戻す」を忘れると `updates_locked` が残り、**全利用者がチーム操作も申告もできない**。エラーは出ないため利用者側からは不具合と区別できない | High     | Medium | P1  | Monitoring |
 
 ## 6.1 対応方針
 
@@ -140,6 +142,8 @@ Status: Active
 | R-009 | 正本を `ReferenceIndex.md` で明示し、設計変更はDecisionLogを起点とする                          |
 | R-010 | 期限を `system_settings` の設定値とし、運用しながら調整する。`DRAWN` の発生率を監視する                    |
 | R-011 | 乖離を `Backlog.md` の B-001 〜 B-012 として個別に登録し、スライス S0 〜 S4 で解消する。実装前に必ず Supabase Local で `supabase db reset` の完走を確認する（ADR-023） |
+| R-012 | 猶予超過の分数（`season_stuck_minutes`）で判定し、10分を超えたら通知する（`monitor.yml`）。**R-004 と同じ理由で Cron の実行結果を判定基準にしない**（6.1.1）。管理者は猶予中なら「終了を取りやめる」で引き返せる |
+| R-013 | 禁止の継続時間（`updates_locked_minutes`）で判定し、60分を超えたら通知する。**「禁止かどうか」で判定してはならない。** 持ち出しと削除は正当な作業であり、その最中に鳴らすと警報が無視されるようになる |
 
 ## 6.1.1 R-004：Cronの実行結果を判定基準にしてはならない
 

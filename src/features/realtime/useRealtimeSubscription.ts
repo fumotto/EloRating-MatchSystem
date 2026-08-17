@@ -10,6 +10,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../../lib/supabase";
 import { matchKeys, queueKeys } from "../match/queryKeys";
 import { rankingKeys } from "../ranking/queryKeys";
+import { seasonKeys } from "../season/queryKeys";
 import { settingsKeys } from "../settings/queryKeys";
 import { teamKeys } from "../team/queryKeys";
 import { useMatchFoundStore } from "../../stores/matchFoundStore";
@@ -75,8 +76,14 @@ export function useRealtimeSubscription(isAuthenticated: boolean) {
           channel.on("broadcast", { event: "*" }, () => invalidate(teamKeys.all));
           break;
         case "system":
-          // SYSTEM_SETTINGS_UPDATED
-          channel.on("broadcast", { event: "*" }, () => invalidate(settingsKeys.all));
+          // SYSTEM_SETTINGS_UPDATED / SEASON_STATE_CHANGED
+          //
+          // ★シーズンの状態も取り直す。マッチングの可否と更新の可否が同時に変わるため、
+          //   設定だけを取り直しても画面は停止中であることに気付けない（Issue #9）。
+          channel.on("broadcast", { event: "*" }, () => {
+            invalidate(settingsKeys.all);
+            invalidate(seasonKeys.all);
+          });
           break;
       }
 

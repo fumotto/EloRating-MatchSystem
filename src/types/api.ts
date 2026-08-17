@@ -212,6 +212,8 @@ export type UpdateSystemSettingsRequest = {
   reportTimeoutMinutes?: number;
   approveTimeoutMinutes?: number;
   maxRejectCount?: number;
+  // シーズン終了の猶予（Issue #9 / Migration 0021）。
+  seasonGraceMinutes?: number;
   // 表示設定（Issue #8 / Migration 0018）。
   siteTitle?: string;
   // public/ 配下の相対パス。空文字を送ると解除される。
@@ -259,6 +261,7 @@ export interface SystemSettings {
   report_timeout_minutes: number;
   approve_timeout_minutes: number;
   max_reject_count: number;
+  season_grace_minutes: number;
 }
 
 export interface UpdateSystemSettingsResponse {

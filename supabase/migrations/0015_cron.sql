@@ -5,6 +5,7 @@
 --   auto-resolve-matches    1分間隔（ADR-014）
 --   cleanup-matching-queue  10分間隔
 --   cleanup-expired-invites 1時間間隔
+--   finalize-season         1分間隔（Issue #9。登録は 0022_season_cron.sql）
 --
 -- 起動方式は pg_cron ＋ pg_net とする。Edge Function を HTTP で呼ぶため、
 -- 呼び出し先URLと Service Role Key が必要になる。

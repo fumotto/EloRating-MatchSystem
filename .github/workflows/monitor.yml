@@ -66,6 +66,8 @@ jobs:
           vault='${{ steps.metrics.outputs.vault_configured }}'
           http_total=${{ steps.metrics.outputs.cron_http_total }}
           http_error=${{ steps.metrics.outputs.cron_http_error }}
+          stuck=${{ steps.metrics.outputs.season_stuck_minutes }}
+          locked=${{ steps.metrics.outputs.updates_locked_minutes }}
 
           problems=""
 
@@ -97,6 +99,25 @@ jobs:
             # ★%0A は改行の目印として自前で使っている（notify 側で sed が戻す）。
             #   それ以外の % はそのまま出る。$GITHUB_OUTPUT はURLデコードしない。
             problems="${problems}・Cron の呼び出しが ${http_error}/${http_total} 件失敗しています（${rate}パーセント・鍵の誤りの可能性）%0A"
+          fi
+
+          # シーズンの停滞。猶予を過ぎても確定していないなら finalize-season が動いていない。
+          #
+          # ★影響が広い。この状態では matchmaking_paused が真のままであり、
+          #   全利用者がマッチングできない。期限切れ試合の滞留より重い。
+          #
+          # ★10分の余裕を見る。cron は1分間隔だが、確定処理は退避を伴うため
+          #   1回の実行に時間がかかる。数分の遅れで鳴らすと誤検知になる。
+          if [ "$stuck" -gt 10 ]; then
+            problems="${problems}・シーズンの確定が ${stuck} 分遅れています（マッチングが停止したままです）%0A"
+          fi
+
+          # 更新禁止の放置。確定後の解除は管理者の操作であり、忘れると利用者は何もできない。
+          #
+          # ★経過時間で見る。持ち出しと削除は正当な作業であり、その最中に鳴らしては
+          #   意味がない。60分を超えていれば作業ではなく忘れている。
+          if [ "$locked" -gt 60 ]; then
+            problems="${problems}・利用者の更新操作が ${locked} 分禁止されたままです（管理→シーズンで「通常営業に戻す」を押してください）%0A"
           fi
 
           # 接続数は上限の80%を超えたら警告する。

@@ -1340,6 +1340,46 @@ LEFT JOIN profiles ap ON ap.id = m.approved_by_profile_id;
 
 ---
 
+## 11.5 public_settings
+
+未認証にも見せる設定のみを返す（Migration 0018・0019・0021）。
+
+| 列                     | 用途                |
+| --------------------- | ----------------- |
+| site_title            | トップページの見出し        |
+| background_image_path | トップページの背景（相対パス）   |
+| rules_markdown        | ルールページの本文         |
+| announcement_text     | お知らせの本文（空なら出さない）  |
+| announcement_level    | お知らせの区分（INFO/WARN/ALERT） |
+| current_season        | 現在のシーズン番号         |
+| matchmaking_paused    | マッチング停止中かどうか      |
+| updates_locked        | 利用者の更新操作を禁止中かどうか  |
+
+**★`system_settings` を直接公開してはならない。** 同表には未認証へ見せない運用値も含む。
+公開する列を本Viewで明示的に選ぶ。
+
+**★停止状態を公開する理由。** 伝えられないと、利用者はマッチングできないことを
+不具合と区別できない。
+
+---
+
+## 11.6 season_list_view / season_ranking_view / season_member_view
+
+確定済みシーズンの一覧・順位・当時のメンバーを返す（Migration 0021 / ADR-030）。
+いずれも `seasons.status = 'FINALIZED'` の行のみを対象とする。
+
+| View                | 公開範囲        | 内容                       |
+| ------------------- | ----------- | ------------------------ |
+| season_list_view    | 全員（未認証を含む） | シーズン番号・開始・終了日時           |
+| season_ranking_view | 全員（未認証を含む） | 順位・レート・勝敗・勝率・BAN状況・終了日時   |
+| season_member_view  | 認証済み        | 当時のチーム編成（表示名・役割）         |
+
+**★`season_member_view` のみ `security_invoker` を有効にする。** 現行の
+`team_detail_view` と同じ扱いであり、未認証へ全プレイヤーの表示名を晒さないためである。
+残る2つは公開対象のみを含むため定義者権限のままとする。
+
+---
+
 # 15. Row Level Security 一覧
 
 本節を各テーブルのRLSの正本とする。10章の記載と一致していなければならない。
@@ -1354,7 +1394,11 @@ LEFT JOIN profiles ap ON ap.id = m.approved_by_profile_id;
 | matches         | 認証済み          | Edge Functions | Edge Functions | 禁止             |
 | rating_history  | 認証済み          | Edge Functions | 禁止             | 禁止             |
 | system_settings | 認証済み          | 禁止             | Edge Functions | 禁止             |
-| audit_logs      | 管理者           | Edge Functions | 禁止             | 禁止             |
+| audit_logs      | 管理者           | Edge Functions | 禁止             | Edge Functions（★） |
+| seasons         | 全員（未認証を含む）    | Edge Functions | Edge Functions | 禁止             |
+| season_rankings | 全員（未認証を含む）    | Edge Functions | 禁止             | 禁止             |
+| season_members  | 認証済み          | Edge Functions | 禁止             | 禁止             |
+| season_exports  | 禁止（Edge Functions 経由のみ） | Edge Functions | 禁止             | 禁止             |
 
 View のRLSは基となるテーブルに従う。
 
@@ -1364,6 +1408,13 @@ View のRLSは基となるテーブルに従う。
 | team_detail_view   | 認証済み       |
 | match_list_view    | 認証済み       |
 | match_detail_view  | 認証済み       |
+| public_settings    | 全員（未認証を含む） |
+| season_list_view   | 全員（未認証を含む） |
+| season_ranking_view | 全員（未認証を含む） |
+| season_member_view | 認証済み       |
+
+★`audit_logs` の DELETE は `admin-purge-season-data` のみが行う（Issue #9 / ADR-030）。
+クライアントからの DELETE は RLS と GRANT の双方で禁止したままである（18.9）。
 
 ---
 

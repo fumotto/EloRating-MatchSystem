@@ -299,7 +299,7 @@ supabase functions deploy
 
 ## 8.1 Cron 用の Vault シークレット登録
 
-内部処理の Edge Function（`matchmaker` / `auto-resolve-matches` / `cleanup-*`）は pg_cron から
+内部処理の Edge Function（`matchmaker` / `auto-resolve-matches` / `cleanup-*` / `finalize-season`）は pg_cron から
 HTTP で呼ばれる（Migration `0015_cron.sql`）。呼び出しには**環境ごとに異なる2つの値**が要る。
 
 **Migration には書けない。** URL は環境ごとに異なり、Service Role Key は秘匿情報だからである。

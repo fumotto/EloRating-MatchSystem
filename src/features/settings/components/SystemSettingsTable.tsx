@@ -11,6 +11,7 @@ const LABELS: [keyof SystemSettings, string, string][] = [
   ["report_timeout_minutes", "申告期限", "分"],
   ["approve_timeout_minutes", "承認期限", "分"],
   ["max_reject_count", "拒否の上限回数", "回"],
+  ["season_grace_minutes", "シーズン終了の猶予", "分"],
 ];
 
 export function SystemSettingsTable({ settings }: { settings: SystemSettings }) {

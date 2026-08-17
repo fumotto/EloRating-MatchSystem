@@ -439,7 +439,7 @@ enabled = true
 #   検証の主体がゲートウェイから関数自身へ移るだけである。
 #   併せて _shared/cors.ts の withCors で包むこと。片方だけでは直らない。
 #
-# 内部処理用（matchmaker / auto-resolve-matches / cleanup-*）はブラウザから呼ばれない。
+# 内部処理用（matchmaker / auto-resolve-matches / cleanup-* / finalize-season）はブラウザから呼ばれない。
 # Service Role で pg_cron から呼ばれるため、ここに列挙せず既定の true のままにする。
 
 [functions.accept-team-invite]

@@ -120,6 +120,7 @@ DBトリガによる自動作成は採用しない。プロバイダごとに取
 | auto-resolve-matches  | Service Role |
 | cleanup-expired-invites | Service Role |
 | cleanup-matching-queue | Service Role |
+| finalize-season       | Service Role |
 
 Service Role は内部処理専用であり、クライアントから呼び出してはならない。
 
@@ -1821,7 +1822,24 @@ interface SystemSettings {
 
 ---
 
-## 13.10 Audit Logs
+## 13.10 Season
+
+| 項目       | 内容                                                     |
+| -------- | ------------------------------------------------------ |
+| Source   | `season_list_view` / `season_ranking_view` / `season_member_view` |
+| Purpose  | 過去シーズンの一覧・順位・当時のメンバー                              |
+| Filter   | `season_number`（確定済みのシーズンのみViewが返す）                 |
+| Sort     | 一覧は `number DESC`、順位は `rank ASC`                        |
+| RLS      | 一覧・順位は全員（未認証を含む）／メンバーは認証済み                        |
+| Realtime | `SEASON_STATE_CHANGED` 受信時に再取得                          |
+
+**★メンバーだけ認証済み限定である。** 現行の `team_detail_view` と同じ扱いであり、
+未認証へ全プレイヤーの表示名を晒さない。
+
+**★チーム名は退避時に複製した値である。** 総解散でチームが削除されても
+過去のランキングを表示できるようにするためである（`03_Database.md` 18.9）。
+
+## 13.11 Audit Logs
 
 | 項目         | 内容                            |
 | ---------- | ----------------------------- |
@@ -1971,9 +1989,17 @@ interface EndSeasonRequest {
 
 # 12.7 finalize-season
 
+**★本Functionは内部処理である**（11章と同じ扱い・4.2）。シーズン運用の流れを追えるよう、
+説明は 12.6 と 12.8 の間に置く。`config.toml` に `verify_jwt = false` を書いてはならない。
+
 ### Purpose
 
 シーズンを確定する。**cron から呼ぶ内部処理であり、クライアントから呼んではならない。**
+
+### Trigger
+
+pg_cron。1分間隔（Migration 0022）。猶予の粒度が分であるため、これより粗いと
+管理者が待たされる時間が読めなくなる。
 
 ### Processing Flow
 

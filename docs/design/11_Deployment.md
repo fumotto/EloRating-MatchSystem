@@ -150,7 +150,7 @@ CORSヘッダも付かない。ブラウザは本リクエストを送らずに�
 許可 Origin は `_shared/cors.ts` の既定値に置き、環境ごとに変える場合は Secret `ALLOWED_ORIGINS`
 （カンマ区切り）で上書きする。受け取った `Origin` をそのまま反射してはならない。
 
-内部処理用 Function（`matchmaker` / `auto-resolve-matches` / `cleanup-*`）はブラウザから呼ばれない。
+内部処理用 Function（`matchmaker` / `auto-resolve-matches` / `cleanup-*` / `finalize-season`）はブラウザから呼ばれない。
 Service Role で pg_cron から呼ばれるため、CORS を適用せず `verify_jwt` も既定のままにする。
 
 ## Migration
@@ -396,7 +396,10 @@ SELECT id, email, raw_app_meta_data ->> 'role' AS role
 | PostgreSQL（データ） | Supabase Backup（ダッシュボードで有効化する） |
 | PostgreSQL（スキーマ） | デプロイ前に CI が取得し、成果物として30日保持する |
 
-`audit_logs` は追記専用であり削除しないため、保持期間の監視対象とする。
+`audit_logs` は追記専用であり、削除は `admin-purge-season-data`（シーズン単位）だけが行う。
+**★シーズンの削除を実行するとログが消える。** 削除前に持ち出しを必須としているのは
+（`SEASON-005`）、バックアップの代替ではなく操作者の取り違えを防ぐためである。
+長期の保全が要るなら Supabase Backup に頼る。
 
 ## 12.1 デプロイ前のスキーマ取得
 
@@ -424,7 +427,7 @@ down migration を作らない方針（10.2）のため復旧は forward fix で
 | PostgreSQL | 接続数、スロークエリ、ディスク使用量 |
 | Authentication | 認証失敗率 |
 | Realtime | 接続数、送信失敗 |
-| Cron | `auto-resolve-matches` の実行結果 |
+| Cron | `auto-resolve-matches` の実行結果、`finalize-season` の停滞 |
 
 ## 13.1 重点監視項目
 
@@ -434,8 +437,15 @@ down migration を作らない方針（10.2）のため復旧は forward fix で
 | `cleanup-matching-queue` の削除件数  | 継続的に0でない場合、キュー削除の不具合を示唆    |
 | Connection Pooler の接続枯渇         | Edge Functions が同時実行で失敗する  |
 | `DRAWN` の発生率                    | 急増した場合、期限設定が短すぎる可能性        |
+| シーズンが `ENDING` のまま滞留            | `finalize-season` が停止。**全利用者がマッチングできない** |
+| `updates_locked` の長時間継続           | 確定後の「通常営業に戻す」忘れ。**全利用者が何も操作できない** |
 
 自動解決バッチが停止すると、試合が確定せず両チームが次の試合に参加できなくなるため、最優先で監視する。
+
+**★シーズンの停滞は影響範囲がより広い。** 自動解決の停止は当該試合の当事者に留まるが、
+シーズンが `ENDING` のまま止まると `matchmaking_paused` が真のままであり、全利用者が
+マッチングできない。判定は `scripts/monitor-metrics.sql` の `season_stuck_minutes` と
+`updates_locked_minutes` で行う（`monitor.yml`）。
 
 ## 13.2 健全性確認スクリプト
 

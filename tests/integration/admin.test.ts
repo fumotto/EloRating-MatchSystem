@@ -483,6 +483,9 @@ describe("admin-update-system-settings", () => {
         { backgroundImagePath: "../secret.png" },
         { rulesMarkdown: "a".repeat(20001) },
         { rulesMarkdown: 1 },
+        // シーズン終了の猶予（Issue #9 / Migration 0021）。DBのCHECK（1〜1440）と一致させる。
+        { seasonGraceMinutes: 0 },
+        { seasonGraceMinutes: 1441 },
         // お知らせ（Issue #7 / Migration 0019）。
         { announcementText: "a".repeat(201) },
         // ★帯の種類は3つに閉じる。DBのCHECKと一致させる。

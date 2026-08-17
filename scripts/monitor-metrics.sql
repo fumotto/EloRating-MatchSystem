@@ -66,3 +66,36 @@ SELECT 'drawn_7d=' || COUNT(*) FILTER (WHERE status = 'DRAWN')
   FROM matches WHERE completed_at > NOW() - INTERVAL '7 days';
 
 SELECT 'teams=' || COUNT(*) FROM teams;
+
+-- シーズンの停滞（Issue #9 / ADR-030）。
+--
+-- ★猶予を過ぎても ENDING のままなら、finalize-season が動いていない。
+--   このとき matchmaking_paused は真のままであり、**全利用者がマッチングできない**。
+--   期限切れ試合の滞留（R-004）より影響が広い。
+--
+-- 猶予超過の分数を返す。ENDING でなければ 0 とする。
+SELECT 'season_stuck_minutes=' || COALESCE((
+         SELECT GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (NOW() - grace_until)) / 60))::bigint
+           FROM seasons
+          WHERE status = 'ENDING' AND grace_until IS NOT NULL
+          LIMIT 1
+       ), 0);
+
+-- 更新禁止のまま放置されていないか。
+--
+-- ★確定後の解除は管理者の操作である（admin-resume-season）。忘れると
+--   利用者は何もできないまま待たされる。
+--
+-- ★「禁止かどうか」ではなく「何分禁止されているか」を返す。持ち出しと削除は
+--   正当な作業であり、その最中に鳴らしては意味がない。禁止が始まった時刻は
+--   直近の確定時刻（seasons.ended_at）である。禁止でなければ 0 とする。
+SELECT 'updates_locked_minutes=' || CASE
+         WHEN (SELECT updates_locked FROM system_settings WHERE id = 1) THEN COALESCE((
+           SELECT GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (NOW() - ended_at)) / 60))::bigint
+             FROM seasons
+            WHERE status = 'FINALIZED' AND ended_at IS NOT NULL
+            ORDER BY number DESC
+            LIMIT 1
+         ), 0)
+         ELSE 0
+       END;
