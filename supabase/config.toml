@@ -451,6 +451,21 @@ verify_jwt = false
 [functions.admin-reset-ratings]
 verify_jwt = false
 
+[functions.admin-cancel-season-end]
+verify_jwt = false
+
+[functions.admin-end-season]
+verify_jwt = false
+
+[functions.admin-export-season-data]
+verify_jwt = false
+
+[functions.admin-purge-season-data]
+verify_jwt = false
+
+[functions.admin-resume-season]
+verify_jwt = false
+
 [functions.admin-unban-team]
 verify_jwt = false
 

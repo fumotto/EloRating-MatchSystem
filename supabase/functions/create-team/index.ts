@@ -1,6 +1,7 @@
 // ===== supabase/functions/create-team/index.ts =====
 import { verifyJwt } from "../_shared/auth.ts";
 import { withTransaction } from "../_shared/db.ts";
+import { assertUpdatesAllowed } from "../_shared/season.ts";
 import { ok, businessError, systemError } from "../_shared/response.ts";
 import { withCors } from "../_shared/cors.ts";
 
@@ -41,6 +42,9 @@ export async function handler(req: Request): Promise<Response> {
     }
 
     const result = await withTransaction(async (tx) => {
+      // シーズン切替中は利用者側の更新を止める（06_ErrorCode.md 13.1）。
+      await assertUpdatesAllowed(tx);
+
       // 所属確認（team_members に自分が存在しないこと）
       const existingMembership = await tx.queryObject<{ id: string }>(
         `SELECT id FROM team_members WHERE profile_id = $1`,

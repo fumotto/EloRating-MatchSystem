@@ -2,6 +2,7 @@
 // 招待によるチーム参加（04_BackendInterface.md 9.4）。
 import { verifyJwt } from "../_shared/auth.ts";
 import { withTransaction } from "../_shared/db.ts";
+import { assertUpdatesAllowed } from "../_shared/season.ts";
 import { hashInviteCode } from "../_shared/invite.ts";
 import { broadcast } from "../_shared/realtime.ts";
 import { ok, businessError, systemError } from "../_shared/response.ts";
@@ -36,6 +37,9 @@ export async function handler(req: Request): Promise<Response> {
     const inviteCodeHash = await hashInviteCode(inviteCode);
 
     const result = await withTransaction<AcceptTeamInviteResponse>(async (tx) => {
+      // シーズン切替中は利用者側の更新を止める（06_ErrorCode.md 13.1）。
+      await assertUpdatesAllowed(tx);
+
       // 照合はハッシュ値で行う。平文はDBに存在しない。
       // 期限判定はDBの NOW() で行う。Edge Function 側の時計に依存させない。
       const invite = await tx.queryObject<InviteRow>(

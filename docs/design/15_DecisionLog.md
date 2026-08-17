@@ -462,6 +462,20 @@
 
 ---
 
+## ADR-030
+
+| 項目    | 内容 |
+| ----- | -- |
+| 日付    | 2026-08-17 |
+| タイトル  | シーズン制をMVPの対象へ引き上げる |
+| ステータス | Accepted |
+| 理由    | `13_FutureFeatures.md` はシーズン制（シーズン開始・終了、シーズン別ランキング、シーズン履歴）を将来機能として除外し、ADR-011 の系譜でレートリセットは「シーズン機能ではない」と明記していた。しかし運用を始めると、レートを初期値へ戻すだけでは**戻す前の順位が失われる**。当時の順位・チーム編成・BAN状況を残さないまま初期化すると、参加者は前期の結果を確認できず、運営も実績を示せない。またリセット時に進行中の試合・待機列・招待コードが残るため、初期化の前後で状態が食い違う。これらはレートリセット単体では解けず、シーズンという単位を持たなければ成立しない（Issue #9）。 |
+| 決定内容  | シーズン制を実装する。`seasons` / `season_rankings` / `season_members` / `season_exports` を追加し、`system_settings` に `current_season`・`matchmaking_paused`・`updates_locked`・`season_grace_minutes` を持たせる（Migration 0021）。<br>シーズン終了は**1回の操作では完結させない**。`ACTIVE → ENDING → FINALIZED` の3状態を持ち、`ENDING` の猶予中は進行中の試合を通常どおり決着させる。猶予の経過は cron（`finalize-season`）が監視し、確定は自動で行う。Edge Function は数分の待機を保持できないためである。<br>`admin-reset-ratings` は廃止しない。シーズンを跨がない単発のリセット手段として残す。 |
+| 影響文書  | 03_Database.md、04_BackendInterface.md、05_Frontend.md、06_ErrorCode.md、10_TestSpecification（Part9・Part10）、13_FutureFeatures.md |
+| 備考    | **Issue #9 の手順から順序を1点変更した。** 同Issueは「総解散 → 戦績のダウンロード → 戦績の削除」の順で並べているが、`matches.team_a_id` は `ON DELETE RESTRICT` であり、戦績が残っている限りチームを削除できない。先に総解散を行うと持ち出す戦績が失われるため、総解散を戦績削除の後（`admin-purge-season-data`）へ移した。<br>削除には該当シーズンの持ち出し記録を必須とする（`SEASON-005`）。記録は `audit_logs` ではなく `season_exports` へ置く。ログの削除は本機能の対象であり、`audit_logs` に置くと削除の可否を判断する根拠ごと消えるためである。 |
+
+---
+
 # 6. AI実装ルール
 
 * 設計変更を行う前に本書へADRを追加する。

@@ -4,6 +4,7 @@
 // 敗者チームのいずれのメンバーでも実行できる。LEADER限定ではない。
 import { verifyJwt } from "../_shared/auth.ts";
 import { withTransaction } from "../_shared/db.ts";
+import { assertUpdatesAllowed } from "../_shared/season.ts";
 import { completeMatch, type CompletionResult } from "../_shared/match-completion.ts";
 import { broadcast } from "../_shared/realtime.ts";
 import { ok, businessError, systemError } from "../_shared/response.ts";
@@ -24,6 +25,9 @@ export async function handler(req: Request): Promise<Response> {
     }
 
     const result = await withTransaction<CompletionResult>(async (tx) => {
+      // シーズン切替中は利用者側の更新を止める（06_ErrorCode.md 13.1）。
+      await assertUpdatesAllowed(tx);
+
       const match = await tx.queryObject<{
         team_a_id: string;
         team_b_id: string;

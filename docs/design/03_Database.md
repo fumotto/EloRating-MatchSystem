@@ -1448,6 +1448,31 @@ Seed
 
 ---
 
+# 18.9 シーズン（ADR-030 / Migration 0021）
+
+| テーブル            | 用途                                    |
+| --------------- | ------------------------------------- |
+| seasons         | シーズンの番号・状態・猶予期限・総解散の選択            |
+| season_rankings | 確定時点の順位・レート・勝敗・BAN状況                |
+| season_members  | 確定時点のチーム編成                            |
+| season_exports  | 戦績・ログの持ち出し記録（削除の安全弁）                |
+
+`seasons.status` は `ACTIVE` / `ENDING` / `FINALIZED` を取る。
+`ux_seasons_open` により、`ACTIVE` と `ENDING` はそれぞれ同時に1件までである。
+
+**★`season_rankings` と `season_members` は `teams` への外部キーを張らない。**
+総解散でチームが削除されうるため、参照を持つと過去のランキングを表示できなくなる。
+チーム名は退避時に複製して保持する。
+
+**★`season_exports` を `audit_logs` と分ける。** ログの削除はシーズン機能の対象であり、
+持ち出しの記録を `audit_logs` に置くと、ログを消した時点で削除の可否を判断する根拠ごと消える。
+
+`system_settings` には `current_season`・`matchmaking_paused`・`updates_locked`・
+`season_grace_minutes` を持たせる。前3者は `public_settings` を通して未認証にも公開する。
+**★停止していることを伝えられないと、利用者は不具合と区別できない。**
+
+---
+
 # 19. DB更新経路
 
 | テーブル            | 更新経路                             |

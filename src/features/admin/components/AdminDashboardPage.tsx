@@ -5,6 +5,11 @@ const SECTIONS = [
   { to: "/admin/teams", title: "チーム管理", description: "BANと解除を行います。" },
   { to: "/admin/settings", title: "システム設定", description: "K値・期限・上限を変更します。" },
   { to: "/admin/audit", title: "監査ログ", description: "実行された操作の履歴を確認します。" },
+  {
+    to: "/admin/season",
+    title: "シーズン",
+    description: "シーズンの終了・データの持ち出し・削除を行います。",
+  },
 ] as const;
 
 export function AdminDashboardPage() {

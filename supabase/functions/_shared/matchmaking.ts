@@ -100,13 +100,24 @@ export async function runMatchmaking(tx: Transaction): Promise<MatchmakingResult
   const settings = await tx.queryObject<{
     match_rating_range: number;
     report_timeout_minutes: number;
-  }>(`SELECT match_rating_range, report_timeout_minutes FROM system_settings LIMIT 1`);
+    matchmaking_paused: boolean;
+  }>(
+    `SELECT match_rating_range, report_timeout_minutes, matchmaking_paused
+       FROM system_settings LIMIT 1`,
+  );
 
   if (settings.rows.length === 0) {
     throw new Error("system settings not found");
   }
 
-  const { match_rating_range, report_timeout_minutes } = settings.rows[0];
+  const { match_rating_range, report_timeout_minutes, matchmaking_paused } = settings.rows[0];
+
+  // ★シーズン終了の猶予中は新しい試合を組まない。組んでしまうと、
+  //   進行中の試合が尽きるのを待つ猶予がいつまでも終わらない（Issue #9）。
+  //   本関数は cron から呼ばれるため、queue-match の関門だけでは塞げない。
+  if (matchmaking_paused) {
+    return { matches: [] };
+  }
 
   // 対象条件は3章。BANチームと進行中の試合を持つチームを除外する。
   // teams に状態列は無い。進行中かどうかは matches から導出する。

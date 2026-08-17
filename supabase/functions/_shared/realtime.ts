@@ -20,7 +20,10 @@ export type RealtimeEvent =
   | "RANKING_UPDATED"
   | "TEAM_UPDATED"
   | "TEAM_MEMBER_UPDATED"
-  | "SYSTEM_SETTINGS_UPDATED";
+  | "SYSTEM_SETTINGS_UPDATED"
+  // シーズンの状態変化（Issue #9）。マッチングの可否と更新の可否が同時に変わるため、
+  // 画面は本イベントで運用状態を取り直す。
+  | "SEASON_STATE_CHANGED";
 
 export type Broadcaster = (
   channel: RealtimeChannel,

@@ -11,6 +11,7 @@ import { EmptyState } from "../../../components/feedback/EmptyState";
 import { ErrorNotice } from "../../../components/feedback/ErrorNotice";
 import { apiErrorCode } from "../../../utils/apiErrorCode";
 import { requestNotificationPermission } from "../../../utils/browserNotification";
+import { useSeasonState } from "../../season/hooks/useSeason";
 
 export function MatchmakingPage() {
   const { session } = useRouteContext({ from: "/_app" });
@@ -44,7 +45,12 @@ export function MatchmakingPage() {
       ? { current: memberCount, required: requiredMembers }
       : null;
 
-  const canQueue = !isRosterLoading && shortfall === null;
+  // シーズン切替中はマッチングを受け付けない（Issue #9 / SEASON-002）。
+  // ★押してからエラーにしない。停止していることと、その理由を先に見せる。
+  const { data: seasonState } = useSeasonState();
+  const isPaused = seasonState?.matchmakingPaused === true;
+
+  const canQueue = !isRosterLoading && shortfall === null && !isPaused;
 
   if (isPending) return <p className="text-sm text-slate-500">読み込み中…</p>;
 
@@ -90,6 +96,14 @@ export function MatchmakingPage() {
           <p className="text-sm text-slate-500 dark:text-slate-400">
             マッチングを開始すると、レートの近いチームと自動で対戦が組まれます。
           </p>
+
+          {/* ★停止中はその旨を先に出す。不具合と区別できるようにする。 */}
+          {isPaused ? (
+            <p role="status" className="text-sm text-amber-700 dark:text-amber-500">
+              シーズンの切り替え中のため、マッチングを一時停止しています。
+              再開までお待ちください。進行中の試合はそのまま続けられます。
+            </p>
+          ) : null}
 
           {/* ★不足の案内とボタンは同時に出す。ボタンを消して入れ替えると、
               人数が確定するまでの間だけボタンが見え、直後に消える形になる。 */}

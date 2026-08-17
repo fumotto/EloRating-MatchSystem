@@ -7,7 +7,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap;
 
-SELECT plan(33);
+SELECT plan(38);
 
 -- テスト用データ。auth.users への外部キーがあるため profiles は先に用意する。
 INSERT INTO auth.users (id, instance_id, aud, role, email)
@@ -313,6 +313,42 @@ SELECT throws_ok(
   '23514',
   NULL,
   'https 以外を拒否する'
+);
+
+-- ===== シーズン（Migration 0021 / ADR-030）=====
+
+SELECT throws_ok(
+  $$INSERT INTO seasons (number, status) VALUES (99, 'UNKNOWN')$$,
+  '23514',
+  NULL,
+  'シーズンの状態は3種類に限る'
+);
+
+-- ★同時に2つのシーズンが進行してはならない。
+SELECT throws_ok(
+  $$INSERT INTO seasons (number, status) VALUES (99, 'ACTIVE')$$,
+  '23505',
+  NULL,
+  'ACTIVE なシーズンは1件までとする'
+);
+
+SELECT lives_ok(
+  $$INSERT INTO seasons (number, status, ended_at) VALUES (99, 'FINALIZED', NOW())$$,
+  'FINALIZED は複数あってよい'
+);
+
+SELECT throws_ok(
+  $$UPDATE system_settings SET season_grace_minutes = 0$$,
+  '23514',
+  NULL,
+  '猶予時間は1分未満にできない'
+);
+
+SELECT throws_ok(
+  $$UPDATE system_settings SET current_season = 0$$,
+  '23514',
+  NULL,
+  'シーズン番号は1未満にできない'
 );
 
 SELECT * FROM finish();

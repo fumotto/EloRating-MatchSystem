@@ -20,8 +20,10 @@ import { Route as PublicIndexRouteImport } from './routes/_public/index'
 import { Route as PublicLoginRouteImport } from './routes/_public/login'
 import { Route as PublicRankingRouteImport } from './routes/_public/ranking'
 import { Route as PublicRulesRouteImport } from './routes/_public/rules'
+import { Route as PublicSeasonsRouteImport } from './routes/_public/seasons'
 import { Route as AdminAdminIndexRouteImport } from './routes/_admin/admin.index'
 import { Route as AdminAdminAuditRouteImport } from './routes/_admin/admin.audit'
+import { Route as AdminAdminSeasonRouteImport } from './routes/_admin/admin.season'
 import { Route as AdminAdminSettingsRouteImport } from './routes/_admin/admin.settings'
 import { Route as AdminAdminTeamsRouteImport } from './routes/_admin/admin.teams'
 import { Route as AppMatchesIndexRouteImport } from './routes/_app/matches.index'
@@ -81,6 +83,11 @@ const PublicRulesRoute = PublicRulesRouteImport.update({
   path: '/rules',
   getParentRoute: () => PublicRoute,
 } as any)
+const PublicSeasonsRoute = PublicSeasonsRouteImport.update({
+  id: '/seasons',
+  path: '/seasons',
+  getParentRoute: () => PublicRoute,
+} as any)
 const AdminAdminIndexRoute = AdminAdminIndexRouteImport.update({
   id: '/admin/',
   path: '/admin/',
@@ -89,6 +96,11 @@ const AdminAdminIndexRoute = AdminAdminIndexRouteImport.update({
 const AdminAdminAuditRoute = AdminAdminAuditRouteImport.update({
   id: '/admin/audit',
   path: '/admin/audit',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminAdminSeasonRoute = AdminAdminSeasonRouteImport.update({
+  id: '/admin/season',
+  path: '/admin/season',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminAdminSettingsRoute = AdminAdminSettingsRouteImport.update({
@@ -131,7 +143,9 @@ export interface FileRoutesByFullPath {
   '/login': typeof PublicLoginRoute
   '/ranking': typeof PublicRankingRoute
   '/rules': typeof PublicRulesRoute
+  '/seasons': typeof PublicSeasonsRoute
   '/admin/audit': typeof AdminAdminAuditRoute
+  '/admin/season': typeof AdminAdminSeasonRoute
   '/admin/settings': typeof AdminAdminSettingsRoute
   '/admin/teams': typeof AdminAdminTeamsRoute
   '/matches/$matchId': typeof AppMatchesMatchIdRoute
@@ -149,7 +163,9 @@ export interface FileRoutesByTo {
   '/login': typeof PublicLoginRoute
   '/ranking': typeof PublicRankingRoute
   '/rules': typeof PublicRulesRoute
+  '/seasons': typeof PublicSeasonsRoute
   '/admin/audit': typeof AdminAdminAuditRoute
+  '/admin/season': typeof AdminAdminSeasonRoute
   '/admin/settings': typeof AdminAdminSettingsRoute
   '/admin/teams': typeof AdminAdminTeamsRoute
   '/matches/$matchId': typeof AppMatchesMatchIdRoute
@@ -170,8 +186,10 @@ export interface FileRoutesById {
   '/_public/login': typeof PublicLoginRoute
   '/_public/ranking': typeof PublicRankingRoute
   '/_public/rules': typeof PublicRulesRoute
+  '/_public/seasons': typeof PublicSeasonsRoute
   '/_public/': typeof PublicIndexRoute
   '/_admin/admin/audit': typeof AdminAdminAuditRoute
+  '/_admin/admin/season': typeof AdminAdminSeasonRoute
   '/_admin/admin/settings': typeof AdminAdminSettingsRoute
   '/_admin/admin/teams': typeof AdminAdminTeamsRoute
   '/_app/matches/$matchId': typeof AppMatchesMatchIdRoute
@@ -191,7 +209,9 @@ export interface FileRouteTypes {
     | '/login'
     | '/ranking'
     | '/rules'
+    | '/seasons'
     | '/admin/audit'
+    | '/admin/season'
     | '/admin/settings'
     | '/admin/teams'
     | '/matches/$matchId'
@@ -209,7 +229,9 @@ export interface FileRouteTypes {
     | '/login'
     | '/ranking'
     | '/rules'
+    | '/seasons'
     | '/admin/audit'
+    | '/admin/season'
     | '/admin/settings'
     | '/admin/teams'
     | '/matches/$matchId'
@@ -229,8 +251,10 @@ export interface FileRouteTypes {
     | '/_public/login'
     | '/_public/ranking'
     | '/_public/rules'
+    | '/_public/seasons'
     | '/_public/'
     | '/_admin/admin/audit'
+    | '/_admin/admin/season'
     | '/_admin/admin/settings'
     | '/_admin/admin/teams'
     | '/_app/matches/$matchId'
@@ -325,6 +349,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PublicRulesRouteImport
       parentRoute: typeof PublicRoute
     }
+    '/_public/seasons': {
+      id: '/_public/seasons'
+      path: '/seasons'
+      fullPath: '/seasons'
+      preLoaderRoute: typeof PublicSeasonsRouteImport
+      parentRoute: typeof PublicRoute
+    }
     '/_admin/admin/': {
       id: '/_admin/admin/'
       path: '/admin'
@@ -337,6 +368,13 @@ declare module '@tanstack/react-router' {
       path: '/admin/audit'
       fullPath: '/admin/audit'
       preLoaderRoute: typeof AdminAdminAuditRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/_admin/admin/season': {
+      id: '/_admin/admin/season'
+      path: '/admin/season'
+      fullPath: '/admin/season'
+      preLoaderRoute: typeof AdminAdminSeasonRouteImport
       parentRoute: typeof AdminRoute
     }
     '/_admin/admin/settings': {
@@ -386,6 +424,7 @@ declare module '@tanstack/react-router' {
 
 interface AdminRouteChildren {
   AdminAdminAuditRoute: typeof AdminAdminAuditRoute
+  AdminAdminSeasonRoute: typeof AdminAdminSeasonRoute
   AdminAdminSettingsRoute: typeof AdminAdminSettingsRoute
   AdminAdminTeamsRoute: typeof AdminAdminTeamsRoute
   AdminAdminIndexRoute: typeof AdminAdminIndexRoute
@@ -393,6 +432,7 @@ interface AdminRouteChildren {
 
 const AdminRouteChildren: AdminRouteChildren = {
   AdminAdminAuditRoute: AdminAdminAuditRoute,
+  AdminAdminSeasonRoute: AdminAdminSeasonRoute,
   AdminAdminSettingsRoute: AdminAdminSettingsRoute,
   AdminAdminTeamsRoute: AdminAdminTeamsRoute,
   AdminAdminIndexRoute: AdminAdminIndexRoute,
@@ -428,6 +468,7 @@ interface PublicRouteChildren {
   PublicLoginRoute: typeof PublicLoginRoute
   PublicRankingRoute: typeof PublicRankingRoute
   PublicRulesRoute: typeof PublicRulesRoute
+  PublicSeasonsRoute: typeof PublicSeasonsRoute
   PublicIndexRoute: typeof PublicIndexRoute
 }
 
@@ -435,6 +476,7 @@ const PublicRouteChildren: PublicRouteChildren = {
   PublicLoginRoute: PublicLoginRoute,
   PublicRankingRoute: PublicRankingRoute,
   PublicRulesRoute: PublicRulesRoute,
+  PublicSeasonsRoute: PublicSeasonsRoute,
   PublicIndexRoute: PublicIndexRoute,
 }
 

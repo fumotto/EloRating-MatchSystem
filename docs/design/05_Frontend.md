@@ -166,6 +166,8 @@ RootLayout
 │      ├── /dashboard        Dashboard
 │      ├── /team             My Team
 │      ├── /team/:teamId     Team Detail  （メンバー一覧。ランキング・試合の各画面から辿る）
+│      ├── /seasons          Season Archive（過去のシーズン別ランキング。未認証可）
+│      ├── /admin/season      Admin Season  （シーズンの終了・持ち出し・削除）
 │      ├── /matchmaking      Matchmaking（待機画面）
 │      ├── /matches          Match List
 │      ├── /matches/:matchId Match Detail

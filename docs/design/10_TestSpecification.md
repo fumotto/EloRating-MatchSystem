@@ -251,6 +251,25 @@ Realtime通知の検証は、通知を伴う処理のIntegration TestおよびE2
 | TC-INFRA-015 | アイコンURLの遮断 | 許可リスト外のURLを送信 | ensure-profile | URLを捨てて成功を返す（ログインは止めない） | Integration | `drops an avatar url that is not on the provider CDN` |
 | TC-INFRA-016 | アイコンURLの保持 | プロバイダCDNのURLを送信 | ensure-profile | URLをそのまま保存する | Integration | `keeps an avatar url served by the provider CDN` |
 
+## シーズン（ADR-030）
+
+| ID            | シナリオ            | 前提条件        | 対象                        | 期待結果                          | 種別          | テスト名                                              |
+| ------------- | --------------- | ----------- | ------------------------- | ----------------------------- | ----------- | ------------------------------------------------- |
+| TC-SEASON-001 | 終了の開始           | ACTIVE      | admin-end-season          | マッチングを止め待機列を空にする。更新は止めない      | Integration | `pauses matchmaking and clears the queue when the season ends` |
+| TC-SEASON-002 | 二重開始の拒否         | ENDING      | admin-end-season          | `SEASON-003`                  | Integration | `refuses to end a season that is not active`      |
+| TC-SEASON-003 | 権限              | 一般利用者       | admin-end-season          | `ADMIN-001`                   | Integration | `rejects a non-administrator`                     |
+| TC-SEASON-004 | 猶予中は確定しない       | 猶予未経過       | finalize-season           | 何もせず戻る                        | Integration | `does nothing while the grace period is still running` |
+| TC-SEASON-005 | 確定              | 猶予経過        | finalize-season           | 引き分け・退避・リセット・番号更新を行う          | Integration | `finalizes the season once the grace period has passed` |
+| TC-SEASON-006 | **退避前の施錠**      | 猶予経過        | finalize-season           | 施錠 → 退避 → リセットの順で発行する         | Integration | `locks user updates before taking the snapshot`   |
+| TC-SEASON-007 | **戦績の個人情報除外**   | FINALIZED   | admin-export-season-data  | 申告者・承認者のIDを含まない               | Integration | `keeps personal identifiers out of the exported match data` |
+| TC-SEASON-008 | **ログの個人情報除外**   | FINALIZED   | admin-export-season-data  | actor と payload を含まない          | Integration | `keeps actor identifiers and payloads out of the exported logs` |
+| TC-SEASON-009 | **未持ち出しの削除拒否**  | 片方のみ持ち出し    | admin-purge-season-data   | `SEASON-005`。削除を発行しない          | Integration | `refuses to delete data that has not been exported` |
+| TC-SEASON-010 | 削除の順序           | 両方持ち出し済み    | admin-purge-season-data   | rating_history → matches の順に消す | Integration | `deletes the season data after both exports exist` |
+| TC-SEASON-011 | **総解散の位置**      | 総解散あり       | admin-purge-season-data   | 戦績削除の後にチームを消す                  | Integration | `disbands teams only after the match data is gone` |
+| TC-SEASON-012 | 施錠中の利用者操作       | updates_locked | leave-team             | `SEASON-001`                  | Integration | `blocks user updates while the season change is in progress` |
+| TC-SEASON-013 | 終了の取りやめ         | ENDING      | admin-cancel-season-end   | ACTIVE へ戻しマッチングを再開する           | Integration | `cancels the season end while the grace period is running` |
+| TC-SEASON-014 | 確定後の取りやめ拒否      | FINALIZED済  | admin-cancel-season-end   | `SEASON-003`                  | Integration | `refuses to cancel after the season is finalized` |
+
 ---
 
 # 10. テスト品質方針

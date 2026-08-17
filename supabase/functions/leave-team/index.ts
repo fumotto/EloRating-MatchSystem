@@ -2,6 +2,7 @@
 // チーム脱退（04_BackendInterface.md 9.5）。
 import { verifyJwt } from "../_shared/auth.ts";
 import { withTransaction } from "../_shared/db.ts";
+import { assertUpdatesAllowed } from "../_shared/season.ts";
 import { broadcast } from "../_shared/realtime.ts";
 import { ok, businessError, systemError } from "../_shared/response.ts";
 import { withCors } from "../_shared/cors.ts";
@@ -21,6 +22,9 @@ export async function handler(req: Request): Promise<Response> {
     // 入力は無い。所属チームはJWTから導出する（9.5）。
 
     const result = await withTransaction<LeaveTeamResponse>(async (tx) => {
+      // シーズン切替中は利用者側の更新を止める（06_ErrorCode.md 13.1）。
+      await assertUpdatesAllowed(tx);
+
       const membership = await tx.queryObject<{ team_id: string; role: string }>(
         `SELECT team_id, role FROM team_members WHERE profile_id = $1`,
         [claims.sub],

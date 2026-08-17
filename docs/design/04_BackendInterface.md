@@ -281,6 +281,7 @@ Postgres Changes（テーブル変更の自動購読）は使用しない。RLS�
 | Event                   | 送信契機   | 送信元                          |
 | ----------------------- | ------ | ---------------------------- |
 | SYSTEM_SETTINGS_UPDATED | システム設定変更 | admin-update-system-settings |
+| SEASON_STATE_CHANGED    | シーズンの状態変化 | admin-end-season / finalize-season / admin-resume-season |
 
 ---
 
@@ -2002,3 +2003,147 @@ Edge Functions は実行ごとに以下を標準出力へ記録する（`audit_l
 フロントエンドは本書で定義した DTO のみを利用し、データベース構造へ直接依存しない。
 
 新しい機能を追加する場合は、`15_DecisionLog.md` へADRを追加し、本書へ定義を追加してから実装を開始する。
+
+---
+
+# 12.6 admin-end-season
+
+### Purpose
+
+シーズン終了を開始する（Issue #9 / ADR-030）。
+
+### Authorization
+
+管理者のみ（`app_metadata.role = 'admin'`）。
+
+### Input DTO
+
+```typescript
+interface EndSeasonRequest {
+    disbandActiveTeams?: boolean;  // 通常チームの総解散
+    disbandBannedTeams?: boolean;  // BANチームの総解散
+}
+```
+
+### Processing Flow
+
+1. `seasons` が `ACTIVE` であることを確認する（違えば `SEASON-003`）
+2. `ENDING` へ変え、`grace_until = NOW() + season_grace_minutes` を設定する
+3. 総解散の選択を `seasons` へ保存する
+4. `matchmaking_paused = TRUE`、`matching_queue` を空にする
+
+**★ここでは更新操作を止めない。** 進行中の試合は通常どおり申告・承認できる。
+対戦相手を巻き添えにしないためであり、BAN が試合を中断しないのと同じ考え方である（12.1）。
+
+**★総解散の選択をここで保存する。** 確定は cron が自動で行うため、確定時に選ばせられない。
+
+### Error Codes
+
+`AUTH-001`、`ADMIN-001`、`VALIDATION-001`、`SEASON-003`、`SYSTEM-001`
+
+---
+
+# 12.7 finalize-season
+
+### Purpose
+
+シーズンを確定する。**cron から呼ぶ内部処理であり、クライアントから呼んではならない。**
+
+### Processing Flow
+
+猶予が切れていなければ何もせず戻る。切れている場合、1トランザクションで以下を行う。
+
+1. 残った試合を `DRAWN` にする（レートは動かさない）
+2. `updates_locked = TRUE`
+3. `season_rankings` へ順位・勝敗・BAN状況を退避する
+4. `season_members` へチーム編成を退避する
+5. `team_invites` を全削除する
+6. `teams.rating` を `initial_rating` へ戻す
+7. シーズンを `FINALIZED` にし、次シーズンを `ACTIVE` で作成、`current_season` を進める
+
+**★②が③より前でなければならない。** 退避の後にレートが動くと、
+シーズン別ランキングはどの瞬間でもない値を記録する。
+
+**★チームの削除はここで行わない。** `matches.team_a_id` は `ON DELETE RESTRICT` であり、
+戦績が残っている限りチームを消せない（12.8）。
+
+---
+
+# 12.8 admin-export-season-data / admin-purge-season-data
+
+### Purpose
+
+確定済みシーズンのデータを持ち出し、削除する。総解散もここで行う。
+
+### Input DTO
+
+```typescript
+interface ExportSeasonDataRequest {
+    kind: "MATCHES" | "LOGS";
+}
+```
+
+### 個人情報の除外
+
+| 種別      | 含めない列                                        |
+| ------- | -------------------------------------------- |
+| MATCHES | `reported_by_profile_id`、`approved_by_profile_id` |
+| LOGS    | `actor_profile_id`、`payload`                  |
+
+**★持ち出したファイルは本システムの管理下から出る。** チーム単位の情報に留める。
+`payload` を返さないのは、BAN理由などの自由記述が入りうるためである。
+
+### 削除の安全弁
+
+`admin-purge-season-data` は、該当シーズンについて `MATCHES` と `LOGS` の
+双方の持ち出し記録（`season_exports`）が無ければ `SEASON-005` を返す。
+
+**★記録を `audit_logs` へ置いてはならない。** ログの削除は本機能の対象であり、
+そこへ置くと削除の可否を判断する根拠ごと消える。
+
+### 削除の順序
+
+```text
+rating_history → matches → audit_logs → team_members / team_invites → teams
+```
+
+**★子から先に消す。** いずれの外部キーも `ON DELETE RESTRICT` である。
+総解散が最後になるのはこのためであり、Issue #9 の並びから変更した（ADR-030）。
+
+### Error Codes
+
+`AUTH-001`、`ADMIN-001`、`VALIDATION-001`、`SEASON-003`、`SEASON-005`、`SYSTEM-001`
+
+---
+
+# 12.9 admin-resume-season
+
+### Purpose
+
+通常営業へ戻す。`updates_locked` と `matchmaking_paused` を同時に解除する。
+
+**★片方だけ戻さない。** 編成は変えられるのに対戦できない、あるいはその逆の状態が残る。
+
+**★確定直後に自動で戻さない。** 持ち出しと削除は管理者が任意の時間をかけて行う。
+その間に利用者がレートを動かすと、削除の対象が動いてしまう。
+
+### Error Codes
+
+`AUTH-001`、`ADMIN-001`、`SEASON-003`、`SYSTEM-001`
+
+---
+
+# 12.10 シーズン切替中の利用者操作
+
+`updates_locked` が真の間、利用者側の更新系Functionは `SEASON-001` を返す。
+対象は次のとおりである。
+
+`create-team`、`create-team-invite`、`accept-team-invite`、`leave-team`、
+`transfer-leader`、`queue-match`、`cancel-match-queue`、
+`report-match`、`approve-match`、`reject-match`
+
+**★`ensure-profile` は対象外である。** ログインを妨げると、利用者は
+何が起きているのかを画面で確かめられない。
+
+`matchmaking_paused` が真の間は `queue-match` が `SEASON-002` を返し、
+`matchmaker`（cron）も試合を組まない。**画面側の関門だけでは塞げない。**

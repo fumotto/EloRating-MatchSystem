@@ -4,6 +4,7 @@
 // 拒否すると申告が破棄されて PLAYING へ戻る。拒否回数が上限に達した場合は DRAWN で解散する。
 import { verifyJwt } from "../_shared/auth.ts";
 import { withTransaction } from "../_shared/db.ts";
+import { assertUpdatesAllowed } from "../_shared/season.ts";
 import { broadcast } from "../_shared/realtime.ts";
 import { ok, businessError, systemError } from "../_shared/response.ts";
 import { withCors } from "../_shared/cors.ts";
@@ -29,6 +30,9 @@ export async function handler(req: Request): Promise<Response> {
     }
 
     const result = await withTransaction<RejectMatchResponse>(async (tx) => {
+      // シーズン切替中は利用者側の更新を止める（06_ErrorCode.md 13.1）。
+      await assertUpdatesAllowed(tx);
+
       const match = await tx.queryObject<{
         team_a_id: string;
         team_b_id: string;
