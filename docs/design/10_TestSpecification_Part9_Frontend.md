@@ -153,6 +153,22 @@ TC-UI-006 と TC-UI-010 は、それぞれ ADR-018 と GitHub Pages のSPA配信
 | TC-UI-074 | ラベルとロール   | 各画面     | 画面確認 | 適切なロールとラベルを持つ    | Frontend | `exposes accessible roles and labels`         |
 | TC-UI-075 | アイコンの補足   | アイコンボタン | 画面確認 | ラベルまたは代替テキストを持つ  | Frontend | `labels icon-only controls`                   |
 
+## 2.11 実装済みのComponent Test
+
+101番台は実装に合わせて追加したものである。上表（001〜075）は設計時に洗い出した観点であり、
+番号を詰めて割り当て直すと既存の参照が壊れるため、続きの番号を使う。
+
+| ID         | 観点            | 前提条件    | 操作   | 期待結果                     | 種別       | テスト名                                              |
+| ---------- | ------------- | ------- | ---- | ------------------------ | -------- | ------------------------------------------------- |
+| TC-UI-101  | エラー文言の変換      | 既知のコード  | 変換実行 | 対応する日本語文言を返す             | Frontend | `errorMessage`                                    |
+| TC-UI-102  | 未知コードの既定文言    | 未知のコード  | 変換実行 | 既定の文言を返す                 | Frontend | `errorMessage`                                    |
+| TC-UI-103  | コードの露出禁止      | 任意のコード  | 変換実行 | コード文字列をそのまま表示しない         | Frontend | `errorMessage`                                    |
+| TC-UI-104  | ランキングの行       | 取得済み    | 画面確認 | チームごとに1行を表示する            | Frontend | `renders a row for each team`                     |
+| TC-UI-105  | ランキングの空表示     | 0件      | 画面確認 | 空状態の案内を表示する              | Frontend | `renders an empty state`                          |
+| TC-UI-106  | 勝率の未算出        | 試合数0    | 画面確認 | 勝率を `—` と表示する            | Frontend | `shows a dash when the win rate is unavailable`   |
+| TC-UI-107  | **未認証への非表示**  | 未認証     | 画面確認 | チーム名をリンクにしない             | Frontend | `does not link team names for signed-out visitors` |
+| TC-UI-108  | **メンバーへの導線**  | 認証済み    | 画面確認 | チーム名が `/team/:teamId` を指す | Frontend | `links team names to the member list when signed in` |
+
 ---
 
 # 3. 作成してはならないテスト

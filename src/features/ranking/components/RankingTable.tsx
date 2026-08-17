@@ -2,9 +2,13 @@
 // ★Component は API 呼び出し・業務ロジックを持たない（3.2）。データは props で受け取る。
 import type { RankingEntry } from "../../../types/api";
 import { EmptyState } from "../../../components/feedback/EmptyState";
+import { TeamLink } from "../../team/components/TeamLink";
 
 interface RankingTableProps {
   entries: RankingEntry[];
+  // ★未認証にはリンクを出さない。メンバー一覧は認証済み限定であり、
+  //   押してもログイン画面へ弾かれるだけになる（TeamLink 参照）。
+  linkTeams?: boolean;
 }
 
 function formatWinRate(winRate: number | null): string {
@@ -12,7 +16,7 @@ function formatWinRate(winRate: number | null): string {
   return `${Math.round(winRate * 100)}%`;
 }
 
-export function RankingTable({ entries }: RankingTableProps) {
+export function RankingTable({ entries, linkTeams = false }: RankingTableProps) {
   if (entries.length === 0) {
     return (
       <EmptyState
@@ -51,7 +55,13 @@ export function RankingTable({ entries }: RankingTableProps) {
           {entries.map((entry) => (
             <tr key={entry.teamId} className="border-b border-slate-100 dark:border-slate-900">
               <td className="py-2 pr-4 tabular-nums">{entry.rank}</td>
-              <td className="py-2 pr-4">{entry.teamName}</td>
+              <td className="py-2 pr-4">
+                {linkTeams ? (
+                  <TeamLink teamId={entry.teamId} teamName={entry.teamName} />
+                ) : (
+                  entry.teamName
+                )}
+              </td>
               <td className="py-2 pr-4 text-right tabular-nums">{entry.rating}</td>
               <td className="py-2 pr-4 text-right tabular-nums">{entry.wins}</td>
               <td className="py-2 pr-4 text-right tabular-nums">{entry.losses}</td>

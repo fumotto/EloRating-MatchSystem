@@ -5,7 +5,7 @@
 //   localStorage へ注入してログイン済み状態を再現する。
 //   検証対象は「ログイン後のアプリの振る舞い」であり、OAuthの往復そのものではない。
 //   OAuthの往復は SetupRunbook 作業3の手動確認が担う。
-import { test as base, type Page } from "@playwright/test";
+import { test as base, expect, type Browser, type Page } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL ?? "http://127.0.0.1:54321";
@@ -133,7 +133,7 @@ export async function waitForProfile(page: Page, userId: string): Promise<void> 
 }
 
 export const test = base;
-export { expect } from "@playwright/test";
+export { expect };
 
 // お知らせの設定（Issue #7）。
 //
@@ -185,4 +185,51 @@ export async function setAnnouncement(text: string, level: "INFO" | "WARN" | "AL
   if (!res.ok) {
     throw new Error(`お知らせを設定できない: ${res.status} ${await res.text()}`);
   }
+}
+
+// ---- 画面操作の共通手順 ----
+//
+// ★複数の spec が同じ準備を必要とする。各ファイルに書き写すと、
+//   必須人数や導線が変わったときに直し漏れが出る。
+
+export const teamName = (label: string) => `E2E ${label} ${Date.now().toString(36)}`;
+
+export async function openApp(page: Page, user: TestUser): Promise<void> {
+  await signIn(page, user);
+  await page.goto("/dashboard");
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await waitForProfile(page, user.id);
+}
+
+// マッチングに必要な人数。system_settings の既定値と揃える。
+export const REQUIRED_MEMBERS = 3;
+
+// 必須人数まで揃ったチームを作り、チーム名を返す。
+export async function createFullTeam(page: Page, browser: Browser, label: string): Promise<string> {
+  const leader = await createTestUser(`${label}Leader`);
+  await openApp(page, leader);
+
+  const name = teamName(label);
+  await page.goto("/team");
+  await page.getByLabel("チーム名").fill(name);
+  await page.getByRole("button", { name: "チームを作成" }).click();
+  await expect(page.getByRole("heading", { name })).toBeVisible();
+
+  for (let i = 1; i < REQUIRED_MEMBERS; i += 1) {
+    await page.goto("/team");
+    await page.getByRole("button", { name: "招待コードを発行" }).click();
+    const code = await page.locator("p.font-mono").first().innerText();
+
+    const member = await createTestUser(`${label}M${i}`);
+    const ctx = await browser.newContext();
+    const mp = await ctx.newPage();
+    await openApp(mp, member);
+    await mp.goto("/team");
+    await mp.getByLabel("招待コード").fill(code);
+    await mp.getByRole("button", { name: "チームに参加" }).click();
+    await expect(mp.getByRole("heading", { name })).toBeVisible();
+    await ctx.close();
+  }
+
+  return name;
 }

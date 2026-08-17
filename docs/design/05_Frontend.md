@@ -165,7 +165,7 @@ RootLayout
 ├── AppLayout（認証必須）
 │      ├── /dashboard        Dashboard
 │      ├── /team             My Team
-│      ├── /team/:teamId     Team Detail
+│      ├── /team/:teamId     Team Detail  （メンバー一覧。ランキング・試合の各画面から辿る）
 │      ├── /matchmaking      Matchmaking（待機画面）
 │      ├── /matches          Match List
 │      ├── /matches/:matchId Match Detail

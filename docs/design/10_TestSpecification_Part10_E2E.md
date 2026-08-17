@@ -100,6 +100,7 @@ TC-E2E-018 と TC-E2E-019 は、テスト実行時間を短縮するため管理
 | TC-E2E-031 | リセットの制限    | 進行中の試合あり | リセット実行        | 実行できず、理由が表示される         | `refuses to reset during an active match`     |
 | TC-E2E-032 | 監査ログ       | 管理操作後  | 監査ログ画面を表示     | 実施した操作が記録されている         | `shows the performed actions in the audit log` |
 | TC-E2E-033 | 管理画面の保護    | 一般利用者  | 管理画面へアクセス     | アクセスが拒否される             | `rejects admin access for a regular user`     |
+| TC-E2E-049 | **BAN中の凍結**  | BAN済みチーム | チーム画面・マッチング画面を確認 | 脱退・招待・マッチングのいずれも操作できない  | `freezes roster changes and matchmaking`      |
 
 ## 3.5 権限と異常系
 
@@ -121,6 +122,17 @@ TC-E2E-038 は GitHub Pages のSPA配信に関わる（`11_Deployment.md`）。�
 | TC-E2E-040 | Realtime同期     | 2ブラウザで同一試合 | 一方が申告                                 | もう一方の画面が自動更新される | `syncs the match state across clients`        |
 | TC-E2E-041 | ランキングの同期       | 2ブラウザ     | 一方で試合完了                               | もう一方のランキングが更新される | `syncs the ranking across clients`            |
 | TC-E2E-042 | **主要フロー回帰テスト** | 新規環境      | ログイン → チーム作成 → 招待 → マッチング → 申告 → 承認 → ランキング確認 | 一連が正常に動作する      | `completes the full application flow`         |
+
+## 3.7 チームメンバーの確認
+
+| ID         | シナリオ            | 前提条件      | 操作                | 期待結果                  | テスト名                                          |
+| ---------- | --------------- | --------- | ----------------- | --------------------- | --------------------------------------------- |
+| TC-E2E-050 | **ランキングからの確認**  | 認証済み・未所属  | ランキングのチーム名を選ぶ     | 他チームのメンバーと役割が表示される    | `reaches another team's members from the ranking` |
+| TC-E2E-051 | 未認証への非表示        | 未認証       | ランキングを表示          | チーム名がリンクにならない         | `hides the link from signed-out visitors`     |
+| TC-E2E-052 | **試合からの確認**     | 試合成立後     | 試合画面の相手チーム名を選ぶ    | 相手チームのメンバーが表示される      | `reaches the opponent's members from the match` |
+
+メンバー一覧は `team_detail_view` から取得する。同Viewは認証済み限定であり（`03_Database.md` 11.1）、
+未認証にはリンク自体を出さない。押してもログイン画面へ弾かれるだけの導線を作らないためである。
 
 ---
 

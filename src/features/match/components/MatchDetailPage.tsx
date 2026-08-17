@@ -6,6 +6,7 @@ import { useParams, useRouteContext } from "@tanstack/react-router";
 import { useMatchDetail } from "../hooks/useMatchDetail";
 import { useApproveMatch, useRejectMatch, useReportMatch } from "../hooks/useMatchActions";
 import { useMyTeam } from "../../team/hooks/useMyTeam";
+import { TeamLink } from "../../team/components/TeamLink";
 import { useSystemSettings } from "../../settings/hooks/useSystemSettings";
 import { EmptyState } from "../../../components/feedback/EmptyState";
 import { ErrorNotice } from "../../../components/feedback/ErrorNotice";
@@ -47,8 +48,11 @@ export function MatchDetailPage() {
   return (
     <section className="space-y-6">
       <div>
+        {/* ★チーム名から相手のメンバーを確認できるようにする。
+            誰と当たっているのかは、対戦前に最も知りたい情報である。 */}
         <h1 className="text-xl font-semibold">
-          {match.teamAName} vs {match.teamBName}
+          <TeamLink teamId={match.teamAId} teamName={match.teamAName} /> vs{" "}
+          <TeamLink teamId={match.teamBId} teamName={match.teamBName} />
         </h1>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
           {matchStatusLabel(match.status)}

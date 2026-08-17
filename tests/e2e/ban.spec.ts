@@ -2,25 +2,7 @@
 //
 // ★BANはチームの活動を凍結する措置である。編成を変えられると、
 //   全員が抜けて作り直すことで制裁を回避できてしまう。
-import {
-  test,
-  expect,
-  createTestUser,
-  makeAdmin,
-  signIn,
-  waitForProfile,
-  type TestUser,
-} from "./fixtures";
-import type { Page } from "@playwright/test";
-
-const teamName = (label: string) => `E2E ${label} ${Date.now().toString(36)}`;
-
-async function openApp(page: Page, user: TestUser) {
-  await signIn(page, user);
-  await page.goto("/dashboard");
-  await expect(page).toHaveURL(/\/dashboard$/);
-  await waitForProfile(page, user.id);
-}
+import { test, expect, createTestUser, makeAdmin, openApp, teamName } from "./fixtures";
 
 test.describe("banned team", () => {
   // ★既定の30秒では足りない。利用者2人分のログインと管理画面の操作を通すためである。
