@@ -265,15 +265,6 @@ export interface UpdateSystemSettingsResponse {
   settings: SystemSettings;
 }
 
-export type AdminResetRatingsRequest = {
-  initialRating?: number;
-};
-
-export interface AdminResetRatingsResponse {
-  affectedTeams: number;
-  initialRating: number;
-}
-
 // --- Query（13章）。View の列はスネークケースのまま扱う ---
 
 export type MatchStatus = "PLAYING" | "WINNER_REPORTED" | "COMPLETED" | "DRAWN";

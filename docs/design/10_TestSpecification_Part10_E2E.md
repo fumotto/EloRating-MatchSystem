@@ -96,8 +96,6 @@ TC-E2E-018 と TC-E2E-019 は、テスト実行時間を短縮するため管理
 | TC-E2E-027 | BAN後のランキング | BAN実行後  | ランキング画面を表示    | BANチームが表示されない          | `hides banned teams from the ranking`         |
 | TC-E2E-028 | K値変更       | 管理者    | K値変更後に試合を完了   | 変更後のK値でレートが計算される       | `applies the updated K factor`                |
 | TC-E2E-029 | 人数上限変更     | 管理者    | 上限変更後に招待参加    | 新しい上限で判定される            | `applies the updated member limit`            |
-| TC-E2E-030 | レートリセット    | 管理者・試合なし | リセット実行        | 全チームが初期レートへ戻る          | `resets all ratings`                          |
-| TC-E2E-031 | リセットの制限    | 進行中の試合あり | リセット実行        | 実行できず、理由が表示される         | `refuses to reset during an active match`     |
 | TC-E2E-032 | 監査ログ       | 管理操作後  | 監査ログ画面を表示     | 実施した操作が記録されている         | `shows the performed actions in the audit log` |
 | TC-E2E-033 | 管理画面の保護    | 一般利用者  | 管理画面へアクセス     | アクセスが拒否される             | `rejects admin access for a regular user`     |
 | TC-E2E-049 | **BAN中の凍結**  | BAN済みチーム | チーム画面・マッチング画面を確認 | 脱退・招待・マッチングのいずれも操作できない  | `freezes roster changes and matchmaking`      |

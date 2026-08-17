@@ -267,7 +267,7 @@ Postgres Changes（テーブル変更の自動購読）は使用しない。RLS�
 
 | Event           | 送信契機          | 送信元                                 |
 | --------------- | ------------- | ----------------------------------- |
-| RANKING_UPDATED | レート更新後        | approve-match / auto-resolve-matches / admin-reset-ratings |
+| RANKING_UPDATED | レート更新後        | approve-match / auto-resolve-matches / finalize-season / admin-purge-season-data |
 
 ## Channel: `team`
 
@@ -1599,80 +1599,6 @@ SYSTEM_SETTINGS_UPDATED / SETTINGS_UPDATED
 ### Test Cases
 
 各項目の更新、境界値、制約違反、非管理者、冪等性、人数上限の縮小
-
----
-
-## 12.4 admin-reset-ratings
-
-### Purpose
-
-全チームのレーティングを初期値へ戻す。
-
-本Functionはシーズン機能ではない。シーズン管理はMVP対象外である（`13_FutureFeatures.md`）。
-
-### Authentication / Authorization
-
-必須 / 管理者
-
-### Input DTO
-
-```typescript
-interface AdminResetRatingsRequest {
-    initialRating?: number;
-}
-```
-
-省略時は `system_settings.initial_rating` を使用する。
-
-### Output DTO
-
-```typescript
-interface AdminResetRatingsResponse {
-    affectedTeams: number;
-    initialRating: number;
-}
-```
-
-### Validation
-
-* 進行中の試合が存在しないこと（レート計算の整合性を保つため）
-* `initialRating` は `system_settings` のCHECK制約に従う
-
-### Processing Flow
-
-```text
-管理者確認
-  ↓
-進行中試合の確認
-  ↓
-teams UPDATE（rating = initialRating）
-  ↓
-audit_logs INSERT（RATING_RESET・対象件数とリセット前の値を payload へ）
-```
-
-`rating_history` へは登録しない。`match_id` が NOT NULL かつ `matches` への外部キーであるため、試合に紐づかない履歴を登録できないためである（ADR-017）。
-
-### Transaction
-
-```text
-BEGIN → teams UPDATE → audit_logs INSERT → COMMIT
-```
-
-### Updated Tables
-
-`teams`、`audit_logs`
-
-### Realtime / Audit Log
-
-RANKING_UPDATED / RATING_RESET
-
-### Error Codes
-
-`AUTH-001`、`ADMIN-001`、`RATING-002`、`RATING-003`、`SYSTEM-001`
-
-### Test Cases
-
-正常リセット、進行中試合がある場合の拒否、`rating_history` が保持されること、監査ログへの記録、非管理者
 
 ---
 

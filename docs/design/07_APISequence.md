@@ -569,29 +569,6 @@ K値の変更は進行中の試合にも影響する。レート計算は試合�
 
 ---
 
-## 14.4 レートリセット
-
-### Function
-
-`admin-reset-ratings`
-
-```text
-1. JWT検証
-2. BEGIN
-3. 管理者確認
-4. 進行中試合が存在しないことを確認（存在する場合は RATING-003）
-5. teams UPDATE（rating = initialRating）
-6. audit_logs INSERT（RATING_RESET、対象件数とリセット前の値を payload へ）
-7. COMMIT
-8. Realtime: RANKING_UPDATED
-```
-
-`rating_history` へは登録しない。`match_id` が NOT NULL かつ `matches` への外部キーであるため、試合に紐づかない履歴を登録できないためである（ADR-017）。
-
-リセットの記録は `audit_logs` が担う。過去の `rating_history` は削除しない。
-
----
-
 # 15. Realtime通知の送信契機
 
 イベント名の正本は `04_BackendInterface.md` 7章である。本表は送信契機のみを示す。
@@ -603,7 +580,7 @@ K値の変更は進行中の試合にも影響する。レート計算は試合�
 | MATCH_REJECTED          | reject-match（PLAYINGへ戻した場合）                   |
 | MATCH_DRAWN             | reject-match（上限到達）、auto-resolve-matches（報告期限切れ） |
 | MATCH_COMPLETED         | approve-match、auto-resolve-matches（自動承認）       |
-| RANKING_UPDATED         | approve-match、auto-resolve-matches、admin-reset-ratings |
+| RANKING_UPDATED         | approve-match、auto-resolve-matches、finalize-season、admin-purge-season-data |
 | TEAM_UPDATED            | admin-ban-team、admin-unban-team               |
 | TEAM_MEMBER_UPDATED     | accept-team-invite、leave-team、transfer-leader  |
 | SYSTEM_SETTINGS_UPDATED | admin-update-system-settings                  |

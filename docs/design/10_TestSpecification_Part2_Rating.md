@@ -117,17 +117,11 @@ DeltaLoser  = -DeltaWinner
 | TC-RATING-035 | 二重更新の防止     | 既に COMPLETED    | approve-match | レートが再更新されず `MATCH-002` を返す             | Integration | `prevents a second rating update for the same match`  |
 | TC-RATING-036 | 下限違反時のロールバック | クランプを無効化した場合を想定 | approve-match | CHECK制約違反でロールバックされる                    | Integration | `rolls back when the rating would violate the bound`  |
 
-## 3.7 レートリセット（Integration）
+## 3.7 レートの初期化（Integration）
 
-| ID            | 観点            | 前提条件      | 操作                  | 期待結果                              | 種別          | テスト名                                                |
-| ------------- | ------------- | --------- | ------------------- | --------------------------------- | ----------- | --------------------------------------------------- |
-| TC-RATING-037 | 全チームのリセット     | 複数チームが存在  | admin-reset-ratings | 全チームのレートが初期値になる                   | Integration | `resets every team rating to the initial value`     |
-| TC-RATING-038 | 履歴の保持         | リセット実行後   | rating_history取得    | 既存の履歴が削除されない                      | Integration | `keeps the existing rating history after a reset`   |
-| TC-RATING-039 | 履歴を作成しない      | リセット実行後   | rating_history取得    | リセット分の履歴が作成されない                   | Integration | `does not write rating history rows for a reset`    |
-| TC-RATING-040 | 監査ログへの記録      | リセット実行後   | audit_logs取得        | `RATING_RESET` が記録される              | Integration | `records the reset in the audit log`                |
-| TC-RATING-041 | 進行中試合がある場合の拒否 | 進行中の試合が存在 | admin-reset-ratings | `RATING-003` を返し、レートが変化しない         | Integration | `refuses to reset while a match is in progress`     |
-
----
+レートリセット単体の観点（TC-RATING-037〜041）は `admin-reset-ratings` の廃止に伴い削除した
+（ADR-031）。**番号は再利用しない。** 初期化はシーズンリセットの一部として検証する
+（Part7 の TC-SEASON-005・006）。
 
 # 4. 境界値
 

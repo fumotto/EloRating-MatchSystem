@@ -49,7 +49,7 @@ Last Updated: 2026-08-03
 | マスタデータ      | 更新頻度が低いデータ    | `system_settings`                             |
 | トランザクションデータ | 日々更新されるデータ    | `matches`、`rating_history`                    |
 | ワークデータ      | 一時的な作業データ     | `matching_queue`                              |
-| 監査データ       | 追記専用の記録       | `audit_logs`                                  |
+| 監査データ       | 追記専用の記録（下記の例外あり） | `audit_logs`                                  |
 | 派生データ       | 他データから算出可能な情報 | 勝率、順位、勝数、敗数                                    |
 
 派生データはViewで提供する。
@@ -995,7 +995,11 @@ CHECK: length(announcement_text) <= 200
 | MATCH_AUTO_APPROVED     | 承認（自動）        |
 | MATCH_REJECTED          | 拒否            |
 | MATCH_DRAWN             | ドロー解散         |
-| RATING_RESET            | レートリセット       |
+| SEASON_END_STARTED      | シーズン終了の開始     |
+| SEASON_END_CANCELLED    | シーズン終了の取りやめ   |
+| SEASON_FINALIZED        | シーズンの確定       |
+| SEASON_DATA_PURGED      | 戦績・ログの削除      |
+| SEASON_RESUMED          | 通常営業への復帰      |
 | SETTINGS_UPDATED        | システム設定変更      |
 | AUTH_FAILED             | 認証失敗          |
 | AUTHORIZATION_DENIED    | 権限違反          |
@@ -1027,7 +1031,9 @@ IX_audit_logs_target (target_type, target_id)
 
 ### 運用ルール
 
-* 本テーブルは追記専用とする。更新・削除を行ってはならない。
+* 本テーブルは追記専用とする。更新は行ってはならない。
+* 削除は `admin-purge-season-data` のみが行う（Issue #9 / ADR-030）。他のいかなる経路でも削除してはならない。
+  クライアントからの UPDATE / DELETE は RLS と GRANT の双方で禁止する。削除そのものを新たな1件として記録する。
 * 個人情報・アクセストークンを `payload` へ記録してはならない。
 * 監査ログの記録失敗は業務処理を失敗させない（記録はトランザクション外で行うか、失敗をログ出力に留める）。
 
@@ -1466,6 +1472,11 @@ Seed
 
 **★`season_exports` を `audit_logs` と分ける。** ログの削除はシーズン機能の対象であり、
 持ち出しの記録を `audit_logs` に置くと、ログを消した時点で削除の可否を判断する根拠ごと消える。
+
+**★`audit_logs` の追記専用には例外が1つある。** `admin-purge-season-data` は
+シーズンのログを削除する（Issue #9 / ADR-030）。クライアントからの UPDATE / DELETE は
+RLS と GRANT の双方で禁止したままであり、削除できるのは Edge Function の直接接続のみである。
+削除そのものは新たな1件として記録するため、何が消えたのかは後から確かめられる。
 
 `system_settings` には `current_season`・`matchmaking_paused`・`updates_locked`・
 `season_grace_minutes` を持たせる。前3者は `public_settings` を通して未認証にも公開する。

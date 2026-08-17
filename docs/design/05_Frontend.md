@@ -305,7 +305,10 @@ useRejectMatch()
 useAdminBanTeam()
 useAdminUnbanTeam()
 useAdminUpdateSettings()
-useAdminResetRatings()
+useEndSeason()
+useCancelSeasonEnd()
+usePurgeSeasonData()
+useResumeSeason()
 ```
 
 Mutation 完了後は必要な Query のみ invalidate する。
@@ -490,7 +493,7 @@ Zod スキーマは Feature 配下の `schemas/` に置く。
 | 承認       | 結果の確認             |
 | **拒否**   | 拒否理由の注意喚起と残り回数の表示 |
 | BAN      | 確認と理由入力           |
-| レートリセット  | 確認（影響範囲の明示）       |
+| シーズンの終了   | 確認（影響範囲の明示）       |
 
 ## 14.7 期限の表示
 

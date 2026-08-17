@@ -253,7 +253,7 @@ function calculateRating(
 
 `DRAWN` の試合は `rating_history` を作成しない。結果として `team_ranking_view` の戦績にも計上されない。
 
-管理者によるレートリセットは `rating_history` へ登録しない。`audit_logs` へ記録する（ADR-017）。
+シーズンリセットによるレートの初期化は `rating_history` へ登録しない。`audit_logs` へ記録する（ADR-017）。
 
 ---
 
@@ -262,9 +262,9 @@ function calculateRating(
 | 項目            | 設定キー             | 影響                    |
 | ------------- | ---------------- | --------------------- |
 | K値            | `rating_k`       | 以後に完了する試合のレート計算       |
-| 初期レート         | `initial_rating` | 以後に作成されるチーム、およびレートリセット |
+| 初期レート         | `initial_rating` | 以後に作成されるチーム、およびシーズンリセット |
 
-レートリセット（`admin-reset-ratings`）は全チームのレートを初期値へ戻す。
+シーズンリセット（`finalize-season`）は全チームのレートを初期値へ戻す。
 
 リセットは進行中の試合が存在しない場合のみ実行できる。レート計算の整合性を保つためである。
 
@@ -274,7 +274,8 @@ function calculateRating(
 
 MVPではシーズンを採用しない。
 
-`admin-reset-ratings` はレートを初期化する機能であり、シーズン機能ではない。シーズン管理（開始・終了・アーカイブ）は `13_FutureFeatures.md` の将来機能である。
+レートを初期化する経路はシーズンリセットのみである。単発の `admin-reset-ratings` は廃止した（ADR-031）。
+退避を伴わない初期化を残すと、前期の順位が復元不能な形で失われる操作を運営が誤って選べてしまう。
 
 ---
 

@@ -14,7 +14,6 @@ Last Updated: 2026-08-03
 
 * `admin-ban-team` / `admin-unban-team`
 * `admin-update-system-settings`
-* `admin-reset-ratings`
 * `audit_logs`
 
 ---
@@ -90,28 +89,13 @@ TC-ADMIN-004・TC-ADMIN-005 は重要である。`app_metadata` は service_role
 
 人数上限を縮小した場合の扱い（TC-ADMIN-021、TC-ADMIN-022）は `04_BackendInterface.md` 12.3 の規定に従う。
 
-## 3.4 レートリセット
-
-| ID           | 観点         | 前提条件      | 操作                  | 期待結果                    | 種別          | テスト名                                             |
-| ------------ | ---------- | --------- | ------------------- | ----------------------- | ----------- | ------------------------------------------------ |
-| TC-ADMIN-038 | 全チームのリセット  | 複数チームが存在  | admin-reset-ratings | 全チームが初期レートになる           | Integration | `resets every team rating`                       |
-| TC-ADMIN-039 | 初期値の指定     | 引数で指定     | admin-reset-ratings | 指定値が適用される               | Integration | `uses the provided initial rating`               |
-| TC-ADMIN-040 | 初期値の省略     | 引数なし      | admin-reset-ratings | `system_settings.initial_rating` が使われる | Integration | `falls back to the configured initial rating`    |
-| TC-ADMIN-041 | 履歴の保持      | リセット後     | rating_history取得    | 既存の履歴が削除されない            | Integration | `keeps the rating history`                       |
-| TC-ADMIN-042 | 履歴を作らない    | リセット後     | rating_history取得    | リセット分の行が作られない           | Integration | `does not write rating history for a reset`      |
-| TC-ADMIN-043 | 進行中試合での拒否  | 進行中の試合が存在 | admin-reset-ratings | `RATING-003` を返す        | Integration | `refuses to reset while a match is in progress`  |
-| TC-ADMIN-044 | 拒否時の無変更    | 同上        | teams取得             | レートが変化しない               | Integration | `leaves ratings untouched when the reset is refused` |
-| TC-ADMIN-045 | 不正な初期値     | 99を指定     | admin-reset-ratings | `RATING-002` を返す        | Integration | `rejects an initial rating below the bound`      |
-| TC-ADMIN-046 | Realtime通知 | リセット後     | 通知確認                | `RANKING_UPDATED` が送信される | Integration | `publishes RANKING_UPDATED`                      |
-
-## 3.5 監査ログ
+## 3.4 監査ログ
 
 | ID           | 観点             | 前提条件      | 操作             | 期待結果                                | 種別          | テスト名                                                |
 | ------------ | -------------- | --------- | -------------- | ----------------------------------- | ----------- | --------------------------------------------------- |
 | TC-ADMIN-047 | BANの記録         | BAN実行後    | audit_logs取得   | `TEAM_BANNED` が記録される                | Integration | `records a ban`                                     |
 | TC-ADMIN-048 | 理由の記録          | BAN実行後    | audit_logs取得   | `payload` に理由が含まれる                  | Integration | `stores the ban reason in the payload`              |
 | TC-ADMIN-049 | 設定変更の記録        | 設定変更後     | audit_logs取得   | `SETTINGS_UPDATED` と変更前後の値が記録される    | Integration | `records the setting change with before and after`  |
-| TC-ADMIN-050 | リセットの記録        | リセット後     | audit_logs取得   | `RATING_RESET` が記録される               | Integration | `records the rating reset`                          |
 | TC-ADMIN-051 | 操作者の記録         | 管理操作後     | audit_logs取得   | `actor_profile_id` が実行者と一致する        | Integration | `records who performed the action`                  |
 | TC-ADMIN-052 | システム操作の記録      | 自動解決後     | audit_logs取得   | `actor_profile_id` がNULLである         | Integration | `records a null actor for system actions`           |
 | TC-ADMIN-053 | 参照権限           | 管理者       | Audit Logs Query | 取得できる                               | Integration | `lets an administrator read the audit log`          |
@@ -147,12 +131,19 @@ TC-ADMIN-004・TC-ADMIN-005 は重要である。`app_metadata` は service_role
 
 ---
 
+# 4.1 廃止した観点
+
+TC-ADMIN-038〜046（レートリセット）および TC-ADMIN-050 は、`admin-reset-ratings` の
+廃止に伴い削除した（ADR-031）。**番号は再利用しない。** 過去の参照が別の観点を指すようになる。
+レートの初期化はシーズンリセットの観点で検証する（TC-SEASON-005・006）。
+
+---
+
 # 5. 異常系
 
 * 権限のない管理操作
 * 存在しないチームへの操作
 * 不正な設定値
-* 進行中試合でのレートリセット
 * DB更新失敗・トランザクション失敗
 * 二重リクエスト
 * 同時更新の競合
@@ -166,7 +157,6 @@ TC-ADMIN-004・TC-ADMIN-005 は重要である。`app_metadata` は service_role
 * 管理者判定にリクエストボディの値を使わず、検証済みJWTのクレームのみを信用することを検証する。
 * 設定変更はトランザクションで実行されることを検証する。
 * K値の変更が完了時点の試合に適用されることを検証する（Part2 TC-RATING-027）。
-* レートリセットが `rating_history` を削除せず、かつ履歴を追加しないことを検証する。
 * すべての管理操作が `audit_logs` へ記録されることを検証する。
 * 監査ログが更新・削除できないことを Database Test で検証する。
 * 管理APIの冪等性を検証する。

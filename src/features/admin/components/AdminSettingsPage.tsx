@@ -1,7 +1,9 @@
-// Page（05_Frontend.md 3.2）。システム設定の変更とレートリセット。
+// Page（05_Frontend.md 3.2）。システム設定の変更。
+//
+// ★レートリセットの導線は持たない。レートの初期化はシーズンリセットへ一本化した（ADR-031）。
 import { useState } from "react";
 import { useSystemSettings } from "../../settings/hooks/useSystemSettings";
-import { useAdminResetRatings, useAdminUpdateSettings } from "../hooks/useAdminActions";
+import { useAdminUpdateSettings } from "../hooks/useAdminActions";
 import { SystemSettingsTable } from "../../settings/components/SystemSettingsTable";
 import { PresentationSettingsForm } from "./PresentationSettingsForm";
 import { ErrorNotice } from "../../../components/feedback/ErrorNotice";
@@ -42,7 +44,6 @@ const FIELDS: {
 export function AdminSettingsPage() {
   const { data: settings, isPending } = useSystemSettings();
   const updateSettings = useAdminUpdateSettings();
-  const resetRatings = useAdminResetRatings();
   const [inputs, setInputs] = useState<Record<string, string>>({});
 
   const submit = (e: React.FormEvent) => {
@@ -60,7 +61,7 @@ export function AdminSettingsPage() {
     updateSettings.mutate(request, { onSuccess: () => setInputs({}) });
   };
 
-  const failureCode = apiErrorCode(updateSettings.error) ?? apiErrorCode(resetRatings.error);
+  const failureCode = apiErrorCode(updateSettings.error);
 
   return (
     <section className="space-y-6">
@@ -101,28 +102,6 @@ export function AdminSettingsPage() {
           {updateSettings.isPending ? "更新中…" : "設定を更新"}
         </button>
       </form>
-
-      <div className="space-y-2">
-        <h2 className="text-sm font-medium">レートリセット</h2>
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          全チームのレートを初期値へ戻します。進行中の試合があるときは実行できません。
-          既存のレート履歴は削除されません。
-        </p>
-        <button
-          type="button"
-          disabled={resetRatings.isPending}
-          onClick={() => resetRatings.mutate({})}
-          className="rounded border border-red-300 px-4 py-2 text-sm text-red-600 disabled:opacity-50 dark:border-red-800 dark:text-red-400"
-        >
-          {resetRatings.isPending ? "実行中…" : "レートをリセット"}
-        </button>
-        {resetRatings.data ? (
-          <p className="text-sm">
-            {resetRatings.data.affectedTeams} チームを {resetRatings.data.initialRating}{" "}
-            へリセットしました。
-          </p>
-        ) : null}
-      </div>
 
       {failureCode ? <ErrorNotice code={failureCode} /> : null}
     </section>

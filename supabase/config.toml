@@ -448,9 +448,6 @@ verify_jwt = false
 [functions.admin-ban-team]
 verify_jwt = false
 
-[functions.admin-reset-ratings]
-verify_jwt = false
-
 [functions.admin-cancel-season-end]
 verify_jwt = false
 

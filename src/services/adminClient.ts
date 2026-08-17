@@ -6,8 +6,6 @@ import { supabase } from "../lib/supabase";
 import type {
   AdminBanTeamRequest,
   AdminBanTeamResponse,
-  AdminResetRatingsRequest,
-  AdminResetRatingsResponse,
   AdminUnbanTeamRequest,
   AdminUnbanTeamResponse,
   AuditLogEntry,
@@ -38,13 +36,6 @@ export const adminClient = {
   updateSettings(request: UpdateSystemSettingsRequest): Promise<UpdateSystemSettingsResponse> {
     return invoke<UpdateSystemSettingsRequest, UpdateSystemSettingsResponse>(
       "admin-update-system-settings",
-      request,
-    );
-  },
-
-  resetRatings(request: AdminResetRatingsRequest): Promise<AdminResetRatingsResponse> {
-    return invoke<AdminResetRatingsRequest, AdminResetRatingsResponse>(
-      "admin-reset-ratings",
       request,
     );
   },
