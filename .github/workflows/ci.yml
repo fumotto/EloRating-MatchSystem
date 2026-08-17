@@ -5,9 +5,10 @@
 name: CI
 
 on:
+  # ★main への push では動かさない。変更は PR で検証する運用とし、
+  #   PR と merge コミットの両方で同じ検証を走らせないためである。
+  #   merge 後の成果物は Deploy が公開直前に検証する（deploy.yml の precheck）。
   pull_request:
-  push:
-    branches: [main]
   # Deploy ワークフローから呼び出す（9章の手順1）。
   # 公開前に PR と同じ検証を通すため、検証を二重に定義しない。
   workflow_call:
