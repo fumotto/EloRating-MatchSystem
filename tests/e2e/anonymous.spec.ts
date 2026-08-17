@@ -13,6 +13,23 @@ test.describe("anonymous visitor", () => {
     await expect(page).toHaveURL(/\/ranking$/);
   });
 
+  test("offers the manuals from the top page", async ({ page }) => {
+    // TC-E2E-053 マニュアルはトップページに置く。
+    // ★設定画面はログインしないと辿り着けない。これから使い始める人と、
+    //   fork を検討している人がマニュアルに届かなくなる。
+    await page.goto("/");
+
+    await expect(page.getByRole("heading", { name: "マニュアル" })).toBeVisible();
+    await expect(page.getByRole("link", { name: /使い方ガイド/ })).toHaveAttribute(
+      "href",
+      /guide\/player\.html$/,
+    );
+    await expect(page.getByRole("link", { name: /導入・運営ガイド/ })).toHaveAttribute(
+      "href",
+      /guide\/operator\.html$/,
+    );
+  });
+
   test("serves the rules page to anonymous visitors", async ({ page }) => {
     // TC-E2E-045 ルールページは誰でも閲覧できる（Issue #8）。
     await page.goto("/rules");
