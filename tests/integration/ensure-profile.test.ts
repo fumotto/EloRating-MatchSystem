@@ -216,6 +216,111 @@ describe("ensure-profile", () => {
     }
   });
 
+  it("drops an avatar url that is not on the provider CDN", async () => {
+    // TC-INFRA-015
+    // ★avatar_url は他の利用者の画面で <img src> に載る。任意のURLを通すと、
+    //   チーム画面を開いただけで閲覧者のIPとUAが指定先へ渡る。
+    //   ここで落とさないとDBのCHECK制約に当たり、ログインのたびに失敗する。
+    const executed: { sql: string; params: unknown[] }[] = [];
+    const mockPool = {
+      connect: () =>
+        Promise.resolve({
+          queryObject: (sql: string, params: unknown[] = []) => {
+            executed.push({ sql, params });
+            if (sql.includes("SELECT")) return Promise.resolve({ rows: [] });
+            if (sql.includes("INSERT")) {
+              return Promise.resolve({
+                rows: [{
+                  id: "profile-1",
+                  display_name: "TestUser",
+                  avatar_url: null,
+                  auth_provider: "discord",
+                }],
+              });
+            }
+            return Promise.resolve({ rows: [] });
+          },
+          release: () => {},
+        }),
+    };
+    setDbPool(mockPool as never);
+    setJwtVerifier(authenticatedVerifier);
+    try {
+      const res = await handler(
+        new Request(URL_ENSURE_PROFILE, {
+          method: "POST",
+          headers: {
+            "Authorization": "Bearer test-token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            displayName: "TestUser",
+            avatarUrl: "https://evil.example.com/track.png",
+          }),
+        }),
+      );
+      // ★拒否ではなく無視する。本Functionはログインのたびに呼ばれるため、
+      //   アイコンが不正なだけでログインを止めてはならない。
+      assertEquals(res.status, 200);
+
+      const insert = executed.find((q) => q.sql.includes("INSERT INTO profiles"));
+      if (!insert) throw new Error("profiles への INSERT が発行されていない");
+      assertEquals(insert.params[4], undefined);
+    } finally {
+      resetDbPool();
+      resetJwtVerifier();
+    }
+  });
+
+  it("keeps an avatar url served by the provider CDN", async () => {
+    // TC-INFRA-016
+    const executed: { sql: string; params: unknown[] }[] = [];
+    const allowed = "https://cdn.discordapp.com/avatars/1/abc.png";
+    const mockPool = {
+      connect: () =>
+        Promise.resolve({
+          queryObject: (sql: string, params: unknown[] = []) => {
+            executed.push({ sql, params });
+            if (sql.includes("SELECT")) return Promise.resolve({ rows: [] });
+            if (sql.includes("INSERT")) {
+              return Promise.resolve({
+                rows: [{
+                  id: "profile-1",
+                  display_name: "TestUser",
+                  avatar_url: allowed,
+                  auth_provider: "discord",
+                }],
+              });
+            }
+            return Promise.resolve({ rows: [] });
+          },
+          release: () => {},
+        }),
+    };
+    setDbPool(mockPool as never);
+    setJwtVerifier(authenticatedVerifier);
+    try {
+      const res = await handler(
+        new Request(URL_ENSURE_PROFILE, {
+          method: "POST",
+          headers: {
+            "Authorization": "Bearer test-token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ displayName: "TestUser", avatarUrl: allowed }),
+        }),
+      );
+      assertEquals(res.status, 200);
+
+      const insert = executed.find((q) => q.sql.includes("INSERT INTO profiles"));
+      if (!insert) throw new Error("profiles への INSERT が発行されていない");
+      assertEquals(insert.params[4], allowed);
+    } finally {
+      resetDbPool();
+      resetJwtVerifier();
+    }
+  });
+
   it("fails with a system error when the JWT carries no provider information", async () => {
     // TC-INFRA-014
     setJwtVerifier(() => Promise.resolve({ sub: "profile-1", app_metadata: {}, user_metadata: {} }));

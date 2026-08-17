@@ -37,7 +37,7 @@ export async function handler(req: Request): Promise<Response> {
 
         const teamId = membership.rows[0].team_id;
 
-        // BANされたチームは編成を変えられない（Issue #9 / 04_BackendInterface.md 12.1）。
+        // BANされたチームは編成を変えられない（04_BackendInterface.md 12.1）。
         // 移譲も編成の変更である。凍結中に代表者だけ挿げ替えられると、
         // 誰に対する措置なのかが曖昧になる。
         const team = await tx.queryObject<{ is_banned: boolean }>(

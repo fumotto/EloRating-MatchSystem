@@ -359,7 +359,7 @@ Supabaseダッシュボードまたは Admin API（service_role）でも同じ�
 | auth_provider    | TEXT        | No   |    |         | 認証プロバイダ（`steam` / `discord`）   |
 | provider_user_id | TEXT        | No   |    |         | プロバイダ側の利用者ID                   |
 | display_name     | TEXT        | No   |    |         | 表示名                            |
-| avatar_url       | TEXT        | Yes  |    |         | アイコンURL（プロバイダ側に無い場合があるためNULL可） |
+| avatar_url       | TEXT        | Yes  |    |         | アイコンURL（プロバイダ側に無い場合があるためNULL可。配信元を限定する。下記参照） |
 | created_at       | TIMESTAMPTZ | No   |    | now()   | 作成日時                           |
 | updated_at       | TIMESTAMPTZ | No   |    | now()   | 更新日時                           |
 
@@ -400,6 +400,16 @@ UX_profiles_provider
 
 * ログイン時に存在しなければ作成する。作成主体は `04_BackendInterface.md` の認証フローで定義する。
 * プロバイダ側の情報が更新された場合は `display_name`・`avatar_url` を同期する。
+
+`avatar_url` は `profiles_avatar_url_allowlist`（Migration 0020）で配信元を限定する。
+許可するのは Discord・Steam のCDNのみであり、それ以外はNULLとして扱う。
+
+**★本カラムは他の利用者の画面で `<img src>` に載る。** 任意のURLを許すと、
+チーム画面を開いただけで閲覧者のIPとUAが指定先のサーバへ渡り、プレイヤー同士の追跡に使える。
+
+**★Edge Function 側の検証だけでは足りない。** `profiles` は本人がクライアントから直接
+UPDATEできる（19章）ため、`ensure-profile` を通らない経路がある。DBのCHECK制約を最終の関門とする。
+規則は `supabase/functions/_shared/avatarUrl.ts` と同一であり、片方だけを変えてはならない。
 * 削除は行わない。
 
 ---

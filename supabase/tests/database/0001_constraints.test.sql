@@ -7,7 +7,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap;
 
-SELECT plan(27);
+SELECT plan(33);
 
 -- テスト用データ。auth.users への外部キーがあるため profiles は先に用意する。
 INSERT INTO auth.users (id, instance_id, aud, role, email)
@@ -263,6 +263,56 @@ SELECT lives_ok(
 SELECT throws_ok(
   $$UPDATE system_settings SET team_max_members = 0 WHERE id = 1$$,
   '23514', NULL, 'rejects a member limit below one'
+);
+
+-- ===== profiles.avatar_url の許可リスト（Migration 0020）=====
+--
+-- ★本カラムは他の利用者の画面で <img src> に載る。profiles は本人が
+--   クライアントから直接UPDATEできる（03_Database.md 19章）ため、
+--   Edge Function を通らない経路がある。DBが最終の関門である。
+
+SELECT lives_ok(
+  $$UPDATE profiles SET avatar_url = 'https://cdn.discordapp.com/avatars/1/abc.png'
+     WHERE id = '11111111-1111-1111-1111-111111111111'$$,
+  'Discord CDN のアイコンURLを受け入れる'
+);
+
+SELECT lives_ok(
+  $$UPDATE profiles SET avatar_url = NULL
+     WHERE id = '11111111-1111-1111-1111-111111111111'$$,
+  'アイコン未設定（NULL）を受け入れる'
+);
+
+SELECT throws_ok(
+  $$UPDATE profiles SET avatar_url = 'https://evil.example.com/track.png'
+     WHERE id = '11111111-1111-1111-1111-111111111111'$$,
+  '23514',
+  NULL,
+  '許可リスト外のホストを拒否する'
+);
+
+SELECT throws_ok(
+  $$UPDATE profiles SET avatar_url = 'https://cdn.discordapp.com.evil.example/a.png'
+     WHERE id = '11111111-1111-1111-1111-111111111111'$$,
+  '23514',
+  NULL,
+  '許可ホスト名で始まるだけの別ホストを拒否する'
+);
+
+SELECT throws_ok(
+  $$UPDATE profiles SET avatar_url = 'https://x@cdn.discordapp.com/avatars/1/a.png'
+     WHERE id = '11111111-1111-1111-1111-111111111111'$$,
+  '23514',
+  NULL,
+  'URLに埋め込んだ資格情報を拒否する'
+);
+
+SELECT throws_ok(
+  $$UPDATE profiles SET avatar_url = 'http://cdn.discordapp.com/avatars/1/a.png'
+     WHERE id = '11111111-1111-1111-1111-111111111111'$$,
+  '23514',
+  NULL,
+  'https 以外を拒否する'
 );
 
 SELECT * FROM finish();

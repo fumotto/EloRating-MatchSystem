@@ -32,7 +32,7 @@ export async function handler(req: Request): Promise<Response> {
 
       const { team_id: teamId, role } = membership.rows[0];
 
-      // BANされたチームは編成を変えられない（Issue #9 / 04_BackendInterface.md 12.1）。
+      // BANされたチームは編成を変えられない（04_BackendInterface.md 12.1）。
       //
       // ★脱退を許すと、BANの実効性が失われる。全員が抜けて別のチームを作り直せば
       //   制裁を回避できてしまう。BANはチームに対する措置であり、

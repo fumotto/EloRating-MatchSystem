@@ -204,7 +204,7 @@ describe("transfer-leader", () => {
   });
 
   it("refuses to transfer the leader of a banned team", async () => {
-    // Issue #9 移譲も編成の変更である。凍結中に代表者だけ挿げ替えられると、
+    // 移譲も編成の変更である。凍結中に代表者だけ挿げ替えられると、
     // 誰に対する措置なのかが曖昧になる。
     setJwtVerifier(leaderVerifier);
     const db = createMockDb(okStubs([["SELECT is_banned FROM teams", [{ is_banned: true }]]]));

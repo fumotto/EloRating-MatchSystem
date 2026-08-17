@@ -5,6 +5,7 @@ import { useTeamDetail } from "../hooks/useTeamDetail";
 import { useLeaveTeam } from "../hooks/useLeaveTeam";
 import { useTransferLeader } from "../hooks/useTransferLeader";
 import { InvitePanel } from "./InvitePanel";
+import { Avatar } from "../../../components/media/Avatar";
 import { AcceptInviteForm } from "./AcceptInviteForm";
 import { CreateTeamDialog } from "./CreateTeamDialog";
 import { EmptyState } from "../../../components/feedback/EmptyState";
@@ -41,7 +42,7 @@ export function MyTeamPage() {
 
   const isLeader = detail?.leaderId === profileId;
 
-  // BAN中は編成を変えられない（Issue #9 / 04 12.1）。
+  // BAN中は編成を変えられない（04_BackendInterface.md 12.1）。
   // ★判定の正本はバックエンドである。ここでの出し分けは、押せば必ず失敗する
   //   操作を活かしておかないための案内にすぎない。
   const isBanned = detail?.isBanned === true;
@@ -70,7 +71,10 @@ export function MyTeamPage() {
         <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
           {detail?.members.map((member) => (
             <li key={member.id} className="flex items-center justify-between px-4 py-2">
-              <span className="text-sm">{member.displayName}</span>
+              <span className="flex items-center gap-2 text-sm">
+                <Avatar src={member.avatarUrl} name={member.displayName} />
+                {member.displayName}
+              </span>
               <span className="text-xs text-slate-500 dark:text-slate-400">
                 {member.role === "LEADER" ? "リーダー" : "メンバー"}
               </span>

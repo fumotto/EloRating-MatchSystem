@@ -2,6 +2,7 @@ import { ok, businessError, systemError } from "../_shared/response.ts";
 import { verifyJwt, setJwtVerifier, resetJwtVerifier } from "../_shared/auth.ts";
 import { withTransaction, setDbPool, resetDbPool } from "../_shared/db.ts";
 import { withCors } from "../_shared/cors.ts";
+import { isAllowedAvatarUrl } from "../_shared/avatarUrl.ts";
 
 interface EnsureProfileRequest {
   displayName: string;
@@ -37,7 +38,10 @@ export async function handler(req: Request): Promise<Response> {
   const body = await req.json();
   const request: EnsureProfileRequest = {
     displayName: body.displayName,
-    avatarUrl: body.avatarUrl,
+    // ★規則外のURLは捨てる。エラーにしない。本Functionはログインのたびに呼ばれるため、
+    //   拒否するとアイコンが不正なだけでログインが通らなくなる。
+    //   DB側にも同じ制約がある（Migration 0020）。
+    avatarUrl: isAllowedAvatarUrl(body.avatarUrl) ? body.avatarUrl : undefined,
   };
 
   // Validation

@@ -168,6 +168,13 @@ TC-UI-006 と TC-UI-010 は、それぞれ ADR-018 と GitHub Pages のSPA配信
 | TC-UI-106  | 勝率の未算出        | 試合数0    | 画面確認 | 勝率を `—` と表示する            | Frontend | `shows a dash when the win rate is unavailable`   |
 | TC-UI-107  | **未認証への非表示**  | 未認証     | 画面確認 | チーム名をリンクにしない             | Frontend | `does not link team names for signed-out visitors` |
 | TC-UI-108  | **メンバーへの導線**  | 認証済み    | 画面確認 | チーム名が `/team/:teamId` を指す | Frontend | `links team names to the member list when signed in` |
+| TC-UI-109  | アイコンの表示       | CDNのURL  | 画面確認 | 画像を表示する                  | Frontend | `renders the image for a provider CDN url`        |
+| TC-UI-110  | **参照元の秘匿**     | CDNのURL  | 画面確認 | `referrerpolicy=no-referrer` を付ける | Frontend | `does not leak the page url to the image host` |
+| TC-UI-111  | アイコン未設定       | URLなし    | 画面確認 | 表示名の頭文字を出す               | Frontend | `falls back to the initial when there is no image` |
+| TC-UI-112  | **許可外の配信元**    | 任意のホスト  | 画面確認 | 画像を読み込まない                | Frontend | `refuses a url outside the allowlist`             |
+| TC-UI-113  | 前方一致の偽装       | `cdn.discordapp.com.evil` | 画面確認 | 画像を読み込まない | Frontend | `refuses a host that merely starts with the allowed name` |
+| TC-UI-114  | 資格情報の埋め込み     | `user@host` 形式 | 画面確認 | 画像を読み込まない          | Frontend | `refuses credentials embedded in the url`         |
+| TC-UI-115  | 非https           | `http://`  | 画面確認 | 画像を読み込まない                | Frontend | `refuses a non-https url`                         |
 
 ---
 

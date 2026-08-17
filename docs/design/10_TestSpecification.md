@@ -248,6 +248,8 @@ Realtime通知の検証は、通知を伴う処理のIntegration TestおよびE2
 | ------------ | ---------- | ---- | ------------- | ------------------------------------------- | ----------- | ----------------------------------------------------------------------- |
 | TC-INFRA-013 | スキーマ定義の網羅  | －    | マイグレーションSQL走査 | 9テーブル・4ビューが定義され、連番が正しく、管理者判定関数が存在しない（ADR-020） | Integration | `defines every table and view and keeps admin helpers out of the schema` |
 | TC-INFRA-014 | プロバイダ情報の欠落 | JWTに `provider` / `provider_id` が無い | ensure-profile | `SYSTEM-001` を返す | Integration | `fails with a system error when the JWT carries no provider information` |
+| TC-INFRA-015 | アイコンURLの遮断 | 許可リスト外のURLを送信 | ensure-profile | URLを捨てて成功を返す（ログインは止めない） | Integration | `drops an avatar url that is not on the provider CDN` |
+| TC-INFRA-016 | アイコンURLの保持 | プロバイダCDNのURLを送信 | ensure-profile | URLをそのまま保存する | Integration | `keeps an avatar url served by the provider CDN` |
 
 ---
 

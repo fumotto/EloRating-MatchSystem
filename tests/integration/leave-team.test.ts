@@ -212,7 +212,7 @@ describe("leave-team", () => {
   });
 
   it("refuses to leave a banned team", async () => {
-    // Issue #9 BANされたチームは編成を変えられない。
+    // BANされたチームは編成を変えられない。
     // ★脱退を許すと、全員が抜けて作り直すことで制裁を回避できてしまう。
     setJwtVerifier(authenticatedVerifier);
     const db = createMockDb(okStubs([["SELECT is_banned FROM teams", [{ is_banned: true }]]]));

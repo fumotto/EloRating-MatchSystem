@@ -1386,7 +1386,7 @@ Edge Functions はDB直結でありRLSを迂回するため、各Functionの冒�
 
 ### Purpose
 
-チームをBANする。**BANはチームの活動を凍結する措置である**（Issue #9）。
+チームをBANする。**BANはチームの活動を凍結する措置である**。
 
 ### BANの効果範囲
 
