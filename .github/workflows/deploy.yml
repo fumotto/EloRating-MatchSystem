@@ -22,13 +22,85 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # 同一コミットの検証が既に済んでいるかを調べる。
+  #
+  # ★同じコミットの同じ検証を二度走らせない。効くのは主に次の2つである。
+  #     - バックエンドで失敗した公開のやり直し
+  #     - skip_backend によるフロントエンドのみの再公開
+  #   どちらも検証内容は1回目と同一であり、6分をもう一度使う理由が無い。
+  #
+  # ★PR運用では merge コミットの SHA は PR の SHA と異なる。よって初回の公開では
+  #   必ず検証が走る。**これは意図した挙動である。** merge した結果そのものは
+  #   まだ一度も検証されていない。
+  #
+  # ★24時間で期限を切る。Supabase CLI・Deno・Playwright のイメージは日々更新されるため、
+  #   古い成功をもって「今も通る」とは言えない（ci.yml の夜間実行と同じ理由）。
+  precheck:
+    runs-on: ubuntu-latest
+    # 実行履歴の参照にのみ使う。リポジトリ既定に依存させず明示する。
+    permissions:
+      actions: read
+    outputs:
+      verified: ${{ steps.check.outputs.verified }}
+    steps:
+      - name: Look for a recent successful verification of this commit
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          fresh() {
+            # $1 = ISO8601。24時間以内なら 0 を返す。
+            [ -z "$1" ] && return 1
+            age=$(( ( $(date -u +%s) - $(date -u -d "$1" +%s) ) / 3600 ))
+            echo "  検証時刻 $1（${age}時間前）"
+            [ "$age" -lt 24 ]
+          }
+
+          # ① 独立した CI 実行（fast-forward merge や、同一SHAでPRを回した場合）
+          ci=$(gh api "/repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$SHA&status=success&per_page=1" \
+                 --jq '.workflow_runs[0].updated_at // empty')
+          if fresh "$ci"; then
+            echo "verified=yes" >> "$GITHUB_OUTPUT"
+            echo "CI が成功済み。検証を省く"
+            exit 0
+          fi
+
+          # ② 過去の公開に含まれる検証（やり直し・フロントのみ再公開）
+          #    ★実行全体ではなくジョブの結果を見る。バックエンドで失敗した実行でも
+          #      検証そのものは通っている。
+          for id in $(gh api "/repos/$REPO/actions/workflows/deploy.yml/runs?head_sha=$SHA&per_page=5" \
+                        --jq '.workflow_runs[].id'); do
+            done_at=$(gh api "/repos/$REPO/actions/runs/$id/jobs" \
+                        --jq '[.jobs[] | select(.name == "verify / verify" and .conclusion == "success")][0].completed_at // empty')
+            if fresh "$done_at"; then
+              echo "verified=yes" >> "$GITHUB_OUTPUT"
+              echo "過去の公開（run $id）で検証済み。検証を省く"
+              exit 0
+            fi
+          done
+
+          echo "verified=no" >> "$GITHUB_OUTPUT"
+          echo "このコミットの新しい検証結果は無い。検証を実行する"
+
   # 公開前に CI と同じ検証を通す（9章の手順1）。
+  # ★precheck が最近の成功を見つけた場合のみ省く。
   verify:
+    needs: precheck
+    if: ${{ needs.precheck.outputs.verified != 'yes' }}
     uses: ./.github/workflows/ci.yml
 
   backend:
-    needs: verify
-    if: ${{ !inputs.skip_backend }}
+    needs: [precheck, verify]
+    # ★verify が skipped のときも進める。always() が無いと needs の skip で自身も skip になる。
+    #   「検証が通った」か「最近通っている」かのどちらかを必須とする。
+    if: >-
+      ${{ always()
+          && (needs.verify.result == 'success' || needs.precheck.outputs.verified == 'yes')
+          && !inputs.skip_backend }}
     runs-on: ubuntu-latest
     environment: staging
 
@@ -98,8 +170,11 @@ jobs:
   frontend:
     # ★backend の後に置く。skip_backend のときも always() で到達させるが、
     #   backend が失敗した場合は公開しない。
-    needs: [verify, backend]
-    if: ${{ always() && needs.verify.result == 'success' && needs.backend.result != 'failure' }}
+    needs: [precheck, verify, backend]
+    if: >-
+      ${{ always()
+          && (needs.verify.result == 'success' || needs.precheck.outputs.verified == 'yes')
+          && needs.backend.result != 'failure' }}
     runs-on: ubuntu-latest
     environment:
       name: github-pages

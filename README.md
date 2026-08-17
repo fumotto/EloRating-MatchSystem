@@ -144,6 +144,10 @@ docs/                設計書・運営文書
 
 ## 貢献
 
+変更は Pull Request で行います。**`main` へ直接コミットしないでください。**
+CI は PR でのみ動きます（`main` への push では動きません）。merge した結果は
+公開の直前に Deploy が検証します。
+
 設計変更を行う前に [15_DecisionLog.md](docs/design/15_DecisionLog.md) へ ADR を追加してください。
 既存の ADR を覆す場合も、本文は改変せず新しい ADR を追加します（履歴を消さないため）。
 
