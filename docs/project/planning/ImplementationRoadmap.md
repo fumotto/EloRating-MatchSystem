@@ -41,9 +41,9 @@ Version 1.0 の Phase 1〜7（層ごとの横切り）は本改訂でスライ�
 | S1    | 認証（Discord）              | ✅ Completed |
 | S2    | チーム作成                    | ✅ Completed |
 | S3    | フロントエンド最小構成              | ✅ Completed |
-| S4    | クラウドへPush・公開             | 🟨 In Progress（CI・deploy.yml は完了。クラウド適用が人手作業） |
+| S4    | クラウドへPush・公開             | ✅ Completed（2026-08-10 公開） |
 | S5    | 残機能の横展開                  | ✅ Completed |
-| S6    | 統合テスト・MVPリリース            | 🟨 In Progress（テストは完了。MVP公開が残る） |
+| S6    | 統合テスト・MVPリリース            | ✅ Completed |
 
 S0 〜 S3 が「ログイン → プロフィール生成 → チーム作成 → ランキング表示」を貫通する最初のスライスである。
 
@@ -53,8 +53,12 @@ S1 〜 S3 は 2026-08-08 に Supabase Local ＋ 実 Discord ログインによ�
 （`SetupRunbook.md` 作業1〜3）を実施し、完了条件を満たしたため Completed とした。
 
 S4 は CI（`.github/workflows/ci.yml`）を先行して実施し、S6 で公開用の `deploy.yml` を新設した。
-**クラウドへの push と GitHub Pages 公開は人手作業であり**（`SetupRunbook.md` 作業5〜7）、
-Supabase プロジェクトの作成と資格情報の登録が済むまで実行できない。
+クラウドへの適用と GitHub Pages 公開は人手作業であり（`SetupRunbook.md` 作業5〜7）、
+2026-08-10 に実施して公開した。
+
+**★スライスによる進行は S6 で終わりである。** 以降の変更は Issue 単位で進めており、
+新しいスライスは定義しない。本書はMVPの実装記録として保持する。
+現在の状態は `ProjectStatus.md`、次の候補は `13_FutureFeatures.md` を参照する。
 
 ---
 
