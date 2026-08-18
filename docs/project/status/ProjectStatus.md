@@ -2,10 +2,10 @@
 
 # Project Status
 
-Version: 1.4
+Version: 2.0
 Status: Active
 
-Last Updated: 2026-08-10
+Last Updated: 2026-08-18
 
 ---
 
@@ -21,20 +21,38 @@ Last Updated: 2026-08-10
 
 | 項目         | 内容       |
 | ---------- | -------- |
-| 現在フェーズ     | Implementation |
-| 現在のマイルストーン | M5（クラウド公開） |
-| 現在のスライス    | S6（完了）／ S4 はクラウド適用待ち |
-| 全体進捗       | 85%      |
-| 状態         | **S5・S6 完了。** 仕様の Edge Function 19本、全ルートの画面、pgTAP・E2E を実装し、CI が全テスト種別を実行する。デプロイ用ワークフローも新設した。**残るのはクラウドへの適用のみで、これは人手作業である**（`SetupRunbook.md` 作業5〜7） |
-| ブロッカー      | なし（クラウド公開には Supabase プロジェクトの作成が必要） |
+| 現在フェーズ     | Release |
+| 現在のマイルストーン | M5（完了）。以降のマイルストーンは未設定 |
+| 全体進捗       | MVP 100% |
+| 状態         | **MVPは公開済み。** 公開後に不具合修正と機能追加を継続しており、Staging へ随時反映している |
+| ブロッカー      | なし |
 
 現在フェーズの候補は Design / Implementation / Test / Release とする。
 
-実装の進行単位はスライス S0 〜 S6 である（ADR-023 / `ImplementationRoadmap.md` 3章）。
+MVPの実装はスライス S0 〜 S6 で完了した（ADR-023 / `ImplementationRoadmap.md` 3章）。
+**以降の変更はスライスではなく Issue 単位で進めている。**
+
+---
+
+# 2.1 MVP公開後の変更
+
+公開（2026-08-10）以降に実施した内容である。詳細は `Changelog.md` を正本とする。
+
+| 分類 | 内容 |
+| --- | --- |
+| 公開直後の修正 | PKCEフロー、CORSプリフライト、Connection Pooler 経由の接続、ログアウト後の遷移、セッション確定前のルータ再生成 |
+| 機能追加 | トップ／ルールページ（#8）、お知らせ帯（#7）、マッチング成立の演出（#5）、レート変動の表示（#6）、シーズンリセット（#9 / ADR-030）、他チームのメンバー確認、メンバーのアイコン表示、BAN中の編成凍結 |
+| 運用 | 稼働監視と Discord 通知（ADR-029）、マニュアル2種の同梱、MITライセンス、ブランチ保護とPR運用 |
+| 廃止 | 単発のレートリセット（ADR-031） |
+
+**★次に何をやるかは未定である。** 候補は `13_FutureFeatures.md` にある。
+Backlog に未着手の項目は無く、マイルストーンも M5 で終端している。
 
 ---
 
 # 3. スライス進捗
+
+MVPの実装単位である。**すべて完了しており、以降の変更には用いていない。**
 
 | Slice | 内容                      | 状態            |
 | ----- | ----------------------- | ------------- |
@@ -43,9 +61,9 @@ Last Updated: 2026-08-10
 | S1    | 認証（Discord）             | ✅ Completed   |
 | S2    | チーム作成                   | ✅ Completed   |
 | S3    | フロントエンド最小構成             | ✅ Completed   |
-| S4    | クラウドへPush・公開            | 🟨 In Progress（CI・deploy.yml は完了。クラウド適用が人手作業として残る） |
+| S4    | クラウドへPush・公開            | ✅ Completed（2026-08-10 公開） |
 | S5    | 残機能の横展開                 | ✅ Completed   |
-| S6    | 統合テスト・MVPリリース           | 🟨 In Progress（テストは完了。MVP公開が残る） |
+| S6    | 統合テスト・MVPリリース           | ✅ Completed   |
 
 状態
 
@@ -61,39 +79,38 @@ Last Updated: 2026-08-10
 
 | 対象             | 実態                                                       |
 | -------------- | -------------------------------------------------------- |
-| Migration      | `0001`〜`0016`（`0015` Cron、`0016` Realtime を追加）。Supabase Local へ適用済みで `supabase db reset` が完走する。**クラウドへは未適用**（ADR-024 の直接修正はS4まで有効） |
-| Supabase Local | `config.toml` を作成し起動可能。Discord プロバイダを有効化済み（Client ID / Secret は各自の `.env` で設定する） |
-| Edge Functions | `04_BackendInterface.md` 9〜12章の全19本を実装済み（Team 6・Match 5・内部処理4・Admin 4）。既知の欠陥（B-008〜B-010）は解消済み。実 Discord ログインでの縦貫通も確認済み（2026-08-08） |
-| `_shared/`     | `auth.ts` / `db.ts` / `response.ts` / `rating.ts` / `invite.ts` / `realtime.ts` / `matchmaking.ts` / `match-completion.ts`（ADR-021準拠）。レート計算・マッチング・試合確定はいずれも共通モジュールに集約し、重複実装していない |
-| Frontend       | `05_Frontend.md` 5.1 の全ルートを実装（Public 3・App 8・Admin 4・404）。Realtime購読はレイアウトで一括管理する |
-| CI / CD        | `ci.yml` は Lint → Format → Type Check → Supabase起動 → Migration → Unit → Integration → pgTAP → Build → E2E を実行する。`deploy.yml` は手動実行で backend → frontend の順に公開する |
-| テスト            | Unit / Frontend 52件（Vitest）、Integration 181ステップ（Deno Test・モック）、Database 49件（pgTAP・実DB）、E2E 10件（Playwright・実DBと実 Edge Functions）。すべて成功する |
-| ランタイム          | Bun 1.3.14（フロントエンド・Unit）、Deno 2.9.5（Edge Functions・Integration）。パッケージ管理は Bun へ一本化（ADR-025） |
+| Migration      | `0001`〜`0022`（`0015` Cron、`0016` Realtime、`0017`〜`0019` 表示設定・お知らせ、`0020` アイコンURL許可リスト、`0021`〜`0022` シーズン）。クラウドへ適用済み |
+| Edge Functions | 24本（利用者11・管理8・内部処理5）。内部処理は pg_cron から呼ぶ（`matchmaker` / `auto-resolve-matches` / `cleanup-*` / `finalize-season`） |
+| `_shared/`     | 11本。認可・DB接続・レスポンス・レート計算・招待・Realtime・マッチング・試合確定・CORS・シーズン関門・アイコンURL検証（ADR-021準拠） |
+| Frontend       | ルート21件（Public 5・App 8・Admin 5・ルート／404）。Realtime購読はレイアウトで一括管理する |
+| CI / CD        | `ci.yml` は PR でのみ実行する（`main` への push では動かさない）。`deploy.yml` は手動実行で precheck → verify → backend → frontend の順に公開する |
+| テスト            | Unit / Frontend 90件（Vitest）、Integration 24スイート208ステップ（Deno Test・モック）、Database 62件（pgTAP・実DB）、E2E 27件（Playwright・実DBと実 Edge Functions）。すべて成功する |
+| 運用             | `monitor.yml` が30分ごとに稼働を確認し、異常時と週次の正常時に Discord へ通知する（ADR-029）。`main` はブランチ保護済み |
+| ランタイム          | Bun（フロントエンド・Unit）、Deno（Edge Functions・Integration）。パッケージ管理は Bun へ一本化（ADR-025） |
 
 ---
 
 # 4. 現在作業中
 
-* なし。実装作業は S6 まで完了しており、次は人手によるクラウド公開である
+* なし
 
 ---
 
 # 5. 次に実施するタスク
 
-優先順位順に記載する。
+**MVPの計画分は完了している。** Backlog に未着手の項目は無く、マイルストーンも M5 で終端している。
 
-**Backlog に未着手の項目は存在しない。** 実装作業も残っていない。残るのは人手による外部サービスの設定と公開である。
+次のテーマは未定である。候補は `13_FutureFeatures.md` の High Priority にある。
 
-1. **人手作業（5〜7）** Supabase クラウドプロジェクトの作成、Vault へのシークレット登録、
-   GitHub Pages 有効化と Variables / Secrets の登録。手順は `SetupRunbook.md` が正本である
-2. **M5** 上記の完了後に `deploy.yml` を手動実行して公開し、本番で縦貫通を確認する
-3. **Issue #3** Vault 登録後、自動解決が実際に動いていることを確認する。
-   Cron の成功記録では判定できない（`RiskManagement.md` 6.1.1）。
-   `scripts/health-check.sql` の `overdue_report` / `overdue_approve` が増え続けないことで判定する
+| 候補                | 状態                                    |
+| ----------------- | ------------------------------------- |
+| レート推移の可視化         | 未着手。**元データはシーズンリセットの削除で消える。** 何を残すかを先に決める必要がある |
+| 異議申し立て・管理者裁定      | 未着手。確定後の訂正手段が無い                       |
+| チームプロフィール         | 未着手                                   |
+| プレイヤープロフィール       | アイコン表示のみ実装済み。自己紹介・個人成績・プレイ履歴は未        |
+| 通知機能              | ブラウザ通知と試合成立通知のみ実装済み。招待通知・システム通知は未     |
 
-`SetupRunbook.md` の作業1〜4は 2026-08-08 に完了した。作業5〜7は未着手である。
-
-人手でしか実施できない作業は `docs/project/SetupRunbook.md` に集約した。本書へ手順を書き写さない。
+着手する場合は `13_FutureFeatures.md` と関連設計書を更新してから実装する（同書 8章）。
 
 ---
 
@@ -104,8 +121,10 @@ Last Updated: 2026-08-10
 なし
 
 R-001（認証プロバイダの実現方式が未確定）は 2026-08-04 に ADR-022 で Discord を採用して解消した。
+R-011（既存実装と設計書の乖離）は S0 〜 S4 で解消した。
 
-なお R-011（既存実装と設計書の乖離）はブロッカーではなく、S0 〜 S4 で解消する作業対象として扱う。
+運用リスクとして R-004（自動解決の停止）、R-012（シーズン確定の停滞）、R-013（更新禁止の放置）を
+監視している（`RiskManagement.md` 6.1）。
 
 ---
 
@@ -113,11 +132,13 @@ R-001（認証プロバイダの実現方式が未確定）は 2026-08-04 に AD
 
 | マイルストーン | 状態 |
 | ------- | -- |
-| M1      | ✅（2026-08-08） |
+| M1      | ✅（2026-08-08 / 開発基盤構築） |
 | M2      | ✅（2026-08-08 / チーム管理機能） |
 | M3      | ✅（2026-08-08 / マッチング機能） |
 | M4      | ✅（2026-08-08 / ランキング機能） |
-| M5      | 🟨 クラウド公開待ち（人手作業） |
+| M5      | ✅（2026-08-10 / MVPリリース） |
+
+**M6 以降は未設定である。** 次のテーマを決めた時点で `Milestones.md` へ登録する。
 
 ---
 
