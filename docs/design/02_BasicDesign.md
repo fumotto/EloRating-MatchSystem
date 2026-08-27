@@ -233,11 +233,11 @@ PLAYING ──申告──→ WINNER_REPORTED ──承認／自動承認──�
    │                    │
    │                    └──反対申告──→ 競合 ──期限切れ──→ DRAWN
    │
-   └─申告期限切れ／不成立の申請（承諾・無応答）／管理者の無効化──→ DRAWN
+   └─申告期限切れ／不成立の申請（承諾・無応答）／管理者の無効化／シーズン終了の打ち切り──→ DRAWN
 ```
 
 `DRAWN` の内訳は `matches.no_contest_reason` で区別する（ADR-034 ①）。
-`REPORT_TIMEOUT` / `NO_SHOW` / `CONFLICT` / `MUTUAL` / `ADMIN_VOID` の5種類であり、
+`REPORT_TIMEOUT` / `NO_SHOW` / `CONFLICT` / `MUTUAL` / `ADMIN_VOID` / `SEASON_END` の6種類であり、
 **クールダウンの有無と確定率への計上が異なる。一律に扱ってはならない。**
 
 **`WINNER_REPORTED → PLAYING`（拒否）は廃止した**（ADR-032 ③）。

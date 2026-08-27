@@ -114,6 +114,26 @@ TC-RANK-012 と TC-RANK-013 は重要である。`rating_history` を内部結�
 
 ---
 
+# 4.5 掲載条件（ADR-036 ③）
+
+| ID          | 観点         | 前提条件                                | 操作                | 期待結果                                    | 種別       | テスト名                                                        |
+| ----------- | ---------- | ----------------------------------- | ----------------- | --------------------------------------- | -------- | ----------------------------------------------------------- |
+| TC-RANK-030 | 条件を満たすチーム  | 異なる対戦相手が `ranking_min_opponents` 以上 | team_ranking_view | `rank` が付く                              | Database | `lists only the teams that met the distinct-opponent threshold` |
+| TC-RANK-031 | 対戦相手数の集計   | `COMPLETED` の対戦が複数                  | team_ranking_view | `distinct_opponents` が相手チーム数と一致する       | Database | `counts distinct opponents from completed matches`           |
+| TC-RANK-032 | 未達チームの残存   | 対戦相手が不足                             | team_ranking_view | **Viewから消えない**                          | Database | `keeps an unlisted team in the view`                         |
+| TC-RANK-033 | 未達チームの順位   | 対戦相手が不足                             | team_ranking_view | `rank` が NULL、`listed` が FALSE           | Database | `gives an unlisted team no rank` / `marks an unlisted team as not listed` |
+| TC-RANK-034 | 順位の採番      | 未達チームが掲載チームのレート間に居る                 | team_ranking_view | 順位が連番になり、穴が空かない                         | Database | `renumbers ranks among listed teams only`                    |
+| TC-RANK-035 | 無効化        | `ranking_min_opponents = 0`         | team_ranking_view | 全チームに `rank` が付く                        | Database | `lists every team when the threshold is disabled`            |
+
+**TC-RANK-032 を消してはならない。** 掲載しないチームをViewから消すと、「自分がなぜ載らないのか」を
+画面から説明できなくなる。**掲載の抑止であって隠蔽ではない**（ADR-036 ③）。
+
+**TC-RANK-034 が採番の要である。** 除外したチームを含めて `RANK()` を数えると順位に穴が空く。
+
+**TC-RANK-035 は検証環境の前提そのものである**（ADR-036 ⑤）。
+
+---
+
 # 5. 異常系
 
 * 存在しないページ番号
@@ -131,3 +151,6 @@ TC-RANK-012 と TC-RANK-013 は重要である。`rating_history` を内部結�
 * `DRAWN` が戦績に計上されないことを検証する。
 * 未認証で取得できること、かつ個人情報が含まれないことを検証する。
 * 同率順位の採番規則（`RANK()`）を検証する。
+* 掲載条件を満たさないチームが**Viewから消えず**、`rank` のみが NULL になることを検証する（ADR-036 ③）。
+* 順位が掲載対象だけで数え直され、穴が空かないことを検証する。
+* `distinct_opponents` が `COMPLETED` のみを数え、`DRAWN` を含めないことを検証する。

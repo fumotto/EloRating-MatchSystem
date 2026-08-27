@@ -221,6 +221,52 @@ TC-MATCH-034-56 は歯止めである。片方の操作で抑止を登録でき�
 | TC-MATCH-072 | 分母の構成                  | 確定3件・`REPORT_TIMEOUT` 1件   | team_ranking_view取得  | `settle_rate` が 0.75   | Integration | `computes the settle rate from settled and no-contests` |
 | TC-MATCH-073 | **MUTUAL を分母に含めない**    | 確定3件・`MUTUAL` 1件           | team_ranking_view取得  | `settle_rate` が 1.0    | Integration | `excludes mutual no-contests from the settle rate`  |
 | TC-MATCH-074 | **ADMIN_VOID を分母に含めない** | 確定3件・`ADMIN_VOID` 1件      | team_ranking_view取得  | `settle_rate` が 1.0    | Integration | `excludes admin voids from the settle rate`         |
+| TC-MATCH-080 | **理由なしの DRAWN を拒む**     | 進行中の試合                    | 理由を設定せず DRAWN へ UPDATE | CHECK制約違反（23514）      | Database    | `finalize: rejects a drawn match without a no-contest reason` |
+| TC-MATCH-081 | **シーズン終了の打ち切り**         | 猶予切れ時に進行中の試合が残る            | finalize と同じ UPDATE   | 成功し `SEASON_END` が入る   | Database    | `finalize: cuts off the remaining matches when the season ends` |
+| TC-MATCH-082 | 打ち切りに勝者を残さない            | 同上                        | matches取得             | `winner_team_id` が NULL | Database    | `finalize: leaves no winner on a cut-off match`     |
+| TC-MATCH-083 | **SEASON_END を不戦に数えない**  | `SEASON_END` 1件            | team_ranking_view取得   | `no_contests` が 0       | Database    | `finalize: never counts a season cutoff as a no-show` |
+| TC-MATCH-084 | SEASON_END を不成立数に数えない    | 同上                        | team_ranking_view取得   | `void_count` が 0        | Database    | `finalize: keeps a season cutoff out of the mutual no-contest count` |
+| TC-MATCH-085 | 未知の理由を拒む                | －                         | 不正な値へ UPDATE          | CHECK制約違反（23514）      | Database    | `finalize: still rejects an unknown no-contest reason` |
+
+**TC-MATCH-080 と TC-MATCH-081 は Database Test でなければならない**（ADR-038 ⑥）。
+Integration Test はモックDBを使うため CHECK制約が働かず、この不具合を検出できない。
+実際に Migration 0023 が制約を追加した際、`finalize-season` の配線漏れが素通りし、
+**猶予切れの時点で進行中の試合が1件でも残るとシーズンが確定できない**状態が続いた。
+
+**★CHECK制約を追加するMigrationでは、その表へ書き込む全経路を洗うこと。**
+`DRAWN` を書く箇所は5つあり、0023 はそのうち1つを見落とした。
+
+## 3.x 管理者による対戦カードの作成（ADR-035 ⑤ / ADR-039）
+
+| ID           | 観点                  | 前提条件                        | 操作                | 期待結果                                     | 種別          | テスト名                                                        |
+| ------------ | ------------------- | --------------------------- | ----------------- | ---------------------------------------- | ----------- | ----------------------------------------------------------- |
+| TC-MATCH-090 | 作成                  | 2チームを指定                     | admin-create-match | `PLAYING` の試合が作られる                       | Integration | `creates a PLAYING match for the two named teams`           |
+| TC-MATCH-091 | 申告期限の設定             | 設定値90分                      | admin-create-match | `report_deadline_at` が設定される              | Integration | `always sets a report deadline from the settings`           |
+| TC-MATCH-092 | **公平の仕組みを見ない**      | 通常                          | admin-create-match | `match_avoidance` / `queue_cooldown_until` / `match_rating_range` を問い合わせない | Integration | `never consults the fairness mechanisms of automatic matchmaking` |
+| TC-MATCH-093 | **複数割り当て**          | 進行中の試合を持つチーム                | admin-create-match | 成功する。進行中の試合を数えない                         | Integration | `never rejects a team that already has a match in progress` |
+| TC-MATCH-094 | 監査ログの区別             | 通常                          | audit_logs取得      | `MATCH_PREPARED` と実行者が記録される              | Integration | `records the preparation separately from an automatic match` |
+| TC-MATCH-095 | Realtime            | 通常                          | 通知確認              | `MATCH_CREATED` が送信される                    | Integration | `publishes MATCH_CREATED so both teams refetch`             |
+| TC-MATCH-096 | **確定処理中の拒否**        | `updates_locked`            | admin-create-match | `SEASON-001`。作成しない                        | Integration | `refuses to prepare a match while the season change is in progress` |
+| TC-MATCH-097 | 猶予中の拒否              | `matchmaking_paused`        | admin-create-match | `SEASON-002`。作成しない                        | Integration | `refuses to prepare a match while matchmaking is paused for the season` |
+| TC-MATCH-098 | 保守中の拒否              | `maintenance_paused`        | admin-create-match | `QUEUE-007`。作成しない                         | Integration | `refuses to prepare a match during maintenance`             |
+| TC-MATCH-099 | BANチームの拒否           | 片方がBAN                      | admin-create-match | `TEAM-006`                                | Integration | `refuses a banned team`                                     |
+| TC-MATCH-100 | **メンバー0人の拒否**       | 片方が無人                       | admin-create-match | `TEAM-011`                                | Integration | `refuses a team with no members`                            |
+| TC-MATCH-101 | **人数の不揃いを許す**       | 3人 対 1人                     | admin-create-match | 成功する                                     | Integration | `allows an uneven roster`                                   |
+| TC-MATCH-102 | 存在しないチーム            | 片方が存在しない                    | admin-create-match | `TEAM-001`                                | Integration | `refuses when one of the teams does not exist`              |
+| TC-MATCH-103 | 自分自身との対戦            | 同一ID                        | admin-create-match | `VALIDATION-001`。SQLを発行しない                | Integration | `refuses to pair a team with itself`                        |
+| TC-MATCH-104 | 入力不足                | `teamBId` 欠落                | admin-create-match | `VALIDATION-001`                          | Integration | `rejects a missing team id`                                 |
+| TC-MATCH-105 | 権限                  | 一般利用者                       | admin-create-match | `ADMIN-001`。SQLを発行しない                     | Integration | `rejects a non-administrator`                               |
+
+**TC-MATCH-092 と TC-MATCH-093 が本機能の中心である**（ADR-035 ⑤ / ADR-039 ②）。
+大会では実力差のあるカードも、回線相性のあるペアも組む。1チームへの複数割り当てが目的である。
+**問い合わせの有無で固定しているのは、参照するコードを足させないためである。**
+
+**TC-MATCH-096〜098 は逆向きの境界である**（ADR-039 ③）。拘束されないのはペア単位・チーム単位の
+公平の仕組みだけであり、停止は全体の宣言である。
+
+**TC-MATCH-100 と TC-MATCH-101 を取り違えてはならない。** 無人は拒み、不揃いは許す。
+前者は誰も報告できず相手を拘束するが、後者は運営が意図して組んだ対戦である（ADR-039 ④）。
+
 | TC-MATCH-075 | 対象0件                   | 試合が無い                      | team_ranking_view取得  | `settle_rate` が NULL   | Integration | `returns null for a team with no matches`           |
 | TC-MATCH-076 | `void_count` の別枠       | `MUTUAL` が2件               | team_ranking_view取得  | `void_count` が2        | Integration | `reports mutual no-contests separately`             |
 

@@ -146,6 +146,24 @@ TC-QUEUE-106 は ADR-035 の要点である。**DBに制約は無く、アプリ
 
 他チームの待機状況が見えると、有利な相手を狙った待ち伏せが可能になるため、TC-QUEUE-046 は重要である。
 
+## 3.8 ペア再戦の抑止（ADR-036 ①）
+
+| ID           | 観点          | 前提条件                              | 操作         | 期待結果                                  | 種別          | テスト名                                                             |
+| ------------ | ----------- | --------------------------------- | ---------- | ------------------------------------- | ----------- | ---------------------------------------------------------------- |
+| TC-QUEUE-060 | 抑止中のペア      | 同じ2チームが抑止期間内に確定した試合を持つ            | matchmaker | マッチが成立せず、待機列からも外れない                   | Integration | `does not pair teams that already completed a match inside the cooldown` |
+| TC-QUEUE-061 | 期間外のペア      | 直近の確定が抑止期間より前                     | matchmaker | 通常どおりマッチが成立する                         | Integration | `still pairs teams whose previous match falls outside the cooldown`      |
+| TC-QUEUE-062 | 対象は COMPLETED のみ | 抑止が有効                             | matchmaker | 問い合わせが `status = 'COMPLETED'` のみを見て、`DRAWN` を含まない | Integration | `looks only at completed matches inside the configured window`           |
+| TC-QUEUE-063 | 無効化         | `rematch_cooldown_hours = 0`      | matchmaker | 問い合わせ自体を行わず、マッチが成立する                  | Integration | `skips the lookup entirely when the cooldown is disabled`                |
+
+**TC-QUEUE-062 が最も重要である。** `DRAWN` まで抑止すると、対戦が成立しなかっただけの
+チームが次の待機まで待たされる。ADR-034 の「落ち度の無い側に代償を負わせない」に反する。
+
+**TC-QUEUE-063 は検証環境の前提そのものである**（ADR-036 ⑤）。0 で無効にならないと、
+複数アカウントを用いた確認ができなくなる。
+
+抑止によりマッチが成立しないことは**エラーではない**。待機の継続である。
+エラーコードを期待するテストを書いてはならない（6章）。
+
 ---
 
 # 4. 境界値
@@ -196,3 +214,6 @@ Realtime送信の失敗ではトランザクションをロールバックしな
 * 同時実行時に二重マッチが発生しないことを検証する。
 * `report_deadline_at` が必ず設定されることを検証する。設定されないと自動解決が機能しない。
 * Realtime通知はマッチ成立後に送信されることを検証する。
+* ペア再戦の抑止が `COMPLETED` のみを対象とし、`DRAWN` を含めないことを検証する（ADR-036 ①）。
+* 抑止は設定値 `rematch_cooldown_hours` から取得し、`0` で問い合わせ自体を行わないことを検証する。
+  **抑止をコードへハードコードしない。**

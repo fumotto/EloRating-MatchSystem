@@ -89,7 +89,7 @@ TC-UI-006 と TC-UI-010 は、それぞれ ADR-018 と GitHub Pages のSPA配信
 | TC-UI-035 | **投了**          | `PLAYING`・敗者チーム       | 送信    | 確定が表示される                | Frontend | `submits the concession`                              |
 | TC-UI-036 | **残り延長回数**      | `PLAYING`         | 画面確認  | 残り延長回数が表示される            | Frontend | `shows the remaining extensions`                      |
 | TC-UI-037 | **投了の確認**       | 投了ボタン押下           | 操作    | 確認ダイアログが表示され、APIは呼ばれない   | Frontend | `asks for confirmation before conceding`              |
-| TC-UI-038 | **DRAWNの理由別表示** | `DRAWN`（5種）       | 画面表示  | 理由ごとに異なる説明が表示される        | Frontend | `renders a distinct explanation per no-contest reason` |
+| TC-UI-038 | **DRAWNの理由別表示** | `DRAWN`（全種）      | 画面表示  | 理由ごとに異なる説明が表示される        | Frontend | `renders a distinct explanation per no-contest reason` |
 | TC-UI-039 | 自動承認の表示         | `auto_approved` が true | 画面表示  | 自動承認により確定した旨が表示される      | Frontend | `indicates that the match was auto-approved`          |
 | TC-UI-040 | **versionの送信**  | 更新操作              | 送信    | Match Detail の `version` が送信される | Frontend | `sends the version with mutating requests`            |
 | TC-UI-041 | **競合時の再取得**     | `MATCH-008` を受信   | 応答受信  | 詳細を再取得し、自動再送しない         | Frontend | `refetches instead of retrying on a version conflict` |
@@ -190,7 +190,7 @@ TC-UI-006 と TC-UI-010 は、それぞれ ADR-018 と GitHub Pages のSPA配信
 | TC-UI-206  | 投了と承認の出し分け               | `WINNER_REPORTED`（相手が申告）で表示    | 承認と反対申告が出て、投了ボタンは重複しない              | Unit | `shows approve and counter-claim, not a duplicate concede` |
 | TC-UI-207  | 自チーム申告時の表示               | `WINNER_REPORTED`（自チームが申告）     | 操作ボタンを出さず、取り消せない旨のみ表示               | Unit | `offers no actions to the reporting team`               |
 | TC-UI-208  | **競合中の表示**               | `counter_claim_team_id` あり     | 「自動承認されない」旨と投了での決着が示される             | Unit | `explains that a contested match will not auto-approve` |
-| TC-UI-209  | **DRAWN の理由別表示**         | 5種の `no_contest_reason`        | それぞれ異なる説明が出る（一律の「引き分け」にしない）         | Unit | `renders a distinct explanation per no-contest reason`  |
+| TC-UI-209  | **DRAWN の理由別表示**         | すべての `no_contest_reason`      | それぞれ異なる説明が出る（一律の「引き分け」にしない）         | Unit | `renders a distinct explanation per no-contest reason`  |
 | TC-UI-210  | **MUTUAL は不利益なしと表示**     | `MUTUAL`                       | 記録に影響しない旨が示される                      | Unit | `states that a mutual no-contest has no penalty`        |
 | TC-UI-211  | **自動承認の明示**              | `auto_approved = true`         | 自動承認である旨が表示される                      | Unit | `marks an auto-approved match as such`                  |
 | TC-UI-212  | クールダウンの表示                | `QUEUE-006`                    | 残り時間が出る。「ペナルティ」の語を使わない              | Unit | `shows the remaining cooldown without punitive wording` |
@@ -204,11 +204,63 @@ TC-UI-006 と TC-UI-010 は、それぞれ ADR-018 と GitHub Pages のSPA配信
 | TC-UI-220  | **証拠URLを自動リンクしない**       | 通報詳細を表示                        | `<a href>` にならず、明示の操作で開く            | Unit | `renders evidence urls as text, not as links`           |
 | TC-UI-221  | **管理画面は m を先に表示**        | 累積を表示                          | 通報元チーム数が通報件数より先に現れる                 | Unit | `shows the reporter team count before the report count` |
 | TC-UI-222  | **訂正の導線が無い**             | 管理画面の通報詳細                      | 結果を訂正する操作が存在しない                     | Unit | `offers no way to correct a settled result`             |
+| TC-UI-230  | 設定一覧の網羅                  | システム設定の一覧                      | ADR-032〜036 で追加した設定が表示される            | Unit | `shows the settings added for the report flow`          |
+| TC-UI-231  | **廃止した設定の非表示**           | システム設定の一覧                      | 「拒否の上限回数」が存在しない                     | Unit | `never lists the retired reject limit`                  |
+| TC-UI-232  | **シーズン状態の非表示**           | システム設定の一覧                      | マッチング停止・現在シーズンが存在しない                | Unit | `never lists the season state columns`                  |
+| TC-UI-233  | **0 は「無効」と表示**           | `rematch_cooldown_hours = 0`     | 「無効」と表示され「0時間」にならない                 | Unit | `reads zero as disabled for the sub-account guard`      |
+| TC-UI-234  | 0 を無効としない設定              | `max_report_extensions = 0`      | 「0回」と数値のまま表示される                     | Unit | `keeps a real zero-capable setting numeric when it is not a switch` |
+| TC-UI-235  | **入力欄の網羅**               | 管理画面のシステム設定                    | ADR-032〜034 で追加した9項目に入力欄がある          | Unit | `offers an input for every wired setting`               |
+| TC-UI-236  | **廃止した設定の入力欄が無い**        | 管理画面のシステム設定                    | 「拒否の上限回数」の入力欄が存在しない                 | Unit | `never offers the retired reject limit`                 |
+| TC-UI-237  | 保守停止を立てる                 | 稼働中                            | `{ maintenancePaused: true }` を送る       | Unit | `turns the maintenance pause on`                        |
+| TC-UI-238  | **保守停止を解除する**            | 停止中                            | `{ maintenancePaused: false }` を送る      | Unit | `turns the maintenance pause off`                       |
+| TC-UI-239  | **手順の明示**                | 管理画面のシステム設定                    | 停止を先に立てる旨が表示される                     | Unit | `states that the pause comes before voiding matches`    |
+| TC-UI-240  | 入力のあった項目のみ送信             | 1項目だけ入力                        | その項目だけが送られる                         | Unit | `sends only the numeric fields that were filled in`     |
+| TC-UI-241  | **打ち切りと無効化の言い分け**        | `SEASON_END`                   | `ADMIN_VOID` と異なる文言で「シーズンの終了」を示す     | Unit | `distinguishes a season cutoff from an administrative void` |
+| TC-UI-242  | 停止していなければ押せる             | 両方の停止が FALSE                   | 開始ボタンが有効                            | Unit | `lets a complete team queue while nothing is paused`    |
+| TC-UI-243  | シーズン停止の案内               | `matchmaking_paused`           | 押す前に理由が出て、ボタンが無効                    | Unit | `explains the season pause before the button is pressed` |
+| TC-UI-244  | **保守停止の案内**              | `maintenance_paused`           | 押す前に理由が出て、ボタンが無効                    | Unit | `explains the maintenance pause before the button is pressed` |
+| TC-UI-245  | 両方立っているときの優先            | 両方 TRUE                        | 保守を先に伝える                            | Unit | `names maintenance first when both pauses are on`       |
+| TC-UI-246  | シーズン画面：受付中              | 両方 FALSE                       | 「受付中」と表示                            | Unit | `reports matchmaking as open when nothing is paused`    |
+| TC-UI-247  | シーズン画面：シーズン停止           | `matchmaking_paused`           | 「停止中（シーズン）」と表示                      | Unit | `reports the season pause`                              |
+| TC-UI-248  | **シーズン画面：保守停止**          | `maintenance_paused` のみ        | 「受付中」と表示しない                         | Unit | `never reports matchmaking as open while maintenance is on` |
+| TC-UI-249  | シーズン画面：両方               | 両方 TRUE                        | 原因を両方併記                             | Unit | `names both causes when both pauses are on`             |
+| TC-UI-250  | **再開前の警告**               | 確定済み ＋ 保守停止                    | 解除するまで成立しない旨が出る                     | Unit | `warns before resuming that maintenance will keep matchmaking down` |
+| TC-UI-251  | 不要な警告を出さない              | 確定済み ＋ 保守停止なし                  | 警告が出ない                              | Unit | `stays quiet about maintenance when it is not on`       |
+| TC-UI-260  | BANチームを選ばせない            | BANチームが存在                       | 選択肢に現れない                            | Unit | `never offers a banned team`                            |
+| TC-UI-261  | **無人チームを選ばせない**          | メンバー0人のチームが存在                   | 選択肢に現れない                            | Unit | `never offers a team with no members`                   |
+| TC-UI-262  | **人数の表示**                | 候補一覧                            | 各候補に人数が出る                           | Unit | `shows the member count on every candidate`             |
+| TC-UI-263  | **不揃いの警告**               | 3人 対 1人                         | 警告が出るが、確認へ進める                       | Unit | `warns when the rosters are uneven but still allows the pairing` |
+| TC-UI-264  | 自分自身を選ばせない              | チームAを選択                         | チームBの選択肢から消える                       | Unit | `never lets the same team face itself`                  |
+| TC-UI-265  | **確認を挟む**                | 2チームを選択                         | 確認を経ないと送信しない                        | Unit | `requires a confirmation before creating the match`     |
+| TC-UI-266  | **確認の省略が無い**             | 確認を表示                           | 「次回から表示しない」に相当する要素が存在しない            | Unit | `offers no way to skip the confirmation`                |
+| TC-UI-267  | 進行中の試合（1件）              | 自チームの試合が1件                      | 一覧として表示し、開始ボタンを出さない                 | Unit | `lists the single active match`                         |
+| TC-UI-268  | **進行中の試合（複数）**           | 自チームの試合が3件                      | **すべて**表示する                          | Unit | `lists every active match, not just the first`          |
+| TC-UI-269  | 他チームの試合を混ぜない            | 他チームの試合のみ                       | 進行中として扱わない                          | Unit | `ignores matches that belong to other teams`            |
+
+**TC-UI-268 は ADR-039 ⑧ の要求そのものである。** 管理者が用意した試合は待機列を経由しないため、
+1チームへ同時に割り当てられる。先頭の1件だけを案内すると、残りが画面から消える。
+
+**TC-UI-261 と TC-UI-263 を取り違えてはならない。** 無人は選ばせず、不揃いは警告して通す。
+**TC-UI-266 は投了（TC-UI-204）と同じ趣旨である。** 取り消せない操作の防御は確認だけであり、
+省略可能にすると防御が消える。
+
+TC-UI-244 と TC-UI-248 は**実際に起きていた不具合**である（ADR-038 ③）。保守停止が
+`public_settings` に無く画面から見えなかったため、マッチング画面は案内を出さないまま
+ボタンを押させ（`QUEUE-007` で弾かれる）、シーズン画面は「受付中」と表示していた。
+
+**停止の種類を増やしたら、必ず両方の画面へ足すこと。** 片方だけ足すと同じ食い違いが戻る。
 
 TC-UI-201 と TC-UI-204 は必須である。**投了の押し間違えは覆せない**（ADR-033 ①）。確認だけが防御であり、
 それを省略可能にすると防御が消える。
 
 TC-UI-219 と TC-UI-222 は期待の管理である。単発の通報では措置せず（ADR-033 ④）、結果は覆らない（同 ①）。
+
+TC-UI-235 と TC-UI-238 は必須である。**`maintenance_paused` は障害時手順の手順1であり**（ADR-034 ⑥）、
+立てられなければ「無効化した直後に新しい試合が成立する」事故を防げない。実際に配線が漏れていた（ADR-037 ①）。
+TC-UI-238 は特に落とし穴で、`false` を「未指定」と取り違えると停止を解除できなくなる。
+
+TC-UI-231 と TC-UI-236 は逆向きの防御である。**効かない設定を運営が調整できる状態は、
+設定が足りないのと同じくらい悪い**（ADR-037 ③）。
 **画面が実在しない救済を示唆してはならない。**
 
 # 3. 作成してはならないテスト

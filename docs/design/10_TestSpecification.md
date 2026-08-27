@@ -269,6 +269,21 @@ Realtime通知の検証は、通知を伴う処理のIntegration TestおよびE2
 | TC-SEASON-012 | 施錠中の利用者操作       | updates_locked | leave-team             | `SEASON-001`                  | Integration | `blocks user updates while the season change is in progress` |
 | TC-SEASON-013 | 終了の取りやめ         | ENDING      | admin-cancel-season-end   | ACTIVE へ戻しマッチングを再開する           | Integration | `cancels the season end while the grace period is running` |
 | TC-SEASON-014 | 確定後の取りやめ拒否      | FINALIZED済  | admin-cancel-season-end   | `SEASON-003`                  | Integration | `refuses to cancel after the season is finalized` |
+| TC-SEASON-015 | **打ち切りの理由**      | 猶予切れ       | finalize-season           | `no_contest_reason = 'SEASON_END'` を設定し、`ADMIN_VOID` を使わない | Integration | `finalizes the season once the grace period has passed` |
+| TC-SEASON-020 | 再開の同時解除         | FINALIZED済  | admin-resume-season       | `matchmaking_paused` と `updates_locked` を同時に FALSE へ | Integration | `clears the season pause and the update lock together` |
+| TC-SEASON-021 | **保守停止に触れない**    | FINALIZED済  | admin-resume-season       | `maintenance_paused` を含むSQLを一切発行しない | Integration | `never clears the maintenance pause` |
+| TC-SEASON-022 | 再開の監査ログ         | FINALIZED済  | admin-resume-season       | `SEASON_RESUMED` と実行者が記録される     | Integration | `records the resume in the audit log` |
+| TC-SEASON-023 | 猶予中の再開拒否        | ENDING      | admin-resume-season       | `SEASON-003`。更新を発行しない          | Integration | `refuses to resume while the season is still ending` |
+| TC-SEASON-024 | 再開の権限           | 一般利用者      | admin-resume-season       | `ADMIN-001`                   | Integration | `rejects a non-administrator` |
+
+**TC-SEASON-021 を消してはならない。** これが `maintenance_paused` を `matchmaking_paused` と
+別の列にした理由そのものである（ADR-034 ⑤ / ADR-038 ⑤）。兼用していれば、シーズンの再開が
+障害対応の停止を解除し、ゲーム側が復旧していないのにマッチングが動き出す。
+`admin-resume-season` にはテストが1件も無く、この不変条件は未検証のままだった。
+
+**TC-SEASON-015 は理由の値まで検証する。** 設定を忘れると `chk_matches_drawn_reason` に
+違反してシーズンが確定できない（ADR-038 ①）。ただし**モックDBでは制約が働かない**ため、
+本当の保証は Database Test（Part5 TC-MATCH-080〜085）が担う。
 
 ---
 

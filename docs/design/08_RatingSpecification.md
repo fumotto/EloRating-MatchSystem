@@ -65,7 +65,7 @@ Last Updated: 2026-08-03
 | `request-no-contest` / `respond-no-contest` | 対戦が成立していない        |
 | `admin-void-match` | 運営起因・外部起因の無効化                        |
 | 通報および措置            | **勝敗フローから独立している**（ADR-033 ①）         |
-| `DRAWN`            | 5種類すべてでレートを変えない                      |
+| `DRAWN`            | 6種類すべてでレートを変えない（ADR-038 ①で `SEASON_END` を追加） |
 
 **★`reject-match` は廃止した**（ADR-032 ②）。
 

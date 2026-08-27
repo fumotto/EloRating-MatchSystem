@@ -1561,11 +1561,44 @@ interface UpdateSystemSettingsRequest {
     inviteExpirationHours?: number;
     reportTimeoutMinutes?: number;
     approveTimeoutMinutes?: number;
+    // ★廃止（ADR-032 ③）。値は誰も読まない。画面には出さない（ADR-037 ③）。
     maxRejectCount?: number;
+    seasonGraceMinutes?: number;
+    // 勝敗報告の確定方式（ADR-032 ④⑦⑧⑨ / ADR-034 ②③）。
+    queueCooldownMinutes?: number;
+    reportExtensionMinutes?: number;
+    maxReportExtensions?: number;
+    noShowMinutes?: number;
+    noShowResponseMinutes?: number;
+    maxNoContestRequests?: number;
+    mutualNoContestDailyLimit?: number;
+    avoidanceDays?: number;
+    maxAvoidanceEntries?: number;
+    // 保守による一時停止（ADR-034 ⑤）。
+    maintenancePaused?: boolean;
+    // 表示設定（Issue #8）・お知らせ（Issue #7）は文字列であるため別扱いとする。
+    // サブアカウント対策（ADR-036 ⑤）。どちらも 0 が無効を表す。
+    rematchCooldownHours?: number;
+    rankingMinOpponents?: number;
 }
 ```
 
 指定された項目のみ更新する。
+
+**★`matchmakingPaused` / `updatesLocked` / `currentSeason` を追加してはならない**（ADR-037 ②）。
+3列ともシーズン運用の Function だけが書き換える。本APIから触れると、シーズン切替の途中で
+運営が状態を壊せるうえ、ADR-034 ⑤ が `maintenance_paused` を別列にした意味が失われる。
+
+**★真偽値は JSON の真偽値のみを受け付ける。** 文字列の `"true"` は `ADMIN-002` とする。
+また `false` を「未指定」と取り違えない。判定は `value === undefined` で行う。
+取り違えると保守停止を解除できなくなる。
+
+**★サブアカウント対策の ON/OFF はここにしか無い。環境変数では切らない**（ADR-036 ⑤）。
+Edge Function の環境変数はテストから切り替えられず、E2E は同じ Supabase を共有する。
+設定値であれば本APIから操作でき、既存の管理画面と `audit_logs` にそのまま乗る。
+
+**★設定を追加するときは6箇所すべてを更新する**（ADR-037 ⑥。手順は `03_Database.md` 10.8）。
+Migration だけを足して終わりにすると、設計書に載っている設定を運営が変更できない状態になる。
 
 ### Output DTO
 
@@ -1617,6 +1650,94 @@ SYSTEM_SETTINGS_UPDATED / SETTINGS_UPDATED
 
 ---
 
+# 12.11 admin-create-match
+
+### Purpose
+
+管理者が対戦カードを直接作成する（ADR-035 ⑤ / ADR-039）。大会・イベントを想定する。
+**自動マッチングの代わりではない。**
+
+### Authentication / Authorization
+
+必須 / 管理者
+
+### Input DTO
+
+```typescript
+interface AdminCreateMatchRequest {
+    teamAId: string;
+    teamBId: string;
+}
+```
+
+### Output DTO
+
+```typescript
+interface AdminCreateMatchResponse {
+    matchId: string;
+    teamAId: string;
+    teamBId: string;
+    reportDeadlineAt: string;
+}
+```
+
+### 拘束されないもの（ADR-039 ②）
+
+| 対象                     | 理由                                     |
+| ---------------------- | -------------------------------------- |
+| `match_avoidance`      | 回線相性の抑止は自動マッチングのための仕組みである（ADR-034 ③）   |
+| `queue_cooldown_until` | 同上（ADR-032 ④）                          |
+| `match_rating_range`   | 実力の近い相手を探すための条件である。組み合わせは運営が決める        |
+| 進行中の試合の有無              | **1チームへの複数割り当てが本機能の目的である**（ADR-035 ⑤）  |
+
+**★これらを参照するコードを足してはならない。** 統合テストが問い合わせの有無で固定している。
+
+### 従うもの（ADR-039 ③④）
+
+| 条件                   | エラー          | 理由                                        |
+| -------------------- | ------------ | ----------------------------------------- |
+| `updates_locked`     | `SEASON-001` | 確定処理に巻き込まれ、直後に `SEASON_END` で打ち切られる（ADR-038 ①） |
+| `matchmaking_paused` | `SEASON-002` | 猶予中に作ると、進行中の試合が尽きるのを待つ猶予が終わらない            |
+| `maintenance_paused` | `QUEUE-007`  | ADR-034 ⑥ の手順（停止 → 無効化）と矛盾する              |
+| BANされたチーム            | `TEAM-006`   | BANは編成も対戦も凍結する（12.1）                      |
+| メンバー0人のチーム           | `TEAM-011`   | 誰も報告できず、相手を報告期限まで拘束する                     |
+| 同一チーム同士              | `VALIDATION-001` | DBの `chk_matches_teams_different` より前に弾く   |
+
+**★必須人数（`team_max_members`）は要求しない**（ADR-039 ④）。あれは待機列への入り口の条件であり、
+本APIは待機列を経由しない。人数の不揃いは画面が示す。
+
+### Processing Flow
+
+```text
+管理者確認
+  ↓
+停止フラグの確認（SEASON-001 / SEASON-002 / QUEUE-007）
+  ↓
+両チームを ID順に FOR UPDATE で読む（BAN・メンバー数）
+  ↓
+matches INSERT（PLAYING・report_deadline_at）
+  ↓
+audit_logs INSERT（MATCH_PREPARED・actor は管理者）
+  ↓
+Realtime: MATCH_CREATED
+```
+
+**★`report_deadline_at` を必ず設定する。** 無いと `auto-resolve-matches` が対象を判定できない。
+用意した試合も通常の確定フローに従う（ADR-035 ⑤）。
+
+**★`MATCH_PREPARED` と `MATCH_CREATED` を分ける**（ADR-039 ⑦）。同じ action にすると、
+後から「誰が用意した試合か」を数えられない。
+
+**★Realtime は `MATCH_CREATED` を流用する**（ADR-039 ⑨）。受け取る側は試合を再取得するだけであり、
+由来によって扱いを変えない。
+
+### Error Codes
+
+`AUTH-001`、`ADMIN-001`、`VALIDATION-001`、`TEAM-001`、`TEAM-006`、`TEAM-011`、
+`SEASON-001`、`SEASON-002`、`QUEUE-007`、`SYSTEM-001`
+
+---
+
 # 13. Query Interfaces
 
 読み取り専用インターフェース。クライアントはViewを参照し、複雑なJOINや集計を実装しない。
@@ -1644,10 +1765,16 @@ interface RankingItem {
     losses: number;
     matches: number;
     winRate: number | null;   // 試合数0のときnull
+    distinctOpponents: number; // 異なる対戦相手数（ADR-036 ③）
 }
 ```
 
 順位は View 側の `RANK()` により算出される。同率の場合は同順位となる。
+
+**★掲載条件を満たさないチームは `rank` が NULL で返る**（ADR-036 ③）。一覧を取得する側が
+`rank IS NOT NULL` で絞る。View から消していないのは、「自分がなぜ載らないのか」を画面から
+説明できるようにするためである。掲載の抑止であって隠蔽ではない。
+`ranking_min_opponents = 0` のときは全チームに `rank` が付く。
 
 Offsetページングはレート更新のタイミングによって行の重複・欠落が起こりうる。MVPでは許容し、ランキング更新時はページを先頭から再取得する。
 
@@ -1820,19 +1947,49 @@ interface QueueStatus {
 | Realtime | `SYSTEM_SETTINGS_UPDATED` |
 
 ```typescript
+// ★本DTOだけ列名がスネークケースのままである。他のQueryと異なり、変換層を置いていない。
+//   基表 `system_settings` を PostgREST から直接読み、そのまま画面へ渡す。
+//   `admin-update-system-settings` の応答（12.3）も同じ形を返す。
 interface SystemSettings {
-    teamMaxMembers: number;
-    initialRating: number;
-    ratingK: number;
-    matchRatingRange: number;
-    inviteExpirationHours: number;
-    reportTimeoutMinutes: number;
-    approveTimeoutMinutes: number;
-    maxRejectCount: number;
+    team_max_members: number;
+    initial_rating: number;
+    rating_k: number;
+    match_rating_range: number;
+    invite_expiration_hours: number;
+    report_timeout_minutes: number;
+    approve_timeout_minutes: number;
+    max_reject_count: number;      // 廃止（ADR-032 ③）。画面には出さない
+    season_grace_minutes: number;
+    queue_cooldown_minutes: number;
+    report_extension_minutes: number;
+    max_report_extensions: number;
+    no_show_minutes: number;
+    no_show_response_minutes: number;
+    max_no_contest_requests: number;
+    mutual_no_contest_daily_limit: number;
+    avoidance_days: number;
+    max_avoidance_entries: number;
+    maintenance_paused: boolean;
+    rematch_cooldown_hours: number;
+    ranking_min_opponents: number;
+    // 表示設定（Issue #8）とお知らせ（Issue #7）も同じ行から返る。
+    site_title: string;
+    background_image_path: string | null;
+    rules_markdown: string;
+    announcement_text: string;
+    announcement_level: "INFO" | "WARN" | "ALERT";
 }
 ```
 
+**★入力DTO（12.3 `UpdateSystemSettingsRequest`）はキャメルケースである。** 出力と入力で
+表記が異なるのは、入力が Edge Function の対応表を通り、出力が基表の行をそのまま返すためである。
+`admin-update-system-settings` の `SETTINGS` 対応表がこの変換の正本である（ADR-037 ⑥）。
+
 一般利用者もチーム人数上限や期限を画面表示するために参照する。
+`ranking_min_opponents` はランキング画面の掲載条件の案内に用いる（ADR-036 ③）。
+
+**★未認証では参照できない**（`03_Database.md` 15章）。ランキングは未認証でも見えるため、
+本設定を使う案内は認証済みのときだけ出す。
 
 ---
 
@@ -1874,6 +2031,29 @@ interface AuditLogItem {
     createdAt: string;
 }
 ```
+
+---
+
+## 13.12 Integrity Signals（ADR-036 ④）
+
+| 項目       | 内容                                              |
+| -------- | ----------------------------------------------- |
+| Source   | `suspicious_pair_view` / `team_integrity_view`   |
+| Purpose  | 繰り返し当たっている組み合わせと、稼ぎ先の偏りを管理者へ提示する            |
+| Filter   | ペアは確定2件以上（View側）                                |
+| Sort     | ペアは `one_sided_ratio DESC`, `match_count DESC`／チームは `top_opponent_gain_share DESC` |
+| RLS      | 管理者のみ。**View 自身の述語で閉じる**（`03_Database.md` 11.8） |
+| Realtime | 無し。管理者が開いたときに取得する                              |
+
+**★本APIは判定を返さない。材料を返す。** 措置の導線を画面に置かない。BAN とクールダウンは
+通報の画面とチーム管理から行う（ADR-033 ③）。ここに措置を結び付けると、機械の疑いが
+そのまま処分に化ける。
+
+**★Edge Function を経由しない。** PostgREST から直接読む。DB直結では `auth.jwt()` が NULL に
+なるため、Edge Function からは0件しか返らない。
+
+**★集計元は `matches` / `audit_logs` / `rating_history` のみである。** IPアドレスも端末情報も
+収集していない（ADR-036 ⑥）。
 
 ---
 
@@ -2019,7 +2199,7 @@ pg_cron。1分間隔（Migration 0022）。猶予の粒度が分であるため�
 
 猶予が切れていなければ何もせず戻る。切れている場合、1トランザクションで以下を行う。
 
-1. 残った試合を `DRAWN` にする（レートは動かさない）
+1. 残った試合を `DRAWN`（`no_contest_reason = 'SEASON_END'`）にする（レートは動かさない）
 2. `updates_locked = TRUE`
 3. `season_rankings` へ順位・勝敗・BAN状況を退避する
 4. `season_members` へチーム編成を退避する
@@ -2032,6 +2212,17 @@ pg_cron。1分間隔（Migration 0022）。猶予の粒度が分であるため�
 
 **★チームの削除はここで行わない。** `matches.team_a_id` は `ON DELETE RESTRICT` であり、
 戦績が残っている限りチームを消せない（12.8）。
+
+**★①は `no_contest_reason` を必ず設定する**（ADR-038 ①）。設定しないと
+`chk_matches_drawn_reason` に違反し、**シーズンが確定できない。** 実際に Migration 0023 の
+追加時にこの配線が漏れ、猶予切れの時点で進行中の試合が1件でも残っていると本Functionが
+失敗する状態になっていた。既定値（猶予10分・申告期限60分）では普通に踏む。
+
+**★`ADMIN_VOID` を流用しない。** あれは `admin-void-matches` の値であり、理由の入力と
+`MATCH_VOIDED` の監査ログを伴う（ADR-034 ④）。本Functionはどちらも持たない。
+
+**★`SEASON_END` は不戦にも確定率にも計上せず、クールダウンも課さない**（ADR-038 ②）。
+打ち切ったのは運営であり、当事者は対戦の最中でありえた。
 
 ---
 
@@ -2092,6 +2283,14 @@ rating_history → matches → audit_logs → team_members / team_invites → te
 
 **★確定直後に自動で戻さない。** 持ち出しと削除は管理者が任意の時間をかけて行う。
 その間に利用者がレートを動かすと、削除の対象が動いてしまう。
+
+**★`maintenance_paused` に触れてはならない**（ADR-034 ⑤ / ADR-038 ⑤）。保守による停止は
+シーズン運用とは独立しており、本Functionが解除すると、ゲーム側が復旧していないのに
+マッチングが動き出す。**これが両者を別の列にした理由そのものである。**「停止フラグを
+まとめてリセットする」という整理をしてはならない。テストで固定してある。
+
+**★再開しても、保守停止が残っていればマッチングは成立しない。** 画面はこれを
+押す前に伝える（`05_Frontend.md` 14.11）。
 
 ### Error Codes
 

@@ -241,6 +241,11 @@ rating_history
 | WINNER_REPORTED | COMPLETED       | 承認期限切れによる自動承認         | auto-resolve-matches | `auto_approved`、`approved_at`、`completed_at`                              |
 | WINNER_REPORTED | DRAWN           | 反対申告が解けないまま承認期限切れ     | auto-resolve-matches | `winner_team_id`=NULL、`completed_at`、`no_contest_reason`=`CONFLICT`       |
 | PLAYING / WINNER_REPORTED | DRAWN | 管理者による無効化            | 管理者                  | `winner_team_id`=NULL、`completed_at`、`no_contest_reason`=`ADMIN_VOID`     |
+| PLAYING / WINNER_REPORTED | DRAWN | **シーズン終了による打ち切り**     | finalize-season        | `winner_team_id`=NULL、`completed_at`、`no_contest_reason`=`SEASON_END`     |
+
+`PLAYING` へ入る経路は2つある。`runMatchmaking`（自動成立）と `admin-create-match`
+（管理者による用意 / ADR-039 ①）である。**状態も列も同じであり、確定フローも変わらない。**
+由来は `audit_logs` の `MATCH_CREATED` / `MATCH_PREPARED` で区別する。
 
 `COMPLETED` および `DRAWN` は終端状態であり、以後の更新を行わない。**管理者による訂正も行わない**（ADR-033 ①）。
 
@@ -281,9 +286,12 @@ rating_history
 | CONFLICT          | 両チーム                |
 | MUTUAL            | しない（件数は別枠で公開）       |
 | ADMIN_VOID        | しない                 |
+| SEASON_END        | しない                 |
 
 **確定率の意味は「対戦したのに決着しなかった割合」である。** 対戦そのものが成立しなかった試合
-（`MUTUAL` / `ADMIN_VOID`）を混ぜると、回線の相性が悪いだけのチームが不誠実に見える（ADR-034 備考）。
+（`MUTUAL` / `ADMIN_VOID` / `SEASON_END`）を混ぜると、回線の相性が悪いだけのチームが不誠実に
+見える（ADR-034 備考）。`SEASON_END` を計上しないのは、打ち切ったのが運営だからである。
+当事者は対戦の最中でありえた（ADR-038 ②）。
 
 ---
 
@@ -762,8 +770,19 @@ SELECTを自チームに限定するのは、他チームの待機状況を見�
 | CONFLICT       | 反対申告が解けないまま承認期限切れ       | 変えない | 不戦として両チームへ      | 両チーム          |
 | MUTUAL         | 不成立の申請を相手が承諾            | 変えない | **計上しない**       | 無し（1日の上限超は課す） |
 | ADMIN_VOID     | 管理者による無効化               | 変えない | **計上しない**       | 無し            |
+| SEASON_END     | シーズン終了の猶予切れで打ち切り        | 変えない | **計上しない**       | 無し            |
 
 **理由によって帰結が変わるため、状態ではなく列で持つ。** `DRAWN` を一律に扱ってはならない。
+
+**★`SEASON_END` に `ADMIN_VOID` を流用してはならない**（ADR-038 ①）。`ADMIN_VOID` は
+`admin-void-matches` の値であり、理由の入力と `MATCH_VOIDED` の監査ログを伴う（ADR-034 ④）。
+`finalize-season` はどちらも持たない。流用すると「管理者が無効化した」という起きていない事実が
+記録に残り、試合詳細の説明文も嘘になる。
+
+**★`finalize-season` は `no_contest_reason` を必ず設定する。** 設定しないと
+`chk_matches_drawn_reason` に違反し、**シーズンが確定できない。** 実際に Migration 0023 の
+追加時にこの配線が漏れ、猶予切れの時点で進行中の試合が1件でも残っていると同関数が失敗する
+状態になっていた（ADR-038 ①）。既定値（猶予10分・申告期限60分）では普通に踏む。
 
 ### 反対申告（counter_claim）
 
@@ -1028,6 +1047,8 @@ IX_rating_history_completed (completed_at DESC)
 | avoidance_days          | INTEGER     | No   |    | 30      | ペアの再マッチ抑止の期間（日）    |
 | max_avoidance_entries   | INTEGER     | No   |    | 5       | チームあたりの抑止登録数の上限    |
 | maintenance_paused      | BOOLEAN     | No   |    | FALSE   | 保守による一時停止（シーズンとは独立） |
+| rematch_cooldown_hours  | INTEGER     | No   |    | 24      | 同じ相手と再び当たれない長さ（時間）。**0で無効**（ADR-036 ①） |
+| ranking_min_opponents   | INTEGER     | No   |    | 3       | ランキング掲載に要する異なる対戦相手数。**0で無効**（ADR-036 ③） |
 | updated_at              | TIMESTAMPTZ | No   |    | now()   | 更新日時               |
 
 ### Constraints
@@ -1052,6 +1073,8 @@ CHECK: max_no_contest_requests >= 0
 CHECK: mutual_no_contest_daily_limit >= 0
 CHECK: avoidance_days > 0
 CHECK: max_avoidance_entries >= 0
+CHECK: rematch_cooldown_hours >= 0
+CHECK: ranking_min_opponents >= 0
 CHECK: length(btrim(site_title)) BETWEEN 1 AND 60
 CHECK: background_image_path IS NULL OR (相対パスのみ / 絶対URL・`//`・`..` を禁止 / 200文字以内)
 CHECK: length(rules_markdown) <= 20000
@@ -1070,6 +1093,43 @@ CHECK: length(announcement_text) <= 200
 `max_reject_count` は参照しない。列は削除せず残す。適用済みMigrationを編集しないためであり、
 また将来この値を読むコードが復活しないよう、本書と `04_BackendInterface.md` で明示的に廃止と記す。
 
+**管理画面へ出してはならない**（ADR-037 ③）。効かない設定を運営が調整できる状態は、
+設定が足りないのと同じくらい悪い。APIは応答の形を変えないため残すが、入力欄と一覧表示からは外す。
+
+### 設定の編集経路（ADR-037）
+
+| 区分            | 列                                                                | 編集する場所                          |
+| ------------- | ---------------------------------------------------------------- | ------------------------------- |
+| 運営が調整する設定     | 下表の「配線先」を持つ列すべて                                                  | `admin-update-system-settings`  |
+| 廃止した設定        | `max_reject_count`                                               | APIのみ（画面には出さない）                 |
+| シーズン運用の状態     | `matchmaking_paused` / `updates_locked` / `current_season`       | **シーズン運用の Function のみ**         |
+
+**★シーズン運用の3列を `admin-update-system-settings` から編集できるようにしてはならない**（ADR-037 ②）。
+シーズン切替の途中で運営が状態を壊せるうえ、ADR-034 ⑤ が `maintenance_paused` を
+別列にした意味が失われる。
+
+### 設定を追加するときの手順（ADR-037 ⑥）
+
+**Migration だけを足して終わりにしない。** 実際に ADR-032〜034 の10列がその状態のまま放置され、
+設計書に「運営が調整できる」と書かれた値を運営が変更できなかった。
+
+以下の6箇所をすべて更新する。
+
+| # | 場所                                                              | 内容                       |
+| - | --------------------------------------------------------------- | ------------------------ |
+| 1 | `supabase/migrations/`                                          | 列と CHECK制約              |
+| 2 | `admin-update-system-settings` の `SETTINGS` / `BOOLEAN_SETTINGS` 等 | 対応表と範囲（CHECKと一致させる）      |
+| 3 | `types/api.ts` の `UpdateSystemSettingsRequest`                    | 入力DTO                    |
+| 4 | `types/api.ts` の `SystemSettings`                                 | 出力DTO                    |
+| 5 | `AdminSettingsPage` の入力欄                                         | 管理者が変更する導線               |
+| 6 | `SystemSettingsTable`                                            | 現在値の一覧表示                 |
+
+**★2の範囲は1の CHECK制約と一致させる。** 一致していないとDB側で落ち、原因が
+`ADMIN-002` ではなく `SYSTEM-001` になる。
+
+**★真偽値は JSON の真偽値のみを受け付ける。** 文字列の `"true"` を受けない。また
+`false` を「未指定」と取り違えない（判定は `value === undefined`）。取り違えると解除できなくなる。
+
 ### maintenance_paused と matchmaking_paused の別（ADR-034 ⑤）
 
 | 列                    | 立てる契機          | 解除する契機                              | `queue-match` の応答 |
@@ -1079,6 +1139,22 @@ CHECK: length(announcement_text) <= 200
 
 **両者を兼用してはならない。** `admin-resume-season` は `matchmaking_paused` を無条件に `FALSE` へ戻すため、
 保守停止を同じ列で表すと、シーズン再開が保守停止を解除してしまう。
+
+### サブアカウント対策の設定（ADR-036 ①③⑤）
+
+| 列                       | 無効化 | 効く場所                                     |
+| ----------------------- | --- | ---------------------------------------- |
+| `rematch_cooldown_hours` | `0` | `runMatchmaking` の除外集合（`_shared/matchmaking.ts`） |
+| `ranking_min_opponents`  | `0` | `team_ranking_view` の `rank` / `listed`     |
+
+**両者とも `0` が無効を表す。** 検証環境で複数アカウントを扱うときはこの値を 0 にする。
+
+**★環境変数では切らない。** Edge Function の環境変数はテストから切り替えられず、E2E は
+同じ Supabase を共有する。設定値であれば `admin-update-system-settings` から操作でき、
+既存の管理画面と `audit_logs` にそのまま乗る。
+
+**★Seed（17章）の既定値は本番と同じ「有効」のままにする。** 既定値を環境ごとに分けると、
+CI で通ったものが本番では違う挙動になる。差は実行時に付ける（`tests/e2e/global-setup.ts`）。
 
 ### 期限に関する設定の関係（ADR-032 ⑦⑧⑨）
 
@@ -1147,7 +1223,8 @@ CHECK: length(announcement_text) <= 200
 | TEAM_CREATED            | チーム作成         |
 | TEAM_BANNED             | チームBAN        |
 | TEAM_UNBANNED           | BAN解除         |
-| MATCH_CREATED           | マッチ成立         |
+| MATCH_CREATED           | マッチ成立（自動）     |
+| MATCH_PREPARED          | 管理者による対戦カードの作成（ADR-039 ⑦） |
 | MATCH_REPORTED          | 勝利申告          |
 | MATCH_APPROVED          | 承認（手動）        |
 | MATCH_AUTO_APPROVED     | 承認（自動）        |
@@ -1446,31 +1523,26 @@ AND NOT EXISTS (
 | no_contests | 不戦数（当事者に帰責する `DRAWN`） |
 | settle_rate | 確定率（0〜1、対象0件のときNULL） |
 | void_count | 不成立数（`MUTUAL`。確定率とは別枠） |
+| distinct_opponents | 異なる対戦相手数（`COMPLETED` のみ / ADR-036 ③） |
+| listed    | 掲載対象か。`distinct_opponents >= ranking_min_opponents` |
 
 ### 定義
 
+**定義の正本は `supabase/migrations/0024_sub_account_guard.sql` である。**
+本Viewは ADR-032 ⑥（信頼度3列）と ADR-036 ③（掲載条件）で二度作り直しており、
+全文をここへ写すと必ず古くなる。本節は列の意味と設計上の注意を正本とする。
+
+掲載の判定だけを抜き出すと以下になる。
+
 ```sql
-CREATE VIEW team_ranking_view AS
-SELECT
-    t.id   AS team_id,
-    t.name AS team_name,
-    t.rating,
-    RANK() OVER (ORDER BY t.rating DESC)          AS rank,
-    COALESCE(h.wins, 0)                            AS wins,
-    COALESCE(h.losses, 0)                          AS losses,
-    COALESCE(h.wins, 0) + COALESCE(h.losses, 0)    AS matches,
-    COALESCE(h.wins, 0)::NUMERIC
-      / NULLIF(COALESCE(h.wins, 0) + COALESCE(h.losses, 0), 0) AS win_rate
-FROM teams t
-LEFT JOIN (
-    SELECT
-        team_id,
-        COUNT(*) FILTER (WHERE result = 'WIN')  AS wins,
-        COUNT(*) FILTER (WHERE result = 'LOSE') AS losses
-    FROM rating_history
-    GROUP BY team_id
-) h ON h.team_id = t.id
-WHERE t.is_banned = FALSE;
+-- 掲載対象の判定
+COALESCE(o.distinct_opponents, 0)
+  >= (SELECT s.ranking_min_opponents FROM system_settings s WHERE s.id = 1) AS listed
+
+-- 順位は掲載対象だけで数え直す
+CASE WHEN b.listed
+     THEN RANK() OVER (PARTITION BY b.listed ORDER BY b.rating DESC)
+END AS rank
 ```
 
 ### 設計上の注意
@@ -1489,6 +1561,14 @@ WHERE t.is_banned = FALSE;
 * **`abuse_reports` を本Viewへ結合してはならない**（ADR-032 ⑥）。通報は誰でも無償で出せるため、
   件数を公開すると通報を浴びせるだけで他チームの評判を落とせる。
 * 順位は `RANK()` を用いる。同率の場合は同順位とし、次の順位を飛ばす。
+* **掲載しないチームを本Viewから消さない**（ADR-036 ③）。`rank` を NULL にして残し、
+  `distinct_opponents` と `listed` を公開する。消すと「自分がなぜ載らないのか」を
+  画面から説明できない。**掲載の抑止であって隠蔽ではない。**
+* **順位は掲載対象だけで数え直す。** `PARTITION BY listed` により、掲載対象の区画の中だけで
+  1 から並ぶ。除外したチームを含めて数えると順位に穴が空く。
+* `distinct_opponents` は `COMPLETED` のみを数える。`DRAWN` を含めてはならない。含めると、
+  身代わりを立てて不成立にするだけで掲載条件を満たせてしまう。
+* `ranking_min_opponents = 0` のとき、全チームが掲載対象になる（従来と同じ振る舞い）。
 
 ### 並び順
 
@@ -1707,6 +1787,87 @@ LEFT JOIN profiles ap ON ap.id = m.approved_by_profile_id;
 
 ---
 
+## 11.8 suspicious_pair_view
+
+### 概要
+
+繰り返し当たっている組み合わせを管理者へ提示する（ADR-036 ④）。**管理画面専用。**
+
+**本Viewは判定しない。** 措置を自動で結び付けてはならない。ADR-033 ④ が通報の累積を
+管理画面へ出すに留めたのと同じ位置づけである。
+
+### Columns
+
+| Column             | Description                                     |
+| ------------------ | ----------------------------------------------- |
+| team_low_id        | ペアの小さい方のチームID（`LEAST`）                          |
+| team_high_id       | ペアの大きい方のチームID（`GREATEST`）                       |
+| match_count        | 確定した対戦数。**2件以上のペアのみを対象とする**                     |
+| low_wins / high_wins | それぞれの勝利数                                       |
+| concede_count      | 投了で終わった数。`audit_logs` の `MATCH_CONCEDED` から導く    |
+| avg_settle_minutes | 成立から確定までの平均（分）                                  |
+| one_sided_ratio    | 一方向性。0.5 が互角、1.0 は一度も逆向きの結果が出ていない               |
+| never_concurrent   | **同時在席の欠如。** 両チームが同じ時刻に別々の試合へ出たことが一度も無い          |
+| last_completed_at  | 直近の対戦日時                                         |
+
+### 設計上の注意
+
+* **`never_concurrent` が本Viewの中心である。** 人はふたつのチームを同時に操作できない。
+  IPを変えても回線を分けても、この痕跡は消えない（ADR-036 理由）。
+* **`never_concurrent` は疑いであって証拠ではない。** 片方が新参で他の対戦を持たない場合も
+  真になる。少人数のコミュニティでは正当な常連ペアも同じ形になる。
+* 当該ペア同士の試合は重なりの判定から除く。除かないと常に偽になる。
+* 総当たりの比較になるため、`match_count >= 2` へ絞ってから評価する。
+* 集計元は `matches` と `audit_logs` のみである。**IPアドレスも端末情報も収集していない**（ADR-036 ⑥）。
+
+### RLS
+
+`security_invoker` を有効にしたうえで、**View 自身に管理者の述語を書く。**
+
+```sql
+WHERE (auth.jwt() -> 'app_metadata' ->> 'role') = 'admin'
+```
+
+基表 `matches` は認証済みなら誰でも読めるため、`security_invoker` だけでは絞れない。
+出所は検証済みJWTの `app_metadata.role` に限る（`audit_logs` のRLSと同じ / ADR-020）。
+
+**★Edge Function から参照してはならない。** DB直結では `auth.jwt()` が NULL であり0件になる。
+PostgREST 経由の管理画面専用である。
+
+---
+
+## 11.9 team_integrity_view
+
+### 概要
+
+チーム単位で、稼ぎ先の偏りを管理者へ提示する（ADR-036 ④）。**管理画面専用。**
+
+### Columns
+
+| Column                  | Description                          |
+| ----------------------- | ------------------------------------ |
+| team_id                 | チームID                                |
+| settled_matches         | 確定した試合数                              |
+| distinct_opponents      | 異なる対戦相手数                             |
+| gained_total            | 獲得したレートの合計（負けた分は差し引かない）              |
+| top_opponent_id         | 最も稼がせた相手                             |
+| top_opponent_matches    | その相手との対戦数                            |
+| top_opponent_gained     | その相手から得たレート                          |
+| top_opponent_gain_share | 獲得の集中。1.0 に近いほど単一の相手から来ている           |
+
+### 設計上の注意
+
+* 獲得のみを数える。負けた分を差し引くと「稼ぎ先の集中」が見えなくなる。
+* 最も稼がせた相手が同点の場合は、対戦数、次いでIDで決めて結果を一意にする。
+* **集計元 `rating_history` はシーズンの削除（`admin-purge-season-data`）で消える。**
+  本Viewはシーズン内の偏りしか見ない。跨いだ観測が要るなら退避先を先に決めること。
+
+### RLS
+
+11.8 と同じ。`security_invoker` ＋ View 自身の管理者述語である。
+
+---
+
 # 12. 外部キー一覧
 
 | Table          | Column                 | References    | ON DELETE | ON UPDATE |
@@ -1772,7 +1933,7 @@ LEFT JOIN profiles ap ON ap.id = m.approved_by_profile_id;
 
 ## 11.5 public_settings
 
-未認証にも見せる設定のみを返す（Migration 0018・0019・0021）。
+未認証にも見せる設定のみを返す（Migration 0018・0019・0021・0025）。
 
 | 列                     | 用途                |
 | --------------------- | ----------------- |
@@ -1784,12 +1945,20 @@ LEFT JOIN profiles ap ON ap.id = m.approved_by_profile_id;
 | current_season        | 現在のシーズン番号         |
 | matchmaking_paused    | マッチング停止中かどうか      |
 | updates_locked        | 利用者の更新操作を禁止中かどうか  |
+| maintenance_paused    | 保守により停止中かどうか（ADR-038 ③） |
 
 **★`system_settings` を直接公開してはならない。** 同表には未認証へ見せない運用値も含む。
 公開する列を本Viewで明示的に選ぶ。
 
 **★停止状態を公開する理由。** 伝えられないと、利用者はマッチングできないことを
 不具合と区別できない。
+
+**★停止は2種類あり、両方を公開する**（ADR-038 ③）。`matchmaking_paused` だけを見て
+「受付中」と判断してはならない。`maintenance_paused` は別の列であり、シーズンを再開しても
+解除されない（ADR-034 ⑤）。片方だけを見ると、
+　・シーズン画面が「マッチング：受付中」と表示しながら `queue-match` が `QUEUE-007` を返す
+　・マッチング画面が「押してからエラーにしない」という原則を守れない
+という食い違いが残る。実際に両方とも起きていた。
 
 ---
 
@@ -1935,6 +2104,17 @@ system_settings
 | max_avoidance_entries           | 5     |
 | maintenance_paused              | FALSE |
 
+### 追加した設定の初期値（ADR-036）
+
+| 列                       | 初期値 |
+| ----------------------- | --- |
+| rematch_cooldown_hours  | 24  |
+| ranking_min_opponents   | 3   |
+
+**★Seed の既定値を検証環境向けに変えない。** どちらも本番と同じ「有効」で投入する。
+既定値を環境ごとに分けると、CI で通ったものが本番では違う挙動になる。
+検証環境は実行時に 0 へ落とす（`tests/e2e/global-setup.ts` / ADR-036 ⑤）。
+
 `approve_timeout_minutes` の初期値は **60** へ改めた（ADR-032 ⑨。従来は10）。
 
 `report_timeout_minutes` は **60 のまま据え置く**（ADR-032 ⑦）。値を延ばすと妨害の効果時間がそのまま延びる。
@@ -2051,6 +2231,9 @@ DROP INDEX IF EXISTS ux_matches_active_team_b;
 | `system_settings.max_reject_count` | 列を残し、参照しない                        |
 
 **★列を消さない判断は「消せない」からではない。** 過去の記録を保つためである。
+
+**★本節は Migration 0023 時点の記述である。** `no_contest_reason` の許可値はその後
+`SEASON_END` が加わっている（18.12 / ADR-038 ①）。現在の許可値は 10.6 を正本とする。
 一方 `ux_matches_active_*` を消すのは、それが記録ではなく**誤った規則**だからである。両者を混同しないこと。
 
 ### 制約の追加
@@ -2098,6 +2281,67 @@ UPDATE matches
 
 **★`CREATE OR REPLACE VIEW` は列の追加に使えない場合がある**（既存列の型・順序が変わるとき）。
 `DROP VIEW` → `CREATE VIEW` の順で行い、`security_invoker` の設定を再指定する。
+
+---
+
+# 18.11 サブアカウント対策（ADR-036 / Migration 0024）
+
+### 追加する列
+
+| テーブル            | 列                                            |
+| --------------- | -------------------------------------------- |
+| system_settings | `rematch_cooldown_hours`、`ranking_min_opponents` |
+
+**テーブルは追加しない。** ペア再戦の抑止は `matches` から導出する（ADR-036 ①）。
+行を作らないため、期限切れの掃除も要らない。
+
+### 作り直すView
+
+| View                  | 変更                                                |
+| --------------------- | ------------------------------------------------- |
+| team_ranking_view     | `distinct_opponents` と `listed` を追加。`rank` を NULL 許容へ |
+
+**★`CREATE OR REPLACE VIEW` は列の追加に使えない。** `DROP` → `CREATE` で行う（0023 と同じ）。
+
+### 追加するView
+
+| View                  | 用途                     | 定義  |
+| --------------------- | ---------------------- | --- |
+| suspicious_pair_view  | 疑わしいペア（管理画面専用）         | 11.8 |
+| team_integrity_view   | 稼ぎ先の偏り（管理画面専用）         | 11.9 |
+
+### 収集しないもの（ADR-036 ⑥）
+
+**IPアドレス・端末情報・アカウント作成日時・外部プロバイダの属性を、いずれも収集しない。**
+本Migrationはそのための列もテーブルも作らない。検討して採らなかった記録は ADR-036 にある。
+
+同定に依存しないため、VPN や回線の使い分けは①③④のいずれにも効かない。
+
+---
+
+# 18.12 シーズン終了による打ち切り（ADR-038 / Migration 0025）
+
+### 変更する制約
+
+| 対象                             | 変更                                          |
+| ------------------------------ | ------------------------------------------- |
+| `chk_matches_no_contest_reason` | 許可値へ `SEASON_END` を追加する（DROP → ADD で作り直す） |
+
+### 作り直すView
+
+| View              | 変更                                |
+| ----------------- | --------------------------------- |
+| public_settings   | `maintenance_paused` を末尾へ追加（列の追加のみ） |
+
+**`team_ranking_view` は変更しない。** `SEASON_END` は不戦（`no_contests`）にも
+不成立数（`void_count`）にも当たらないため、0024 の集計のまま正しく除外される。
+
+### 既存行を書き換えない
+
+**過去の `DRAWN` を `SEASON_END` へ移し替えない。** 0023 以降 `finalize-season` はそもそも
+成功していない（制約違反で落ちる）。0023 より前に打ち切られた行は 0023 の UPDATE で
+`REPORT_TIMEOUT` が入っており、当時の記録としてそのまま残す。遡って書き換えると、
+確定率の集計が過去に向かって変わる。
 
 ---
 

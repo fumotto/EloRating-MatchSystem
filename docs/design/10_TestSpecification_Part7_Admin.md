@@ -73,8 +73,8 @@ TC-ADMIN-004・TC-ADMIN-005 は重要である。`app_metadata` は service_role
 | TC-ADMIN-022 | 縮小後の新規参加      | 上限縮小後、在籍が上限超過 | accept-team-invite           | `TEAM-004` を返す                  | Integration | `blocks new joins when the team exceeds the new limit`  |
 | TC-ADMIN-023 | 許容レート差の変更     | 400          | admin-update-system-settings | 200 が保存され、マッチングに反映される           | Integration | `updates the matchmaking rating range`                  |
 | TC-ADMIN-024 | 申告期限の変更       | 60分          | admin-update-system-settings | 30 が保存され、以後のマッチに反映される           | Integration | `updates the report timeout`                            |
-| TC-ADMIN-025 | 承認期限の変更       | 10分          | admin-update-system-settings | 5 が保存され、以後の申告に反映される             | Integration | `updates the approval timeout`                          |
-| TC-ADMIN-026 | 拒否上限の変更       | 2回           | admin-update-system-settings | 1 が保存され、以後の拒否に反映される             | Integration | `updates the reject limit`                              |
+| TC-ADMIN-025 | 承認期限の変更       | 60分          | admin-update-system-settings | 5 が保存され、以後の申告に反映される             | Integration | `updates the approval timeout`                          |
+| ~~TC-ADMIN-026~~ | ~~拒否上限の変更~~   | －            | －                            | **廃止**（ADR-032 ③）。拒否そのものが無い           | －           | －                                                       |
 | TC-ADMIN-027 | 招待期限の変更       | 24時間         | admin-update-system-settings | 48 が保存される                       | Integration | `updates the invite expiration`                         |
 | TC-ADMIN-028 | 部分更新          | 一部の項目のみ指定    | admin-update-system-settings | 指定した項目のみ更新される                   | Integration | `updates only the provided fields`                      |
 | TC-ADMIN-029 | K値の下限違反       | K=0          | admin-update-system-settings | `ADMIN-002` を返す                 | Integration | `rejects a K factor below the minimum`                  |
@@ -144,6 +144,26 @@ TC-ADMIN-223 は ADR-033 ① の検証である。**通報から結果への経�
 | TC-ADMIN-247 | 監査ログ              | 無効化後                              | audit_logs取得       | `MATCH_VOIDED` と理由が記録される             | Integration | `records the void with its reason`                  |
 | TC-ADMIN-248 | 非管理者              | 一般利用者                             | admin-void-match   | `AUTH-004` を返す                       | Integration | `rejects a non-admin void`                          |
 
+## 3.3.3 対戦の偏り（ADR-036 ④）
+
+| ID           | 観点                | 前提条件                    | 操作                     | 期待結果                                | 種別       | テスト名                                                        |
+| ------------ | ----------------- | ----------------------- | ---------------------- | ----------------------------------- | -------- | ----------------------------------------------------------- |
+| TC-ADMIN-260 | 非管理者への非公開（ペア）     | 一般利用者                   | suspicious_pair_view   | 0件が返る                               | Database | `hides the suspicious pairs from a non-administrator`       |
+| TC-ADMIN-261 | 非管理者への非公開（チーム）    | 一般利用者                   | team_integrity_view    | 0件が返る                               | Database | `hides the team bias figures from a non-administrator`      |
+| TC-ADMIN-262 | 対象の絞り込み           | 確定1件のペアと2件以上のペアが混在      | suspicious_pair_view   | 2件以上のペアのみが返る                        | Database | `reports only the pairs that met twice or more`             |
+| TC-ADMIN-263 | 一方向性              | 同じチームが全勝しているペア          | suspicious_pair_view   | `one_sided_ratio` が 1.0 になる          | Database | `scores a pair with no reversed result as fully one-sided`  |
+| TC-ADMIN-264 | 同時在席あり            | 一方のチームが他の試合に出ており時間が重なる  | suspicious_pair_view   | `never_concurrent` が FALSE           | Database | `does not flag a pair whose matches overlapped in time`     |
+| TC-ADMIN-265 | **同時在席の欠如**       | 両チームが互いとしか対戦していない       | suspicious_pair_view   | `never_concurrent` が TRUE            | Database | `flags a pair that was never online at the same time`       |
+| TC-ADMIN-266 | 稼ぎ先の特定            | 複数の相手から獲得している           | team_integrity_view    | `top_opponent_id` が最大の稼ぎ先と一致する      | Database | `names the opponent that supplied the most rating`          |
+| TC-ADMIN-267 | 集中の割合             | 複数の相手から獲得している           | team_integrity_view    | `top_opponent_gain_share` が比率と一致する   | Database | `measures how concentrated the rating gain is`              |
+
+**TC-ADMIN-260 / 261 は必須である。** 疑いを全員に晒すと、機構がそのまま公開の告発になる。
+基表 `matches` は認証済みなら誰でも読めるため、`security_invoker` だけでは絞れない。
+View 自身の管理者述語が唯一の遮断である（`03_Database.md` 11.8）。
+
+**TC-ADMIN-265 が本機構の中心である。** 人はふたつのチームを同時に操作できない。
+IPを変えても回線を分けても、この痕跡は消えない。
+
 ## 3.4 監査ログ
 
 | ID           | 観点             | 前提条件      | 操作             | 期待結果                                | 種別          | テスト名                                                |
@@ -167,6 +187,40 @@ TC-ADMIN-223 は ADR-033 ① の検証である。**通報から結果への経�
 | TC-ADMIN-059 | コミット     | 正常終了        | admin-ban-team | すべての更新が反映される     | Integration | `commits the ban and queue removal together`      |
 | TC-ADMIN-060 | ロールバック   | 途中で例外       | admin-ban-team | すべての更新が取り消される    | Integration | `rolls back every write when one step fails`      |
 | TC-ADMIN-061 | 同時更新     | 2つの設定変更が同時実行 | admin-update-system-settings ×2 | 不整合な状態にならない | Integration | `serialises concurrent setting updates`           |
+
+## 3.7 サブアカウント対策の ON/OFF（ADR-036 ⑤）
+
+| ID           | 観点         | 前提条件                          | 操作                           | 期待結果                    | 種別          | テスト名                                        |
+| ------------ | ---------- | ----------------------------- | ---------------------------- | ----------------------- | ----------- | ------------------------------------------- |
+| TC-ADMIN-270 | 抑止の無効化     | `rematchCooldownHours: 0`     | admin-update-system-settings | 受理され、0 が保存される           | Integration | `accepts zero for the rematch cooldown`     |
+| TC-ADMIN-271 | 掲載条件の無効化   | `rankingMinOpponents: 0`      | admin-update-system-settings | 受理され、0 が保存される           | Integration | `accepts zero for the ranking threshold`    |
+| TC-ADMIN-272 | 負値の拒否      | `rematchCooldownHours: -1`    | admin-update-system-settings | `ADMIN-002` を返す          | Integration | `rejects a negative rematch cooldown`       |
+
+**★環境変数でこれを切るテストを書いてはならない**（ADR-036 ⑤）。Edge Function の環境変数は
+テストから切り替えられず、E2E は同じ Supabase を共有する。ON/OFF は設定値のみである。
+
+## 3.8 設定の編集可能範囲（ADR-037）
+
+| ID           | 観点                 | 前提条件                                              | 操作                           | 期待結果                          | 種別          | テスト名                                            |
+| ------------ | ------------------ | ------------------------------------------------- | ---------------------------- | ----------------------------- | ----------- | ----------------------------------------------- |
+| TC-ADMIN-280 | 確定方式の設定の配線         | `queueCooldownMinutes: 45`                        | admin-update-system-settings | 該当列が更新される                     | Integration | `updates the settings added for the report flow` |
+| TC-ADMIN-281 | 保守停止を立てる           | `maintenancePaused: true`                         | admin-update-system-settings | `maintenance_paused` が TRUE になる | Integration | `turns the maintenance pause on`                |
+| TC-ADMIN-282 | **保守停止を解除する**      | `maintenancePaused: false`                        | admin-update-system-settings | `maintenance_paused` が FALSE になる | Integration | `turns the maintenance pause off`               |
+| TC-ADMIN-283 | 真偽値以外の拒否           | `maintenancePaused: "true"`                       | admin-update-system-settings | `ADMIN-002` を返す                | Integration | `rejects a non-boolean maintenance pause`       |
+| TC-ADMIN-284 | **シーズン状態の非編集**     | `matchmakingPaused` / `updatesLocked` / `currentSeason` | admin-update-system-settings | いずれも `ADMIN-002`、UPDATE を発行しない | Integration | `never touches the season state columns`        |
+| TC-ADMIN-285 | **有効な項目への混入**      | `{ ratingK, matchmakingPaused }`                  | admin-update-system-settings | 成功するが `matchmaking_paused` はSQLに現れない | Integration | `ignores a season state column mixed into a valid update` |
+
+**TC-ADMIN-282 が最も落とし穴である。** `false` を「未指定」と取り違えると保守停止を解除できなくなる。
+判定は `value === undefined` で行う。
+
+**TC-ADMIN-285 が実際に起きる形である。** 単独で送った場合（284）だけを検証していると、
+有効な項目へ紛れ込ませる経路を見落とす。
+
+**TC-ADMIN-284 を消してはならない。** シーズン運用の3列を汎用の設定APIから触れると、
+シーズン切替の途中で状態を壊せるうえ、ADR-034 ⑤ が `maintenance_paused` を別列にした意味が失われる。
+
+**★設定を追加したら、その列のテストをここへ足す**（ADR-037 ⑥）。
+実際に ADR-032〜034 の10列は、テストが無いまま配線漏れが放置された。
 
 ---
 
@@ -215,3 +269,9 @@ TC-ADMIN-038〜046（レートリセット）および TC-ADMIN-050 は、`admin
 * すべての管理操作が `audit_logs` へ記録されることを検証する。
 * 監査ログが更新・削除できないことを Database Test で検証する。
 * 管理APIの冪等性を検証する。
+* **設定を追加したら、その列を更新するテストを必ず足す**（ADR-037 ⑥）。
+  実際に ADR-032〜034 の10列は、テストが無いまま配線漏れが放置された。
+* 真偽値の設定は「立てる」「解除する」「真偽値以外を拒否する」の3つを検証する。
+  `false` を未指定と取り違えると解除できなくなる。
+* シーズン運用の列（`matchmaking_paused` / `updates_locked` / `current_season`）が
+  `admin-update-system-settings` から編集できないことを検証する（ADR-037 ②）。
