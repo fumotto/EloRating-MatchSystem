@@ -28,15 +28,24 @@ export interface CompletionResult {
   ratings: TeamRatingResult[];
 }
 
+// 確定の経路ごとの差分。既定は承認（WINNER_REPORTED からの確定）である。
+export interface CompletionOptions {
+  // audit_logs に残す action。既定は MATCH_APPROVED / MATCH_AUTO_APPROVED。
+  action?: string;
+  // 確定を許す遷移元。投了は PLAYING からも確定する（ADR-032 ①）。
+  fromStatuses?: string[];
+}
+
 // 呼び出し側のトランザクション内で実行する。
 // approvedByProfileId が null のときは自動承認（auto_approved = TRUE）として確定する。
 //
-// 楽観ロックに失敗した場合（version 不一致・状態が WINNER_REPORTED でない）は null を返す。
+// 楽観ロックに失敗した場合（version 不一致・状態が対象外）は null を返す。
 // 呼び出し側がエラーコードを決める。承認では MATCH-008、自動解決では単に対象外である。
 export async function completeMatch(
   tx: Transaction,
   target: CompletionTarget,
   approvedByProfileId: string | null,
+  options: CompletionOptions = {},
 ): Promise<CompletionResult | null> {
   // K値は試合の完了時点の設定値を使う（08 7.1）。ハードコードしない。
   const settings = await tx.queryObject<{ rating_k: number }>(
@@ -67,17 +76,36 @@ export async function completeMatch(
   const rating = calculateRating(winnerRating, loserRating, k);
 
   // 状態遷移と楽観ロックを1文に含める。二重確定はここで弾かれる。
+  //
+  // ★投了は PLAYING からも確定するため、遷移元を呼び出し側が指定できるようにしてある
+  //   （ADR-032 ①）。既定は WINNER_REPORTED のみで、従来の承認と同じ挙動である。
+  //
+  // ★winner_team_id を必ず書く。PLAYING からの確定では未設定であり、
+  //   書かないと chk_matches_completed に違反する。
+  const fromStatuses = options.fromStatuses ?? ["WINNER_REPORTED"];
+
   const updated = await tx.queryObject<{ completed_at: Date }>(
     `UPDATE matches
         SET status = 'COMPLETED',
+            winner_team_id = $5,
             completed_at = NOW(),
             approved_at = NOW(),
             approved_by_profile_id = $1,
             auto_approved = $2,
+            no_contest_requested_by_team_id = NULL,
+            no_contest_requested_at = NULL,
+            no_contest_reason_code = NULL,
             version = version + 1
-      WHERE id = $3 AND version = $4 AND status = 'WINNER_REPORTED'
+      WHERE id = $3 AND version = $4 AND status = ANY($6)
   RETURNING completed_at`,
-    [approvedByProfileId, approvedByProfileId === null, target.matchId, target.version],
+    [
+      approvedByProfileId,
+      approvedByProfileId === null,
+      target.matchId,
+      target.version,
+      target.winnerTeamId,
+      fromStatuses,
+    ],
   );
 
   if (updated.rows.length === 0) {
@@ -131,7 +159,8 @@ export async function completeMatch(
      VALUES ($1, $2, 'MATCH', $3, $4)`,
     [
       approvedByProfileId,
-      approvedByProfileId === null ? "MATCH_AUTO_APPROVED" : "MATCH_APPROVED",
+      options.action ??
+        (approvedByProfileId === null ? "MATCH_AUTO_APPROVED" : "MATCH_APPROVED"),
       target.matchId,
       JSON.stringify({ winnerTeamId: target.winnerTeamId, kValue: k }),
     ],

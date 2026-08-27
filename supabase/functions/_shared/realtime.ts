@@ -14,7 +14,11 @@ export type RealtimeChannel = "match" | "ranking" | "team" | "system";
 export type RealtimeEvent =
   | "MATCH_CREATED"
   | "WINNER_REPORTED"
-  | "MATCH_REJECTED"
+  // ★"MATCH_REJECTED" は廃止した（ADR-032 ②）。イベント名を再利用しない。
+  | "MATCH_COUNTER_CLAIMED"
+  | "MATCH_EXTENDED"
+  | "MATCH_NO_CONTEST_REQUESTED"
+  | "MATCH_NO_CONTEST_DECLINED"
   | "MATCH_COMPLETED"
   | "MATCH_DRAWN"
   | "RANKING_UPDATED"

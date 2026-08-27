@@ -33,6 +33,16 @@ export async function handler(req: Request): Promise<Response> {
       await assertUpdatesAllowed(tx);
       await assertMatchmakingAllowed(tx);
 
+      // ★保守による停止（ADR-034 ⑤）。シーズン運用の停止（SEASON-002）とは別の列である。
+      //   `admin-resume-season` が `matchmaking_paused` を無条件に FALSE へ戻すため、
+      //   兼用するとシーズン再開が保守停止を解除してしまう。
+      const maintenance = await tx.queryObject<{ maintenance_paused: boolean }>(
+        `SELECT maintenance_paused FROM system_settings LIMIT 1`,
+      );
+      if (maintenance.rows[0]?.maintenance_paused) {
+        throw businessError("QUEUE-007", "Matchmaking is under maintenance.", 409);
+      }
+
       const membership = await tx.queryObject<{ role: string }>(
         `SELECT role FROM team_members WHERE profile_id = $1 AND team_id = $2`,
         [claims.sub, teamId],
@@ -54,7 +64,12 @@ export async function handler(req: Request): Promise<Response> {
         throw businessError("TEAM-006", "Team is banned.", 409);
       }
 
-      // 進行中の試合がある間は待機できない（QUEUE-002）。1チーム同時1試合である。
+      // 進行中の試合がある間は待機できない（QUEUE-002 / ADR-035 ①）。
+      //
+      // ★規則は「1チーム同時1試合」ではなく「進行中の試合を持つチームは待機列に
+      //   登録できない」である。**DBに制約は無い。** 本判定と runMatchmaking の
+      //   除外条件が唯一の保証である。試合を生成する経路を追加する場合は、
+      //   同じ2つの判定を必ず自前で行うこと。
       const activeMatch = await tx.queryObject<{ id: string }>(
         `SELECT id FROM matches
          WHERE (team_a_id = $1 OR team_b_id = $1) AND status NOT IN ('COMPLETED', 'DRAWN')`,
@@ -63,6 +78,19 @@ export async function handler(req: Request): Promise<Response> {
 
       if (activeMatch.rows.length > 0) {
         throw businessError("QUEUE-002", "Match in progress.", 409);
+      }
+
+      // ★クールダウン中は待機できない（ADR-032 ④）。
+      //   誤魔化す経路の代償はレートではなく時間で払わせる。
+      //   投了と承認による確定にはクールダウンが無い。最短の道は正直な確定である。
+      const cooldown = await tx.queryObject<{ until: Date }>(
+        `SELECT queue_cooldown_until AS until FROM teams
+          WHERE id = $1 AND queue_cooldown_until > NOW()`,
+        [teamId],
+      );
+
+      if (cooldown.rows.length > 0) {
+        throw businessError("QUEUE-006", "Team is on cooldown.", 409);
       }
 
       const alreadyQueued = await tx.queryObject<{ team_id: string }>(

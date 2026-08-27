@@ -24,16 +24,25 @@ const queuedAtMs = (team: QueuedTeam): number => new Date(team.queued_at).getTim
 // 優先順位（6.2）: 第1 レート差が最小 → 第2 待機開始が最早 → 第3 Team ID 昇順。
 // ★レート差が第1である。待機時間で先に並べ替えてはならない。
 // 許容範囲外（6.3）の候補は選ばない。境界値（差＝許容値）は含む。
+// ペアの正規化キー。(A,B) と (B,A) を同一に扱う（03_Database.md 10.11）。
+export function avoidanceKey(a: string, b: string): string {
+  return a < b ? `${a}|${b}` : `${b}|${a}`;
+}
+
 export function selectOpponent(
   team: QueuedTeam,
   candidates: QueuedTeam[],
   ratingRange: number,
+  avoided: ReadonlySet<string> = new Set(),
 ): QueuedTeam | null {
   let best: QueuedTeam | null = null;
   let bestDiff = Number.POSITIVE_INFINITY;
 
   for (const candidate of candidates) {
     if (candidate.team_id === team.team_id) continue;
+
+    // 抑止中のペアは選ばない（ADR-034 ③）。相手が見つからないのはエラーではない。
+    if (avoided.has(avoidanceKey(team.team_id, candidate.team_id))) continue;
 
     const diff = Math.abs(team.rating - candidate.rating);
     if (diff > ratingRange) continue;
@@ -59,7 +68,11 @@ export function selectOpponent(
 // 待機列から成立する組を貪欲に決める。
 // 起点は待機の長いチームから選ぶ（第2優先の「長く待っているチームを優先」）。
 // 起点ごとの相手選びは selectOpponent がレート差優先で行う。
-export function pairTeams(queue: QueuedTeam[], ratingRange: number): [QueuedTeam, QueuedTeam][] {
+export function pairTeams(
+  queue: QueuedTeam[],
+  ratingRange: number,
+  avoided: ReadonlySet<string> = new Set(),
+): [QueuedTeam, QueuedTeam][] {
   const remaining = [...queue].sort((a, b) => {
     const wait = queuedAtMs(a) - queuedAtMs(b);
     return wait !== 0 ? wait : a.team_id < b.team_id ? -1 : 1;
@@ -69,7 +82,7 @@ export function pairTeams(queue: QueuedTeam[], ratingRange: number): [QueuedTeam
 
   while (remaining.length > 1) {
     const team = remaining.shift()!;
-    const opponent = selectOpponent(team, remaining, ratingRange);
+    const opponent = selectOpponent(team, remaining, ratingRange, avoided);
     // 相手が見つからないのはエラーではない。待機を継続させる（12章）。
     if (!opponent) continue;
     remaining.splice(remaining.indexOf(opponent), 1);
@@ -101,8 +114,9 @@ export async function runMatchmaking(tx: Transaction): Promise<MatchmakingResult
     match_rating_range: number;
     report_timeout_minutes: number;
     matchmaking_paused: boolean;
+    maintenance_paused: boolean;
   }>(
-    `SELECT match_rating_range, report_timeout_minutes, matchmaking_paused
+    `SELECT match_rating_range, report_timeout_minutes, matchmaking_paused, maintenance_paused
        FROM system_settings LIMIT 1`,
   );
 
@@ -110,12 +124,18 @@ export async function runMatchmaking(tx: Transaction): Promise<MatchmakingResult
     throw new Error("system settings not found");
   }
 
-  const { match_rating_range, report_timeout_minutes, matchmaking_paused } = settings.rows[0];
+  const { match_rating_range, report_timeout_minutes, matchmaking_paused, maintenance_paused } =
+    settings.rows[0];
 
   // ★シーズン終了の猶予中は新しい試合を組まない。組んでしまうと、
   //   進行中の試合が尽きるのを待つ猶予がいつまでも終わらない（Issue #9）。
   //   本関数は cron から呼ばれるため、queue-match の関門だけでは塞げない。
   if (matchmaking_paused) {
+    return { matches: [] };
+  }
+
+  // ★保守による停止（ADR-034 ⑤）。queue-match の関門だけでは cron 経由を塞げない。
+  if (maintenance_paused) {
     return { matches: [] };
   }
 
@@ -131,13 +151,27 @@ export async function runMatchmaking(tx: Transaction): Promise<MatchmakingResult
            WHERE (m.team_a_id = q.team_id OR m.team_b_id = q.team_id)
              AND m.status NOT IN ('COMPLETED', 'DRAWN')
         )
+        -- ★クールダウン中のチームは組まない（ADR-032 ④）。
+        --   queue-match が入り口で弾くが、クールダウンは登録後にも課されうる
+        --   （通報への措置）。入り口の判定だけでは塞げない。
+        AND (t.queue_cooldown_until IS NULL OR t.queue_cooldown_until <= NOW())
       ORDER BY q.queued_at, q.team_id
         FOR UPDATE OF q SKIP LOCKED`,
   );
 
+  // ★ペアの再マッチ抑止（ADR-034 ③）。単独チームの条件では表現できないため、
+  //   候補の選択に渡して除外する。回線相性は再現するため、抑止が無ければ
+  //   同じペアが再びマッチして不成立を繰り返す。
+  const avoidance = await tx.queryObject<{ team_low_id: string; team_high_id: string }>(
+    `SELECT team_low_id, team_high_id FROM match_avoidance WHERE expires_at > NOW()`,
+  );
+  const avoided = new Set(
+    avoidance.rows.map((a) => `${a.team_low_id}|${a.team_high_id}`),
+  );
+
   const matches: CreatedMatch[] = [];
 
-  for (const [teamA, teamB] of pairTeams(queued.rows, match_rating_range)) {
+  for (const [teamA, teamB] of pairTeams(queued.rows, match_rating_range, avoided)) {
     // report_deadline_at は必ず設定する。無いと auto-resolve-matches が対象を判定できない（14章）。
     const inserted = await tx.queryObject<{ id: string }>(
       `INSERT INTO matches (team_a_id, team_b_id, status, report_deadline_at)
