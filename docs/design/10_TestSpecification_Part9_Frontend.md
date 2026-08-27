@@ -86,10 +86,10 @@ TC-UI-006 と TC-UI-010 は、それぞれ ADR-018 と GitHub Pages のSPA配信
 | TC-UI-032 | 申告ボタンの制御        | 敗者チーム             | 画面表示  | 申告ボタンが表示されない            | Frontend | `hides the report action from the losing side`        |
 | TC-UI-033 | **承認期限の表示**     | `WINNER_REPORTED` | 画面確認  | 承認期限までの残り時間が表示される       | Frontend | `shows the remaining time until the approval deadline` |
 | TC-UI-034 | 承認              | `WINNER_REPORTED`・敗者チーム | 送信    | 試合完了が表示される              | Frontend | `submits the approval`                                |
-| TC-UI-035 | **拒否**          | `WINNER_REPORTED`・敗者チーム | 送信    | 進行中へ戻ったことが表示される         | Frontend | `submits the rejection`                               |
-| TC-UI-036 | **拒否の残り回数**     | `WINNER_REPORTED` | 画面確認  | 残り拒否回数が表示される            | Frontend | `shows the remaining reject count`                    |
-| TC-UI-037 | 拒否の確認           | 拒否ボタン押下           | 操作    | 確認ダイアログが表示される           | Frontend | `asks for confirmation before rejecting`              |
-| TC-UI-038 | **DRAWNの表示**    | `DRAWN`           | 画面表示  | 引き分け解散した旨が表示される         | Frontend | `renders a drawn match`                               |
+| TC-UI-035 | **投了**          | `PLAYING`・敗者チーム       | 送信    | 確定が表示される                | Frontend | `submits the concession`                              |
+| TC-UI-036 | **残り延長回数**      | `PLAYING`         | 画面確認  | 残り延長回数が表示される            | Frontend | `shows the remaining extensions`                      |
+| TC-UI-037 | **投了の確認**       | 投了ボタン押下           | 操作    | 確認ダイアログが表示され、APIは呼ばれない   | Frontend | `asks for confirmation before conceding`              |
+| TC-UI-038 | **DRAWNの理由別表示** | `DRAWN`（5種）       | 画面表示  | 理由ごとに異なる説明が表示される        | Frontend | `renders a distinct explanation per no-contest reason` |
 | TC-UI-039 | 自動承認の表示         | `auto_approved` が true | 画面表示  | 自動承認により確定した旨が表示される      | Frontend | `indicates that the match was auto-approved`          |
 | TC-UI-040 | **versionの送信**  | 更新操作              | 送信    | Match Detail の `version` が送信される | Frontend | `sends the version with mutating requests`            |
 | TC-UI-041 | **競合時の再取得**     | `MATCH-008` を受信   | 応答受信  | 詳細を再取得し、自動再送しない         | Frontend | `refetches instead of retrying on a version conflict` |
@@ -177,6 +177,39 @@ TC-UI-006 と TC-UI-010 は、それぞれ ADR-018 と GitHub Pages のSPA配信
 | TC-UI-115  | 非https           | `http://`  | 画面確認 | 画像を読み込まない                | Frontend | `refuses a non-https url`                         |
 
 ---
+
+## 2.1 勝敗確定と通報の画面（ADR-032 / ADR-033 / ADR-034）
+
+| ID         | 観点                       | 操作                             | 期待結果                                | 種別   | テスト名                                                    |
+| ---------- | ------------------------ | ------------------------------ | ----------------------------------- | ---- | ------------------------------------------------------- |
+| TC-UI-201  | **投了の二段階確認**             | 投了ボタンを押す                       | 確認ダイアログが開く。**この時点でAPIを呼ばない**       | Unit | `does not call the API until the concession is confirmed` |
+| TC-UI-202  | **相手チーム名の明示**            | 確認ダイアログを開く                     | 相手チーム名が本文に含まれる                      | Unit | `names the opponent in the concession dialog`           |
+| TC-UI-203  | **取り消せない旨の表示**           | 確認ダイアログを開く                     | 「取り消せません」の文言がある                     | Unit | `warns that a concession cannot be undone`              |
+| TC-UI-204  | **確認の省略が無い**             | ダイアログを検査                       | 「次回から表示しない」に相当する要素が存在しない            | Unit | `offers no way to skip the confirmation`                |
+| TC-UI-205  | キャンセル                    | ［やめる］を押す                       | APIが呼ばれない                           | Unit | `aborts the concession on cancel`                       |
+| TC-UI-206  | 投了と承認の出し分け               | `WINNER_REPORTED`（相手が申告）で表示    | 承認と反対申告が出て、投了ボタンは重複しない              | Unit | `shows approve and counter-claim, not a duplicate concede` |
+| TC-UI-207  | 自チーム申告時の表示               | `WINNER_REPORTED`（自チームが申告）     | 操作ボタンを出さず、取り消せない旨のみ表示               | Unit | `offers no actions to the reporting team`               |
+| TC-UI-208  | **競合中の表示**               | `counter_claim_team_id` あり     | 「自動承認されない」旨と投了での決着が示される             | Unit | `explains that a contested match will not auto-approve` |
+| TC-UI-209  | **DRAWN の理由別表示**         | 5種の `no_contest_reason`        | それぞれ異なる説明が出る（一律の「引き分け」にしない）         | Unit | `renders a distinct explanation per no-contest reason`  |
+| TC-UI-210  | **MUTUAL は不利益なしと表示**     | `MUTUAL`                       | 記録に影響しない旨が示される                      | Unit | `states that a mutual no-contest has no penalty`        |
+| TC-UI-211  | **自動承認の明示**              | `auto_approved = true`         | 自動承認である旨が表示される                      | Unit | `marks an auto-approved match as such`                  |
+| TC-UI-212  | クールダウンの表示                | `QUEUE-006`                    | 残り時間が出る。「ペナルティ」の語を使わない              | Unit | `shows the remaining cooldown without punitive wording` |
+| TC-UI-213  | 最短の道の併記                  | クールダウン表示時                      | 投了・承認にクールダウンが無い旨が併記される              | Unit | `points out that settling honestly has no cooldown`     |
+| TC-UI-214  | 延長の残り回数                  | `PLAYING`                      | 残り延長回数が表示される                        | Unit | `shows the remaining extensions`                        |
+| TC-UI-215  | 通報フォームの必須                | 自由記述が空                         | 送信できない                              | Unit | `requires a detail in the report form`                  |
+| TC-UI-216  | 残り文字数                    | 自由記述に入力                        | 残り文字数が更新される                         | Unit | `shows the remaining character count`                   |
+| TC-UI-217  | **証拠なしで送信できる**           | 証拠URLを空で送信                     | 送信できる                               | Unit | `submits a report without evidence`                     |
+| TC-UI-218  | **証拠は任意である旨の表示**         | フォームを開く                        | 「証拠が無くても通報できます」が表示される               | Unit | `tells the user that evidence is optional`              |
+| TC-UI-219  | **送信後の文言**               | 送信完了                           | 「調査します」「対応します」を含まない                 | Unit | `does not promise an investigation after submitting`    |
+| TC-UI-220  | **証拠URLを自動リンクしない**       | 通報詳細を表示                        | `<a href>` にならず、明示の操作で開く            | Unit | `renders evidence urls as text, not as links`           |
+| TC-UI-221  | **管理画面は m を先に表示**        | 累積を表示                          | 通報元チーム数が通報件数より先に現れる                 | Unit | `shows the reporter team count before the report count` |
+| TC-UI-222  | **訂正の導線が無い**             | 管理画面の通報詳細                      | 結果を訂正する操作が存在しない                     | Unit | `offers no way to correct a settled result`             |
+
+TC-UI-201 と TC-UI-204 は必須である。**投了の押し間違えは覆せない**（ADR-033 ①）。確認だけが防御であり、
+それを省略可能にすると防御が消える。
+
+TC-UI-219 と TC-UI-222 は期待の管理である。単発の通報では措置せず（ADR-033 ④）、結果は覆らない（同 ①）。
+**画面が実在しない救済を示唆してはならない。**
 
 # 3. 作成してはならないテスト
 

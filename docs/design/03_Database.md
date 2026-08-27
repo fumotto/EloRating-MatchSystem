@@ -185,8 +185,10 @@ NULLは必要最小限のみ許可し、許可する場合は理由を列定義�
 | rating_history  | Transaction | レート履歴       |
 | system_settings | Master      | システム設定      |
 | audit_logs      | Audit       | 監査ログ        |
+| abuse_reports   | Transaction | 通報          |
+| match_avoidance | Work        | ペアの再マッチ抑止   |
 
-上記9テーブルがMVP対象である。
+シーズン関連のテーブル（`seasons` / `season_rankings` / `season_members` / `season_exports`）は 18.9 に定義する。
 
 ---
 
@@ -222,23 +224,41 @@ rating_history
 
 ## 7.1 Match
 
-本表を試合状態の唯一の正本とする（ADR-008、ADR-014）。
+本表を試合状態の唯一の正本とする（ADR-008、ADR-014、ADR-032、ADR-034）。
 
-| 遷移元             | 遷移先             | 契機                   | 実行主体              | 更新される列                                                              |
-| --------------- | --------------- | -------------------- | ----------------- | ------------------------------------------------------------------- |
-| （新規）            | PLAYING         | マッチ成立                | matchmaker        | `started_at`、`report_deadline_at`                                   |
-| PLAYING         | WINNER_REPORTED | 勝利申告                 | 勝者チームのメンバー        | `winner_team_id`、`reported_by_profile_id`、`reported_at`、`approve_deadline_at` |
-| PLAYING         | DRAWN           | 報告期限切れ               | auto-resolve-matches | `completed_at`                                                      |
-| WINNER_REPORTED | COMPLETED       | 承認                   | 敗者チームのメンバー        | `approved_by_profile_id`、`approved_at`、`completed_at`               |
-| WINNER_REPORTED | COMPLETED       | 承認期限切れによる自動承認        | auto-resolve-matches | `auto_approved`、`approved_at`、`completed_at`                        |
-| WINNER_REPORTED | PLAYING         | 拒否（`reject_count` が上限未満） | 敗者チームのメンバー        | `winner_team_id`=NULL、`reported_by_profile_id`=NULL、`reported_at`=NULL、`approve_deadline_at`=NULL、`reject_count`+1、`report_deadline_at` 再設定 |
-| WINNER_REPORTED | DRAWN           | 拒否（`reject_count` が上限到達） | 敗者チームのメンバー        | `reject_count`+1、`completed_at`                                     |
+| 遷移元             | 遷移先             | 契機                    | 実行主体                 | 更新される列                                                                    |
+| --------------- | --------------- | --------------------- | -------------------- | ------------------------------------------------------------------------- |
+| （新規）            | PLAYING         | マッチ成立                 | matchmaker           | `started_at`、`report_deadline_at`                                         |
+| PLAYING         | PLAYING         | 報告期限の延長               | いずれかのチームのメンバー        | `report_deadline_at`、`report_extension_count`+1                           |
+| PLAYING         | PLAYING         | 不成立の申請／その解決（承諾以外）     | いずれかのチームのメンバー        | `no_contest_requested_*`、`no_contest_request_count`                       |
+| PLAYING         | COMPLETED       | **投了（基本の経路）**         | 敗者チームのメンバー           | `winner_team_id`、`approved_at`、`completed_at`                             |
+| PLAYING         | WINNER_REPORTED | 勝利申告（代替の経路）           | 勝者チームのメンバー           | `winner_team_id`、`reported_by_profile_id`、`reported_at`、`approve_deadline_at` |
+| PLAYING         | DRAWN           | 報告期限切れ                | auto-resolve-matches | `completed_at`、`no_contest_reason`=`REPORT_TIMEOUT`                       |
+| PLAYING         | DRAWN           | 不成立の申請へ相手が無応答          | auto-resolve-matches | `completed_at`、`no_contest_reason`=`NO_SHOW`                              |
+| PLAYING         | DRAWN           | 不成立の申請を相手が承諾           | 相手チームのメンバー           | `completed_at`、`no_contest_reason`=`MUTUAL`                               |
+| WINNER_REPORTED | WINNER_REPORTED | 反対申告                  | 相手チームのメンバー           | `counter_claim_team_id`、`counter_claimed_at`                              |
+| WINNER_REPORTED | COMPLETED       | 承認／投了                 | 敗者チームのメンバー           | `approved_by_profile_id`、`approved_at`、`completed_at`                     |
+| WINNER_REPORTED | COMPLETED       | 承認期限切れによる自動承認         | auto-resolve-matches | `auto_approved`、`approved_at`、`completed_at`                              |
+| WINNER_REPORTED | DRAWN           | 反対申告が解けないまま承認期限切れ     | auto-resolve-matches | `winner_team_id`=NULL、`completed_at`、`no_contest_reason`=`CONFLICT`       |
+| PLAYING / WINNER_REPORTED | DRAWN | 管理者による無効化            | 管理者                  | `winner_team_id`=NULL、`completed_at`、`no_contest_reason`=`ADMIN_VOID`     |
 
-`COMPLETED` および `DRAWN` は終端状態であり、以後の更新を行わない。
+`COMPLETED` および `DRAWN` は終端状態であり、以後の更新を行わない。**管理者による訂正も行わない**（ADR-033 ①）。
 
 上表にない遷移はすべて禁止する。逆遷移も禁止する。
 
 `MATCHED` および `IN_PROGRESS` は使用しない。
+
+### 廃止した遷移（ADR-032 ③）
+
+`WINNER_REPORTED → PLAYING`（拒否）および `WINNER_REPORTED → DRAWN`（拒否上限）は**廃止した**。
+敗者が単独で `DRAWN` へ到達できる経路であり、レート変動なし・記録なしで試合を消せたためである。
+反論の手段は反対申告に置き換わった（ADR-032 ⑩）。
+
+### 自動承認を止める条件
+
+`counter_claim_team_id IS NOT NULL` の間、`auto-resolve-matches` は自動承認を行わない。
+矛盾する2つの主張のどちらかを機械的に選ぶ根拠が無いためである。この試合は承認期限の経過により
+`DRAWN`（`CONFLICT`）へ落ちる。
 
 ---
 
@@ -249,7 +269,21 @@ rating_history
 | COMPLETED | あり    | 2件作成           |
 | DRAWN     | なし    | 作成しない          |
 
-`DRAWN` は `rating_history` を作成しないため、`team_ranking_view` の戦績に計上されない。
+`DRAWN` は `rating_history` を作成しないため、`team_ranking_view` の**勝敗数と勝率**には計上されない。
+
+一方、**確定率と不戦数は `matches` から集計する**（ADR-032 ⑥）。`rating_history` には `DRAWN` の行が
+存在しないため、既存の集計元では不戦を数えられない。計上の可否は `no_contest_reason` により異なる（10.6）。
+
+| no_contest_reason | 確定率の分母へ計上           |
+| ----------------- | ------------------- |
+| REPORT_TIMEOUT    | 両チーム                |
+| NO_SHOW           | 無応答側のみ              |
+| CONFLICT          | 両チーム                |
+| MUTUAL            | しない（件数は別枠で公開）       |
+| ADMIN_VOID        | しない                 |
+
+**確定率の意味は「対戦したのに決着しなかった割合」である。** 対戦そのものが成立しなかった試合
+（`MUTUAL` / `ADMIN_VOID`）を混ぜると、回線の相性が悪いだけのチームが不誠実に見える（ADR-034 備考）。
 
 ---
 
@@ -265,7 +299,10 @@ rating_history
 
 `teams.status` は存在しない。導出可能な状態を列として保持してはならない（二重管理による不整合を防ぐため）。
 
-「1チームは同時に1試合まで」の制約は、後述の部分UNIQUEインデックスによりDB側で保証する。
+同時参加の規則は「1チーム同時1試合」ではなく、**「進行中の試合を持つチームは、マッチング待機列に登録できない」**である
+（ADR-035）。**保証はアプリケーション層のみで行い、DBに制約を置かない。** 詳細は 10.6「同時参加の制約」を参照。
+
+クールダウン中かどうかも状態列を持たない。`teams.queue_cooldown_until > NOW()` により導出する。
 
 ---
 
@@ -430,6 +467,7 @@ UPDATEできる（19章）ため、`ensure-profile` を通らない経路があ�
 | name       | TEXT        | No   |    |                   | チーム名        |
 | rating     | INTEGER     | No   |    | 1500              | 現在レート       |
 | is_banned  | BOOLEAN     | No   |    | FALSE             | BAN状態       |
+| queue_cooldown_until | TIMESTAMPTZ | Yes |  |                | 待機列へ入れない期限（無ければNULL） |
 | created_at | TIMESTAMPTZ | No   |    | now()             | 作成日時        |
 | updated_at | TIMESTAMPTZ | No   |    | now()             | 更新日時        |
 
@@ -445,6 +483,10 @@ CHECK: length(name) BETWEEN 1 AND 30
 ```
 
 レート下限は `08_RatingSpecification.md` のクランプ規則と一致させる（下限100）。
+
+`queue_cooldown_until` は ADR-032 ④ のクールダウンである。**レートではなく時間で代償を払わせる**ための列であり、
+`queue-match` はこの値が未来である間 `QUEUE-006` を返す。過去日時とNULLは同義に扱う（判定は `> NOW()` のみ）。
+クールダウンは自動マッチングの入り口にのみ効く。管理者が用意する試合には影響しない（ADR-035 ⑤）。
 
 ### Indexes
 
@@ -473,7 +515,9 @@ IX_teams_is_banned (is_banned) WHERE is_banned = TRUE
 
 * チーム削除は行わない。
 * BAN時は `is_banned` を更新する。
-* レート更新は `approve-match` および自動承認処理のみが実施する。
+* レート更新は試合の確定処理のみが実施する（`concede-match` / `approve-match` / 自動承認）。
+* `queue_cooldown_until` を設定するのは、承認期限切れの自動承認・報告期限切れの解散・解散への無応答・
+  1日の上限を超えた合意不成立・反対申告の不調・通報への措置である（ADR-032 ④ / ADR-033 ③）。
 * チーム名変更はMVP対象外とする。
 
 ---
@@ -687,7 +731,15 @@ SELECTを自チームに限定するのは、他チームの待機状況を見�
 | approved_by_profile_id | UUID        | Yes  |    |                   | 承認者（承認前・自動承認時はNULL）             |
 | approved_at            | TIMESTAMPTZ | Yes  |    |                   | 承認日時（承認前はNULL）                  |
 | auto_approved          | BOOLEAN     | No   |    | FALSE             | 自動承認により確定したか                    |
-| reject_count           | INTEGER     | No   |    | 0                 | 拒否された回数                         |
+| reject_count           | INTEGER     | No   |    | 0                 | **廃止**。更新しない（ADR-032 ③）          |
+| no_contest_reason      | TEXT        | Yes  |    |                   | `DRAWN` の理由（DRAWN以外はNULL）        |
+| counter_claim_team_id  | UUID        | Yes  |    |                   | 反対申告したチーム（ADR-032 ⑩）            |
+| counter_claimed_at     | TIMESTAMPTZ | Yes  |    |                   | 反対申告日時                           |
+| report_extension_count | INTEGER     | No   |    | 0                 | 報告期限を延長した回数（ADR-032 ⑦）          |
+| no_contest_requested_by_team_id | UUID | Yes |  |                   | 不成立を申請したチーム（保留中のみ）              |
+| no_contest_requested_at | TIMESTAMPTZ | Yes |  |                   | 不成立の申請日時（保留中のみ）                 |
+| no_contest_reason_code | TEXT        | Yes  |    |                   | 不成立の申請理由（保留中のみ）                 |
+| no_contest_request_count | INTEGER   | No   |    | 0                 | 不成立を申請した回数（ADR-032 ⑧）           |
 | report_deadline_at     | TIMESTAMPTZ | No   |    |                   | 勝利申告の期限                         |
 | approve_deadline_at    | TIMESTAMPTZ | Yes  |    |                   | 承認の期限（申告前はNULL）                 |
 | version                | INTEGER     | No   |    | 1                 | 楽観ロック                           |
@@ -696,6 +748,43 @@ SELECTを自チームに限定するのは、他チームの待機状況を見�
 | created_at             | TIMESTAMPTZ | No   |    | now()             | 作成日時                            |
 
 試合完了日時は `completed_at` とする（ADR-002）。`finished_at` は使用しない。
+
+`reject_count` は **ADR-032 ③ により廃止した**。列は削除せず更新を停止する。過去の拒否記録を失わないためである。
+
+### DRAWN の理由（no_contest_reason）
+
+状態は4種類のまま増やさない（ADR-008）。`DRAWN` の内訳は本列で区別する（ADR-034 ①）。
+
+| 値              | 到達経路                    | レート  | 確定率への計上         | クールダウン        |
+| -------------- | ----------------------- | ---- | --------------- | ------------- |
+| REPORT_TIMEOUT | 報告期限まで双方が申告しない          | 変えない | 不戦として両チームへ      | 両チーム          |
+| NO_SHOW        | 不成立の申請に相手が無応答           | 変えない | 不戦として**無応答側のみ** | 無応答側のみ        |
+| CONFLICT       | 反対申告が解けないまま承認期限切れ       | 変えない | 不戦として両チームへ      | 両チーム          |
+| MUTUAL         | 不成立の申請を相手が承諾            | 変えない | **計上しない**       | 無し（1日の上限超は課す） |
+| ADMIN_VOID     | 管理者による無効化               | 変えない | **計上しない**       | 無し            |
+
+**理由によって帰結が変わるため、状態ではなく列で持つ。** `DRAWN` を一律に扱ってはならない。
+
+### 反対申告（counter_claim）
+
+`WINNER_REPORTED` の試合に対し、相手チームが自チームの勝利を申告した状態を表す（ADR-032 ⑩）。
+
+* 競合中は**自動承認を行わない**。`auto-resolve-matches` は `counter_claim_team_id IS NULL` を条件に加える。
+* 競合はいずれかの**投了**で解ける。承認は投了と同義であるため、専用の操作を設けない。
+* 解けないまま承認期限を過ぎた場合は `DRAWN`（`CONFLICT`）とする。
+* `CONFLICT` へ至る際、`winner_team_id` は NULL にするが **`reported_by_profile_id` / `reported_at` /
+  `counter_claim_team_id` / `counter_claimed_at` は残す**。誰がどちらを主張したかは通報の判断材料になる
+  （ADR-033 ④）。`counter_claim_team_id` が判れば、元の申告者はもう一方のチームであると一意に定まる。
+
+### 不成立の申請（no_contest_request）
+
+保留中の申請を `matches` の列で保持する。同時に保留できる申請は1件であり、履歴は `audit_logs` に残るため、
+専用テーブルを設けない。
+
+* `no_contest_reason_code` は `CONNECTION` / `GAME_ISSUE` / `NO_RESPONSE` / `OTHER`（ADR-034 ②）。
+* **理由は結末を左右しない。** 結末を決めるのは相手の応答である。理由は `match_avoidance` の登録（10.12）と
+  運営の観測にのみ用いる。
+* 申請が解決した時点（承諾・応答・失効）で3列をNULLへ戻し、`no_contest_request_count` のみ加算する。
 
 ### Constraints
 
@@ -772,23 +861,37 @@ CREATE INDEX ix_matches_approve_deadline
   WHERE status = 'WINNER_REPORTED';
 ```
 
-### 同時1試合制約
+### 同時参加の制約（ADR-035）
 
-「1チームは同時に1試合まで」をDB側で保証する。
+規則は「1チーム同時1試合」ではない。**「進行中の試合を持つチームは、マッチング待機列に登録できない」**である。
+
+**保証はアプリケーション層のみで行う。DBに制約を置かない。**
+
+判定箇所は2つであり、いずれも同じ条件を用いる。
 
 ```sql
-CREATE UNIQUE INDEX ux_matches_active_team_a
-  ON matches (team_a_id)
-  WHERE status NOT IN ('COMPLETED', 'DRAWN');
-
-CREATE UNIQUE INDEX ux_matches_active_team_b
-  ON matches (team_b_id)
-  WHERE status NOT IN ('COMPLETED', 'DRAWN');
+SELECT 1 FROM matches
+ WHERE (team_a_id = :team_id OR team_b_id = :team_id)
+   AND status NOT IN ('COMPLETED', 'DRAWN')
 ```
 
-終端状態は `COMPLETED` と `DRAWN` の2つである。条件を `status <> 'COMPLETED'` とすると、解散済みの試合がチームを永久にブロックするため誤りである。
+| 判定箇所                          | 目的                        |
+| ----------------------------- | ------------------------- |
+| `queue-match`                 | 待機列への登録を拒否する（`QUEUE-002`） |
+| `runMatchmaking` の除外条件        | 待機列に残った行を組み合わせ対象から外す      |
 
-なお本インデックスは同一チームがteam_a側とteam_b側に分かれて同時参加する場合を検出できないため、マッチ生成時にEdge Functionsが両側を確認する。
+**旧 `ux_matches_active_team_a` / `ux_matches_active_team_b` は削除する。** 2本の部分UNIQUEインデックスは
+列ごとに独立しており、「あるチームが片方の試合で `team_a`、別の試合で `team_b`」という状態を防げなかった。
+すなわち意図した不変条件を保証しておらず、実際に保証していた内容（同じスロットに2回現れない）は誰も要求していない。
+
+将来「管理者がマッチを用意する」運用では1チームへ複数の試合を割り当てる（ADR-035 ⑤）。旧インデックスは
+これを**そのチームがどちらのスロットへ入ったかという偶然によって**拒否するため、残すと不可解な失敗の原因になる。
+
+参照性能は `IX_matches_team_a` / `IX_matches_team_b` が引き続き担うため、削除による影響は無い。
+
+**★試合を生成する経路を追加する場合は、上記2つの判定を必ず自前で行うこと。DBは肩代わりしない。**
+現時点で待機列を経由しない生成経路は `runMatchmaking` のみであり、同関数は
+`pg_advisory_xact_lock(hashtext('matchmaking'))` と除外条件により二重割り当てを防いでいる。
 
 ### 楽観ロック
 
@@ -816,8 +919,11 @@ WHERE id = :match_id
 ### 運用ルール
 
 * 状態遷移は 7.1 の遷移表に従う。
-* `COMPLETED` および `DRAWN` の後は更新しない。管理者による訂正もMVPでは行わない。
-* レート更新は承認（手動・自動を問わない）時のみ実施する。
+* `COMPLETED` および `DRAWN` の後は更新しない。**管理者による訂正も行わない**（ADR-033 ①）。
+  誤った結果は確定前に解く。勝者申告の押し間違えは反対申告で、対戦の不成立は不成立の申請で解決する。
+* レート更新は確定時のみ実施する。経路は投了・承認・自動承認の3つである。
+* `DRAWN` ではレートを更新せず `rating_history` も作らない（ADR-014）。したがって不戦の集計は
+  `rating_history` ではなく本テーブルから行う（ADR-032 ⑥）。
 
 ---
 
@@ -910,8 +1016,18 @@ IX_rating_history_completed (completed_at DESC)
 | match_rating_range      | INTEGER     | No   |    | 400     | マッチング許容レート差        |
 | invite_expiration_hours | INTEGER     | No   |    | 24      | 招待の有効期間（時間）        |
 | report_timeout_minutes  | INTEGER     | No   |    | 60      | 勝利申告の期限（分）         |
-| approve_timeout_minutes | INTEGER     | No   |    | 10      | 承認の期限（分）           |
-| max_reject_count        | INTEGER     | No   |    | 2       | 拒否の上限回数            |
+| approve_timeout_minutes | INTEGER     | No   |    | **60**  | 承認の期限（分）※ADR-032 ⑨ で 10→60 |
+| max_reject_count        | INTEGER     | No   |    | 2       | **廃止**。参照しない（ADR-032 ③） |
+| queue_cooldown_minutes  | INTEGER     | No   |    | 30      | クールダウンの長さ（分）       |
+| report_extension_minutes | INTEGER    | No   |    | 60      | 1回の延長で伸びる長さ（分）     |
+| max_report_extensions   | INTEGER     | No   |    | 3       | 報告期限の延長回数の上限       |
+| no_show_minutes         | INTEGER     | No   |    | 30      | 無応答による解散が成立しうるまでの経過時間（分） |
+| no_show_response_minutes | INTEGER    | No   |    | 30      | 不成立の申請への応答猶予（分）    |
+| max_no_contest_requests | INTEGER     | No   |    | 2       | 1試合あたりの不成立申請の上限回数   |
+| mutual_no_contest_daily_limit | INTEGER | No |  | 3       | 合意不成立を無償で行える1日あたりの件数 |
+| avoidance_days          | INTEGER     | No   |    | 30      | ペアの再マッチ抑止の期間（日）    |
+| max_avoidance_entries   | INTEGER     | No   |    | 5       | チームあたりの抑止登録数の上限    |
+| maintenance_paused      | BOOLEAN     | No   |    | FALSE   | 保守による一時停止（シーズンとは独立） |
 | updated_at              | TIMESTAMPTZ | No   |    | now()   | 更新日時               |
 
 ### Constraints
@@ -927,6 +1043,15 @@ CHECK: invite_expiration_hours > 0
 CHECK: report_timeout_minutes > 0
 CHECK: approve_timeout_minutes > 0
 CHECK: max_reject_count >= 0
+CHECK: queue_cooldown_minutes > 0
+CHECK: report_extension_minutes > 0
+CHECK: max_report_extensions >= 0
+CHECK: no_show_minutes > 0
+CHECK: no_show_response_minutes > 0
+CHECK: max_no_contest_requests >= 0
+CHECK: mutual_no_contest_daily_limit >= 0
+CHECK: avoidance_days > 0
+CHECK: max_avoidance_entries >= 0
 CHECK: length(btrim(site_title)) BETWEEN 1 AND 60
 CHECK: background_image_path IS NULL OR (相対パスのみ / 絶対URL・`//`・`..` を禁止 / 200文字以内)
 CHECK: length(rules_markdown) <= 20000
@@ -939,6 +1064,39 @@ CHECK: length(announcement_text) <= 200
 **基表そのものを匿名へ公開してはならない。** K値・各種期限まで読めてしまう。
 
 `rating_k` の上限を128とすることで、K値の境界値テストが定義可能になる。
+
+### 廃止した設定（ADR-032 ③）
+
+`max_reject_count` は参照しない。列は削除せず残す。適用済みMigrationを編集しないためであり、
+また将来この値を読むコードが復活しないよう、本書と `04_BackendInterface.md` で明示的に廃止と記す。
+
+### maintenance_paused と matchmaking_paused の別（ADR-034 ⑤）
+
+| 列                    | 立てる契機          | 解除する契機                              | `queue-match` の応答 |
+| -------------------- | -------------- | ----------------------------------- | ---------------- |
+| `matchmaking_paused` | シーズン終了の開始      | `admin-resume-season` / 終了の取りやめ     | `SEASON-002`     |
+| `maintenance_paused` | ゲーム側の障害・メンテナンス | `admin-update-system-settings` からの解除 | `QUEUE-007`      |
+
+**両者を兼用してはならない。** `admin-resume-season` は `matchmaking_paused` を無条件に `FALSE` へ戻すため、
+保守停止を同じ列で表すと、シーズン再開が保守停止を解除してしまう。
+
+### 期限に関する設定の関係（ADR-032 ⑦⑧⑨）
+
+```text
+マッチ成立
+  ├── report_timeout_minutes（60）……… 報告期限。extend-match-deadline で
+  │                                     report_extension_minutes ずつ、
+  │                                     max_report_extensions 回まで延長できる
+  ├── no_show_minutes（30）…………… これを過ぎるまで「無応答による解散」は成立しない
+  └── 勝利申告
+        └── approve_timeout_minutes（60）… 承認期限。過ぎると自動承認
+
+不成立の申請
+  └── no_show_response_minutes（30）…… 応答猶予。承諾は即時に成立し、本猶予を待たない
+```
+
+**`report_timeout_minutes` の固定値を延ばしてはならない**（ADR-032 ⑦）。期限の起点はマッチ成立時刻であり、
+値を延ばすと妨害の効果時間がそのまま延びる。長い対戦は当事者の宣言（延長）で扱う。
 
 ### Trigger
 
@@ -1039,6 +1197,230 @@ IX_audit_logs_target (target_type, target_id)
 
 ---
 
+## 10.10 abuse_reports
+
+### 概要
+
+不正行為・迷惑行為の通報を記録する（ADR-033）。
+
+**本テーブルは勝敗フローから独立している。** 通報は試合の状態にもレートにも影響しない。
+対象は**チーム**であり、試合ではない。関連する試合は任意で添える。
+
+確定した試合の結果は通報によって覆らない（ADR-033 ①）。措置はクールダウンとBANに限る。
+
+**★テーブル名は `abuse_reports` とし、`reports` としない。** 勝敗の申告が `report-match` であり、
+同じ語が別の概念を指すと読み違えるためである。ADR-033 の本文は `reports` と記しているが、
+これは識別子の選択であって決定内容の変更ではない。
+
+### Columns
+
+| Column                 | Type        | NULL | PK | Default           | Description                       |
+| ---------------------- | ----------- | ---- | -- | ----------------- | --------------------------------- |
+| id                     | UUID        | No   | ✓  | gen_random_uuid() | 通報ID                              |
+| target_team_id         | UUID        | No   |    |                   | 通報対象チーム                           |
+| reporter_profile_id    | UUID        | No   |    |                   | 通報者                               |
+| reporter_team_id       | UUID        | Yes  |    |                   | 通報者の所属チーム（無所属時はNULL）              |
+| match_id               | UUID        | Yes  |    |                   | 関連する試合（任意）                        |
+| reason_code            | TEXT        | No   |    |                   | 理由区分                              |
+| detail                 | TEXT        | No   |    |                   | 自由記述（10〜1000文字）                   |
+| evidence_urls          | TEXT[]      | No   |    | '{}'              | 証拠URL（0〜3件・任意）                    |
+| status                 | TEXT        | No   |    | 'OPEN'            | 通報状態                              |
+| resolved_by_profile_id | UUID        | Yes  |    |                   | 措置した管理者（取り下げ・未処理の間はNULL）          |
+| resolved_at            | TIMESTAMPTZ | Yes  |    |                   | 処理日時（未処理の間はNULL）                  |
+| resolution_note        | TEXT        | Yes  |    |                   | 管理者の記録                            |
+| created_at             | TIMESTAMPTZ | No   |    | now()             | 通報日時                              |
+
+### 理由区分（reason_code）
+
+| 値              | 意味                       |
+| -------------- | ------------------------ |
+| FALSE_REPORT   | 虚偽の勝敗申告（反対申告を含む）         |
+| NO_SHOW        | 試合に現れない・申請へ応答しない         |
+| HARASSMENT     | 暴言・迷惑行為                  |
+| CHEATING       | ゲーム内での不正行為               |
+| OTHER          | その他                      |
+
+区分は**管理者が通報を仕分けるための手掛かり**であり、措置の内容を決定しない。措置は ADR-033 ④ の累積に基づく。
+
+### 状態（status）
+
+| 値         | 意味                    | 設定者   |
+| --------- | --------------------- | ----- |
+| OPEN      | 未処理                   | —     |
+| NO_ACTION | 確認したが措置しない            | 管理者   |
+| WARNED    | 警告した                  | 管理者   |
+| COOLDOWN  | クールダウンを課した            | 管理者   |
+| BANNED    | BANした                 | 管理者   |
+| WITHDRAWN | 通報者が取り下げた             | 通報者   |
+
+`OPEN` 以外はすべて終端である。再オープンしない。
+
+### Constraints
+
+```text
+PK_abuse_reports (id)
+FK: target_team_id         → teams.id      ON DELETE RESTRICT
+FK: reporter_profile_id    → profiles.id   ON DELETE RESTRICT
+FK: reporter_team_id       → teams.id      ON DELETE SET NULL
+FK: match_id               → matches.id    ON DELETE SET NULL
+FK: resolved_by_profile_id → profiles.id   ON DELETE RESTRICT
+CHECK: reason_code IN ('FALSE_REPORT','NO_SHOW','HARASSMENT','CHEATING','OTHER')
+CHECK: status IN ('OPEN','NO_ACTION','WARNED','COOLDOWN','BANNED','WITHDRAWN')
+CHECK: char_length(detail) BETWEEN 10 AND 1000
+CHECK: coalesce(array_length(evidence_urls, 1), 0) <= 3
+CHECK: reporter_team_id IS DISTINCT FROM target_team_id
+CHECK: (status = 'OPEN') = (resolved_at IS NULL)
+CHECK: status NOT IN ('NO_ACTION','WARNED','COOLDOWN','BANNED')
+       OR resolved_by_profile_id IS NOT NULL
+```
+
+`match_id` を `ON DELETE SET NULL` とするのは、シーズンの削除で試合が消えても通報を残すためである
+（ADR-033 備考）。措置の根拠はシーズンを跨いで参照する。
+
+`reporter_team_id` を `ON DELETE SET NULL` とするのも同じ理由による。通報者のチームが解散しても記録は残す。
+
+`reporter_team_id IS DISTINCT FROM target_team_id` は、無所属の通報者（`reporter_team_id IS NULL`）を
+妨げない。`<>` では NULL 比較が NULL となり意図が読み取りにくいため、明示的に `IS DISTINCT FROM` を用いる。
+
+同一の試合について、同一チームから同一対象への通報を1件に限定するため、以下の部分UNIQUEインデックスを設ける。
+
+```sql
+CREATE UNIQUE INDEX ux_abuse_reports_dup
+  ON abuse_reports (reporter_team_id, target_team_id, match_id)
+  WHERE match_id IS NOT NULL AND status <> 'WITHDRAWN';
+```
+
+取り下げた通報は対象外である。誤って出した通報を取り下げたあと、正しく出し直せるようにするためである。
+
+試合を伴わない通報は本インデックスで縛れない（`match_id` が NULL のため）。頻度の制限はアプリケーション層で行う
+（`04_BackendInterface.md` 20.1 / `ABUSE-004`）。
+
+### Indexes
+
+```text
+ux_abuse_reports_dup
+IX_abuse_reports_target (target_team_id, created_at DESC)
+IX_abuse_reports_open (created_at) WHERE status = 'OPEN'
+IX_abuse_reports_reporter (reporter_profile_id, created_at DESC)
+```
+
+`IX_abuse_reports_open` は管理画面の未処理一覧のためのものである。
+
+### RLS
+
+| 操作     | 許可                              |
+| ------ | ------------------------------- |
+| SELECT | 管理者、または通報者本人（自分が出した通報のみ）        |
+| INSERT | なし（Edge Function 経由）            |
+| UPDATE | なし（Edge Function 経由）            |
+| DELETE | なし                              |
+
+**通報の件数と内容は公開しない**（ADR-032 ⑥）。通報は誰でも無償で出せるため、件数を公開すると
+通報を浴びせるだけで他チームの評判を落とせる。`team_ranking_view` および `team_detail_view` へ
+本テーブルを結合してはならない。
+
+通報対象のチームは、自分が通報されたことを参照できない。措置（クールダウン・BAN）は結果として現れる。
+
+### 運用ルール
+
+* 通報は**いつでも**出せる。試合中・確定後・試合と無関係な事象のいずれでもよい。受付期間を設けない。
+* 通報は**双方のチーム**が出せる。当該試合の参加チームに限定しない。
+* **単発の通報で措置しない**（ADR-033 ④）。判断は「異なるチームからの累積」に基づく。
+  管理画面は対象チームごとに 通報件数 `n` / 通報元チーム数 `m` / 措置件数 `k` を表示する。
+* 累積の分母を**チーム**とするため、同一人物が複数アカウントを作っても、同じチームに属する限り `m` は1しか増えない。
+  無所属の通報者（`reporter_team_id IS NULL`）は `n` にのみ計上し、`m` には計上しない。
+* **虚偽の通報も措置の対象である**（ADR-033 ⑤）。通報者側にも記録が残る。
+* 本テーブルはシーズンの削除（`admin-purge-season-data`）の対象に**含めない**。
+
+---
+
+## 10.11 match_avoidance
+
+### 概要
+
+特定のペアを一定期間マッチング対象から除外する（ADR-034 ③）。
+
+回線相性のように**再現的に対戦が成立しないペア**を、繰り返しマッチさせないためのものである。
+抑止が無ければ、同じペアが再びマッチして不成立を繰り返す。
+
+### Columns
+
+| Column       | Type        | NULL | PK | Default           | Description         |
+| ------------ | ----------- | ---- | -- | ----------------- | ------------------- |
+| id           | UUID        | No   | ✓  | gen_random_uuid() | 登録ID                |
+| team_low_id  | UUID        | No   |    |                   | ペアのうちID順で小さい方       |
+| team_high_id | UUID        | No   |    |                   | ペアのうちID順で大きい方       |
+| match_id     | UUID        | Yes  |    |                   | 契機となった試合（任意）        |
+| expires_at   | TIMESTAMPTZ | No   |    |                   | 失効日時                |
+| created_at   | TIMESTAMPTZ | No   |    | now()             | 登録日時                |
+
+**ペアは順序を持たない。** 登録時に UUID を比較して小さい方を `team_low_id` へ入れる。
+`(A,B)` と `(B,A)` が別行になると、除外が片方向にしか効かない。
+
+### Constraints
+
+```text
+PK_match_avoidance (id)
+FK: team_low_id  → teams.id    ON DELETE RESTRICT
+FK: team_high_id → teams.id    ON DELETE RESTRICT
+FK: match_id     → matches.id  ON DELETE SET NULL
+CHECK: team_low_id < team_high_id
+CHECK: expires_at > created_at
+UX_match_avoidance_pair (team_low_id, team_high_id)
+```
+
+`team_low_id < team_high_id` を CHECK で強制することで、正規化されていない行の混入を防ぐ。
+
+### Indexes
+
+```text
+UX_match_avoidance_pair
+IX_match_avoidance_expires (expires_at)
+```
+
+### RLS
+
+| 操作     | 許可               |
+| ------ | ---------------- |
+| SELECT | 認証済みユーザー         |
+| INSERT | なし（Edge Functions 経由） |
+| UPDATE | なし（Edge Functions 経由） |
+| DELETE | なし（Edge Functions 経由） |
+
+登録内容はチーム詳細で公開する（ADR-034 ③）。隠すと、当たらない理由が利用者に分からなくなる。
+
+### 運用ルール
+
+* **登録は合意による不成立（`MUTUAL`）かつ理由が `CONNECTION` の場合のみ行う。**
+  `NO_SHOW`（相手の沈黙による成立）では登録しない。**片方の操作で登録できてはならない。**
+  登録できると、強い相手を恒久的に回避する手段になる。
+* 有効期間は `system_settings.avoidance_days`（初期30日）とする。
+* チームあたりの登録数の上限は `system_settings.max_avoidance_entries`（初期5）とする。
+  上限に達した場合は最も古い行から失効させる。
+* 管理者は任意の行を削除できる。
+* 期限切れの行は `cleanup-matching-queue` と同じ日次バッチで削除する。残っていても
+  `expires_at > NOW()` の判定により影響は無いため、削除は掃除にすぎない。
+* **除外はマッチングにのみ効く。** 管理者が用意する試合は本テーブルに拘束されない（ADR-035 ⑤）。
+* 本テーブルはシーズンの削除の対象に**含めない**。回線相性はシーズンを跨いで再現する。
+
+### マッチング条件への反映
+
+`09_MatchmakingSpecification.md` 3章の対象条件へ以下を追加する。
+
+```sql
+AND NOT EXISTS (
+  SELECT 1 FROM match_avoidance a
+   WHERE a.expires_at > NOW()
+     AND a.team_low_id  = LEAST(:team_id, :candidate_id)
+     AND a.team_high_id = GREATEST(:team_id, :candidate_id)
+)
+```
+
+**★待機チーム数が少ない環境では、除外が組み合わせを枯渇させうる。** `avoidance_days` と
+`max_avoidance_entries` を運営が調整できるようにしているのはこのためである（ADR-034 備考）。
+
+---
+
 # 11. View定義
 
 画面は原則としてViewを参照し、複雑なJOINや集計をクライアントで実装しない。
@@ -1061,6 +1443,9 @@ IX_audit_logs_target (target_type, target_id)
 | losses    | 敗北数         |
 | matches   | 試合数         |
 | win_rate  | 勝率（0〜1、試合数0のときNULL） |
+| no_contests | 不戦数（当事者に帰責する `DRAWN`） |
+| settle_rate | 確定率（0〜1、対象0件のときNULL） |
+| void_count | 不成立数（`MUTUAL`。確定率とは別枠） |
 
 ### 定義
 
@@ -1093,7 +1478,16 @@ WHERE t.is_banned = FALSE;
 * BANされたチームは除外する。
 * `LEFT JOIN` により、試合を1度も行っていないチームもランキングに表示される。
 * `NULLIF` によりゼロ除算を回避する。試合数0の場合 `win_rate` はNULLとなる。
-* `DRAWN` の試合は `rating_history` を作成しないため、戦績に計上されない。
+* `DRAWN` の試合は `rating_history` を作成しないため、**勝敗数と勝率**には計上されない。
+* 信頼度の3列（`no_contests` / `settle_rate` / `void_count`）は `matches` から集計する（ADR-032 ⑥）。
+  集計元が `rating_history` と異なるのはこのためである。
+* `settle_rate` = 確定試合数 ÷（確定試合数 ＋ `no_contests`）とする。
+  分母に `MUTUAL` と `ADMIN_VOID` を含めない。対戦が成立しなかった試合を混ぜると、
+  回線の相性が悪いだけのチームが不誠実に見える（7.2）。
+* `NO_SHOW` は**無応答側のみ** `no_contests` に計上する。申請側は妨害の被害者であり、
+  相手の無応答を自らの記録として負う理由が無い（ADR-032 ⑧）。
+* **`abuse_reports` を本Viewへ結合してはならない**（ADR-032 ⑥）。通報は誰でも無償で出せるため、
+  件数を公開すると通報を浴びせるだけで他チームの評判を落とせる。
 * 順位は `RANK()` を用いる。同率の場合は同順位とし、次の順位を飛ばす。
 
 ### 並び順
@@ -1277,6 +1671,42 @@ LEFT JOIN profiles ap ON ap.id = m.approved_by_profile_id;
 
 ---
 
+## 11.7 abuse_report_aggregate_view
+
+### 概要
+
+通報の累積を対象チームごとに集計する（ADR-033 ④）。**管理画面専用である。**
+
+### Columns
+
+| Column              | Description                        |
+| ------------------- | ---------------------------------- |
+| target_team_id      | 通報対象チーム                            |
+| report_count        | 通報件数 `n`                           |
+| reporter_team_count | 通報元チーム数 `m`（無所属の通報者は数えない）          |
+| sanction_count      | 措置件数 `k`（`COOLDOWN` / `BANNED`）    |
+| last_reported_at    | 直近の通報日時                            |
+
+### 集計の方針
+
+* `WITHDRAWN` は除外する。取り下げた通報は判断材料にしない。
+* `reporter_team_count` は `COUNT(DISTINCT reporter_team_id)` とする。**NULL は数えない。**
+  無所属の通報者は `report_count` にのみ計上する。
+* **`reporter_team_count` が判断の主材料である。** `report_count` は1チームから何度でも増やせるため、
+  単独では信号にならない。1件の告発は雑音であり、異なるチームからの一致した告発は信号である。
+
+累積の分母をチームとすることで、同一人物が複数アカウントを作っても、同じチームに属する限り
+`m` は1しか増えない。
+
+### RLS
+
+`security_invoker` を有効にし、基表（`abuse_reports`）のポリシーに従わせる。
+すなわち管理者のみが全件を参照できる。
+
+**本Viewを `team_ranking_view` および `team_detail_view` へ結合してはならない。**
+
+---
+
 # 12. 外部キー一覧
 
 | Table          | Column                 | References    | ON DELETE | ON UPDATE |
@@ -1418,6 +1848,20 @@ View のRLSは基となるテーブルに従う。
 
 ---
 
+
+### 追加分（ADR-032〜035）
+
+| テーブル            | SELECT                | INSERT / UPDATE / DELETE |
+| --------------- | --------------------- | ------------------------ |
+| abuse_reports   | 管理者、または通報者本人          | 不可（Edge Functions 経由）    |
+| match_avoidance | 認証済みユーザー              | 不可（Edge Functions 経由）    |
+
+`abuse_reports` の SELECT を通報者本人へも許すのは、自分が出した通報の状態を確認できるようにするためである。
+**通報対象のチームは、自分が通報されたことを参照できない。**
+
+`match_avoidance` の SELECT を認証済みへ開くのは、抑止の登録をチーム詳細で公開するためである（10.11）。
+隠すと、当たらない理由が利用者に分からなくなる。
+
 # 16. トランザクション境界
 
 各処理の詳細な手順は `07_APISequence.md`、入出力は `04_BackendInterface.md` を参照する。
@@ -1474,6 +1918,28 @@ system_settings
 `profiles` に管理者フラグを持たないため、Seedでの投入対象は `system_settings` のみである。
 
 ---
+
+
+### 追加した設定の初期値（ADR-032〜034）
+
+| 列                               | 初期値   |
+| ------------------------------- | ----- |
+| queue_cooldown_minutes          | 30    |
+| report_extension_minutes        | 60    |
+| max_report_extensions           | 3     |
+| no_show_minutes                 | 30    |
+| no_show_response_minutes        | 30    |
+| max_no_contest_requests         | 2     |
+| mutual_no_contest_daily_limit   | 3     |
+| avoidance_days                  | 30    |
+| max_avoidance_entries           | 5     |
+| maintenance_paused              | FALSE |
+
+`approve_timeout_minutes` の初期値は **60** へ改めた（ADR-032 ⑨。従来は10）。
+
+`report_timeout_minutes` は **60 のまま据え置く**（ADR-032 ⑦）。値を延ばすと妨害の効果時間がそのまま延びる。
+
+`max_reject_count` は廃止したが、Seedからは外さない。列が NOT NULL であるためである。値は参照されない。
 
 # 18. Migration方針
 
@@ -1532,6 +1998,106 @@ RLS と GRANT の双方で禁止したままであり、削除できるのは Ed
 `system_settings` には `current_season`・`matchmaking_paused`・`updates_locked`・
 `season_grace_minutes` を持たせる。前3者は `public_settings` を通して未認証にも公開する。
 **★停止していることを伝えられないと、利用者は不具合と区別できない。**
+
+---
+
+# 18.10 勝敗報告の確定方式（ADR-032〜035 / Migration 0023）
+
+本Migrationは4本のADRを1つのまとまりとして反映する。**分割しない。**
+中間状態（例：拒否を廃止したが投了が無い）は、敗者が結果を確定させる手段を持たない不整合な仕様となるためである。
+
+### 追加するテーブル
+
+| テーブル            | 用途                    | 定義   |
+| --------------- | --------------------- | ---- |
+| abuse_reports   | 通報（ADR-033）           | 10.10 |
+| match_avoidance | ペアの再マッチ抑止（ADR-034 ③）  | 10.11 |
+
+### 追加する列
+
+| テーブル            | 列                                                                                                                                                     |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| teams           | `queue_cooldown_until`                                                                                                                                |
+| matches         | `no_contest_reason`、`counter_claim_team_id`、`counter_claimed_at`、`report_extension_count`、`no_contest_requested_by_team_id`、`no_contest_requested_at`、`no_contest_reason_code`、`no_contest_request_count` |
+| system_settings | `queue_cooldown_minutes`、`report_extension_minutes`、`max_report_extensions`、`no_show_minutes`、`no_show_response_minutes`、`max_no_contest_requests`、`mutual_no_contest_daily_limit`、`avoidance_days`、`max_avoidance_entries`、`maintenance_paused` |
+
+### 削除するもの
+
+| 対象                                                     | 理由                                    |
+| ------------------------------------------------------ | ------------------------------------- |
+| `ux_matches_active_team_a` / `ux_matches_active_team_b` | 意図した不変条件を保証していない（ADR-035 ③ / 10.6）    |
+
+**★適用済みMigrationを編集せず、打ち消しのMigrationで落とす。**
+
+```sql
+DROP INDEX IF EXISTS ux_matches_active_team_a;
+DROP INDEX IF EXISTS ux_matches_active_team_b;
+```
+
+### 変更する既定値
+
+| 対象                                        | 変更           | 根拠        |
+| ----------------------------------------- | ------------ | --------- |
+| `system_settings.approve_timeout_minutes` | 10 → 60      | ADR-032 ⑨ |
+
+**既存行の値も更新する。** DEFAULT の変更は既存の1行に反映されないため、`UPDATE system_settings SET ...` を
+同じMigrationに含める。本テーブルは常に1行である（10.8）。
+
+### 残すが更新を止めるもの
+
+| 対象                                 | 扱い                                |
+| ---------------------------------- | --------------------------------- |
+| `matches.reject_count`             | 列を残し、更新しない。過去の拒否記録を失わないため         |
+| `system_settings.max_reject_count` | 列を残し、参照しない                        |
+
+**★列を消さない判断は「消せない」からではない。** 過去の記録を保つためである。
+一方 `ux_matches_active_*` を消すのは、それが記録ではなく**誤った規則**だからである。両者を混同しないこと。
+
+### 制約の追加
+
+`matches` の CHECK 制約を追加する。既存の `chk_matches_*` は編集せず、新しい制約として足す。
+
+```text
+CHECK: no_contest_reason IS NULL
+       OR no_contest_reason IN ('REPORT_TIMEOUT','NO_SHOW','MUTUAL','CONFLICT','ADMIN_VOID')
+CHECK: (status = 'DRAWN') = (no_contest_reason IS NOT NULL)
+CHECK: counter_claim_team_id IS NULL OR counter_claim_team_id IN (team_a_id, team_b_id)
+CHECK: (counter_claim_team_id IS NULL) = (counter_claimed_at IS NULL)
+CHECK: no_contest_requested_by_team_id IS NULL
+       OR no_contest_requested_by_team_id IN (team_a_id, team_b_id)
+CHECK: (no_contest_requested_by_team_id IS NULL) = (no_contest_requested_at IS NULL)
+CHECK: no_contest_reason_code IS NULL
+       OR no_contest_reason_code IN ('CONNECTION','GAME_ISSUE','NO_RESPONSE','OTHER')
+CHECK: report_extension_count >= 0
+CHECK: no_contest_request_count >= 0
+```
+
+**★既存の `chk_matches_drawn` と両立させる。** 同制約は `DRAWN` で `winner_team_id IS NULL` を要求する。
+`CONFLICT` へ落とす際は `winner_team_id` を NULL にし、`reported_by_profile_id` / `reported_at` /
+`counter_claim_team_id` / `counter_claimed_at` は残す（10.6）。
+
+### 適用済みデータの扱い
+
+`no_contest_reason` を NOT NULL にできないのは、既存の `DRAWN` 行に理由が無いためである。
+Migration では既存の `DRAWN` 行を `REPORT_TIMEOUT` で埋める。当時 `DRAWN` へ至る経路は
+報告期限切れと拒否上限の2つであり、後者は `reject_count > 0` で判別できる。
+
+```sql
+UPDATE matches
+   SET no_contest_reason = 'REPORT_TIMEOUT'
+ WHERE status = 'DRAWN' AND no_contest_reason IS NULL;
+```
+
+**★拒否上限で解散した過去の行も `REPORT_TIMEOUT` へ寄せる。専用の値を与えない。** 廃止した経路であり
+（ADR-032 ③）、値を増やすと新しい仕様に存在しない状態を将来のコードが扱わねばならなくなる。
+両者は `reject_count > 0` で判別できるため、当時の経緯は失われない。
+
+### View の再作成
+
+`team_ranking_view` に信頼度の3列を足すため再作成する（11.1）。`abuse_report_aggregate_view` を新設する（11.7）。
+
+**★`CREATE OR REPLACE VIEW` は列の追加に使えない場合がある**（既存列の型・順序が変わるとき）。
+`DROP VIEW` → `CREATE VIEW` の順で行い、`security_invoker` の設定を再指定する。
 
 ---
 

@@ -44,20 +44,33 @@ Last Updated: 2026-08-03
 
 レート更新は以下のいずれかで実行する。
 
-| 契機          | 実行主体                   | 遷移                            |
-| ----------- | ---------------------- | ----------------------------- |
-| 敗者チームによる承認  | `approve-match`        | `WINNER_REPORTED → COMPLETED` |
-| 承認期限切れの自動承認 | `auto-resolve-matches` | `WINNER_REPORTED → COMPLETED` |
+| 契機             | 実行主体                   | 遷移                                       |
+| -------------- | ---------------------- | ---------------------------------------- |
+| **敗者チームによる投了** | `concede-match`        | `PLAYING → COMPLETED` / `WINNER_REPORTED → COMPLETED` |
+| 敗者チームによる承認     | `approve-match`        | `WINNER_REPORTED → COMPLETED`            |
+| 承認期限切れの自動承認    | `auto-resolve-matches` | `WINNER_REPORTED → COMPLETED`            |
 
-いずれの場合も、更新前の状態は `WINNER_REPORTED` でなければならない。
+**投了は `PLAYING` からも直接確定する**（ADR-032 ①）。更新前の状態が `WINNER_REPORTED` に
+限られていた前提は、投了の導入により変わった。
+
+**実装は3経路で共有する。** レート更新を複数箇所へ重複させてはならない（10.1）。
 
 以下ではレートを更新しない。
 
 | 状態・操作           | 理由                     |
 | --------------- | ---------------------- |
-| `report-match`  | 申告のみ。承認前は確定していない       |
-| `reject-match`  | 申告が破棄される               |
-| `DRAWN`         | 引き分け・時間切れ解散のため変動なし     |
+| `report-match`     | 申告のみ。承認前は確定していない                     |
+| 反対申告               | 主張の記録のみ。確定していない                      |
+| `extend-match-deadline` | 期限の延長のみ                             |
+| `request-no-contest` / `respond-no-contest` | 対戦が成立していない        |
+| `admin-void-match` | 運営起因・外部起因の無効化                        |
+| 通報および措置            | **勝敗フローから独立している**（ADR-033 ①）         |
+| `DRAWN`            | 5種類すべてでレートを変えない                      |
+
+**★`reject-match` は廃止した**（ADR-032 ②）。
+
+**★確定した試合のレートを事後に変更する手段は存在しない**（ADR-033 ①）。
+管理者裁定・追記訂正・遡及再計算のいずれも採用しない。誤りは確定前に解く。
 
 ---
 
@@ -281,8 +294,10 @@ MVPではシーズンを採用しない。
 
 # 14. AI実装ルール
 
-* レート更新は `approve-match` および `auto-resolve-matches` のみで実行する。
-* `report-match` および `reject-match` ではレートを更新しない。
+* レート更新は `concede-match`・`approve-match`・`auto-resolve-matches` のみで実行する。
+* `report-match`・反対申告・期限の延長・不成立の申請ではレートを更新しない。
+* **確定後にレートを変更してはならない。** 訂正の手段は存在しない（ADR-033 ①）。
+* **通報からレートへ至る経路を実装してはならない**（ADR-033 ②）。
 * `DRAWN` ではレートを更新せず、`rating_history` も作成しない。
 * レート更新は必ずトランザクション内で実行する。
 * 丸めは保存直前に一度だけ実施する。

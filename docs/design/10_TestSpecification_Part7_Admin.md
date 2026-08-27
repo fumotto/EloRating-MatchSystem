@@ -89,6 +89,61 @@ TC-ADMIN-004・TC-ADMIN-005 は重要である。`app_metadata` は service_role
 
 人数上限を縮小した場合の扱い（TC-ADMIN-021、TC-ADMIN-022）は `04_BackendInterface.md` 12.3 の規定に従う。
 
+## 3.3.1 通報（ADR-033）
+
+| ID            | 観点                    | 前提条件                    | 操作                         | 期待結果                                   | 種別          | テスト名                                                   |
+| ------------- | --------------------- | ----------------------- | -------------------------- | -------------------------------------- | ----------- | ------------------------------------------------------ |
+| TC-ADMIN-201  | 正常登録                  | 認証済み・チーム所属              | create-abuse-report        | `OPEN` で登録される                          | Integration | `creates an abuse report`                              |
+| TC-ADMIN-202  | **無所属からの登録**          | チームに属さない利用者             | create-abuse-report        | 成功し、`reporter_team_id` が NULL          | Integration | `accepts a report from a user without a team`          |
+| TC-ADMIN-203  | **所属チームの詐称不可**        | 別チームIDを body に混ぜる       | create-abuse-report        | 無視され、JWT から導出される                       | Integration | `derives the reporter team from the JWT only`          |
+| TC-ADMIN-204  | 自チーム宛の拒否              | 対象が自チーム                 | create-abuse-report        | `ABUSE-002` を返す                        | Integration | `rejects a report against the reporter's own team`     |
+| TC-ADMIN-205  | 自由記述の下限               | 9文字                     | create-abuse-report        | `VALIDATION-001` を返す                   | Integration | `rejects a detail shorter than 10 characters`          |
+| TC-ADMIN-206  | 自由記述の上限               | 1001文字                  | create-abuse-report        | `VALIDATION-001` を返す                   | Integration | `rejects a detail longer than 1000 characters`         |
+| TC-ADMIN-207  | 証拠URLの件数超過            | 4件                      | create-abuse-report        | `VALIDATION-001` を返す                   | Integration | `rejects more than three evidence urls`                |
+| TC-ADMIN-208  | 非https の証拠URL         | `http://`               | create-abuse-report        | `VALIDATION-001` を返す                   | Integration | `rejects a non-https evidence url`                     |
+| TC-ADMIN-209  | **証拠なしで登録できる**        | `evidenceUrls` 省略       | create-abuse-report        | 成功する                                   | Integration | `accepts a report without evidence`                    |
+| TC-ADMIN-210  | 同一試合への重複              | 同一チーム・同一対象・同一試合         | create-abuse-report ×2     | 2件目が `ABUSE-003`                       | Integration | `rejects a duplicate report for the same match`        |
+| TC-ADMIN-211  | 取り下げ後の再通報             | 取り下げ済み                  | create-abuse-report        | 成功する                                   | Integration | `allows reporting again after a withdrawal`            |
+| TC-ADMIN-212  | 試合なしの頻度制限             | 24時間以内に同一対象へ            | create-abuse-report        | `ABUSE-004` を返す                        | Integration | `rejects a second match-less report within 24 hours`   |
+| TC-ADMIN-213  | **第三者による通報**          | 当該試合の参加チームでない            | create-abuse-report        | 成功する                                   | Integration | `accepts a report from a non-participant`              |
+| TC-ADMIN-214  | **試合に影響しない**          | 進行中の試合を関連付けて通報          | matches取得                  | 状態もレートも変わらない                           | Integration | `leaves the match untouched when reported`             |
+| TC-ADMIN-215  | **シーズン切替中でも通報できる**    | `updates_locked = TRUE` | create-abuse-report        | 成功する                                   | Integration | `accepts reports while season updates are locked`      |
+| TC-ADMIN-216  | Realtime通知なし          | 通報後                     | 通知確認                       | 何も送信されない                               | Integration | `publishes nothing on report creation`                 |
+| TC-ADMIN-217  | 取り下げ                  | 自分の `OPEN` の通報          | withdraw-abuse-report      | `WITHDRAWN` になる                        | Integration | `withdraws the reporter's own report`                  |
+| TC-ADMIN-218  | 他人の通報の取り下げ            | 別利用者の通報                 | withdraw-abuse-report      | `ABUSE-007` を返す                        | Integration | `rejects withdrawing someone else's report`            |
+| TC-ADMIN-219  | 処理済みの取り下げ             | `NO_ACTION`             | withdraw-abuse-report      | `ABUSE-006` を返す                        | Integration | `rejects withdrawing a resolved report`                |
+| TC-ADMIN-220  | 措置：NO_ACTION          | `OPEN`                  | admin-resolve-abuse-report | `NO_ACTION` で閉じる                       | Integration | `closes a report without action`                       |
+| TC-ADMIN-221  | 措置：COOLDOWN           | `OPEN`                  | admin-resolve-abuse-report | `queue_cooldown_until` が設定される          | Integration | `applies a cooldown as a sanction`                     |
+| TC-ADMIN-222  | 措置：BANNED             | `OPEN`                  | admin-resolve-abuse-report | `is_banned = TRUE` になる                 | Integration | `bans the team as a sanction`                          |
+| TC-ADMIN-223  | **確定した試合に触れない**       | 関連試合が `COMPLETED`       | admin-resolve-abuse-report | 勝敗もレートも変わらない                           | Integration | `never modifies a completed match`                     |
+| TC-ADMIN-224  | 二重措置の拒否               | 処理済み                    | admin-resolve-abuse-report | `ABUSE-006` を返す                        | Integration | `rejects resolving a report twice`                     |
+| TC-ADMIN-225  | 非管理者                  | 一般利用者                   | admin-resolve-abuse-report | `AUTH-004` を返す                         | Integration | `rejects a non-admin resolution`                       |
+| TC-ADMIN-226  | **通報の非公開**            | 通報後                     | team_ranking_view取得        | 通報に関する列が存在しない                          | Integration | `never exposes reports through the ranking view`       |
+| TC-ADMIN-227  | **対象は自分への通報を見られない**   | 通報後                     | 対象チームとして abuse_reports を参照 | 0件                                     | Integration | `hides reports from the reported team`                 |
+| TC-ADMIN-228  | 通報者は自分の通報を見られる        | 通報後                     | 通報者として abuse_reports を参照   | 自分の通報のみ返る                              | Integration | `lets the reporter see their own reports`              |
+| TC-ADMIN-229  | 累積：通報元チーム数            | 3チームから計5件               | abuse_report_aggregate_view | `m=3`、`n=5`                            | Integration | `counts distinct reporter teams`                       |
+| TC-ADMIN-230  | **累積：無所属は m に数えない**   | 無所属から2件                 | abuse_report_aggregate_view | `m` が増えない                              | Integration | `excludes teamless reporters from the team count`      |
+| TC-ADMIN-231  | 累積：取り下げの除外            | 取り下げ済みを含む               | abuse_report_aggregate_view | 取り下げ分が数えられない                           | Integration | `excludes withdrawn reports from the aggregate`        |
+
+TC-ADMIN-203 は最重要である。`reporterTeamId` を入力から受け取る実装では、**通報元チーム数 `m` を偽装でき、
+ADR-033 ④ の判断材料が壊れる。**
+
+TC-ADMIN-223 は ADR-033 ① の検証である。**通報から結果への経路は存在してはならない。**
+
+## 3.3.2 試合の無効化（ADR-034 ④）
+
+| ID           | 観点                | 前提条件                              | 操作                 | 期待結果                                 | 種別          | テスト名                                                |
+| ------------ | ----------------- | --------------------------------- | ------------------ | ------------------------------------ | ----------- | --------------------------------------------------- |
+| TC-ADMIN-240 | 個別の無効化            | `PLAYING`                         | admin-void-match   | `DRAWN` / `ADMIN_VOID`               | Integration | `voids a single match`                              |
+| TC-ADMIN-241 | **クールダウン無し**      | 無効化後                              | teams取得            | 両チームとも設定されない                         | Integration | `applies no cooldown when voiding`                  |
+| TC-ADMIN-242 | **確定率に不計上**       | 無効化後                              | team_ranking_view取得 | `no_contests` が増えない                  | Integration | `excludes a voided match from the settle rate`      |
+| TC-ADMIN-243 | レート不変             | 無効化後                              | teams取得            | 変化しない                                | Integration | `does not change ratings when voiding`              |
+| TC-ADMIN-244 | 一括の既定対象           | `PLAYING` と `WINNER_REPORTED` が混在 | admin-void-matches | `PLAYING` のみ無効化される                   | Integration | `voids only PLAYING matches by default`             |
+| TC-ADMIN-245 | 一括の対象拡大           | `includeReported: true`           | admin-void-matches | `WINNER_REPORTED` も無効化される            | Integration | `includes reported matches when asked`              |
+| TC-ADMIN-246 | 理由の必須             | `reason` 省略                       | admin-void-matches | `VALIDATION-001` を返す                 | Integration | `requires a reason for voiding`                     |
+| TC-ADMIN-247 | 監査ログ              | 無効化後                              | audit_logs取得       | `MATCH_VOIDED` と理由が記録される             | Integration | `records the void with its reason`                  |
+| TC-ADMIN-248 | 非管理者              | 一般利用者                             | admin-void-match   | `AUTH-004` を返す                       | Integration | `rejects a non-admin void`                          |
+
 ## 3.4 監査ログ
 
 | ID           | 観点             | 前提条件      | 操作             | 期待結果                                | 種別          | テスト名                                                |

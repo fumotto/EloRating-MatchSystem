@@ -47,6 +47,34 @@ Last Updated: 2026-08-03
 | TC-QUEUE-008 | DRAWN後の登録   | 直前の試合が `DRAWN`  | queue-match | 登録に成功する                             | Integration | `allows queueing after the previous match was drawn` |
 | TC-QUEUE-009 | 存在しないチーム    | 無効なteamId       | queue-match | `TEAM-001` を返す                      | Integration | `rejects queueing for an unknown team`              |
 
+## 3.1.1 待機できない条件（ADR-032 / ADR-034 / ADR-035）
+
+| ID              | 観点                    | 前提条件                                | 操作          | 期待結果            | 種別          | テスト名                                                    |
+| --------------- | --------------------- | ----------------------------------- | ----------- | --------------- | ----------- | ------------------------------------------------------- |
+| TC-QUEUE-101    | クールダウン中               | `queue_cooldown_until` が未来          | queue-match | `QUEUE-006` を返す | Integration | `rejects queueing while on cooldown`                    |
+| TC-QUEUE-102    | クールダウン明け              | `queue_cooldown_until` が過去          | queue-match | 成功する            | Integration | `allows queueing after the cooldown expires`            |
+| TC-QUEUE-103    | NULL は制限なし            | `queue_cooldown_until` が NULL       | queue-match | 成功する            | Integration | `treats a null cooldown as no restriction`              |
+| TC-QUEUE-104    | 保守停止中                 | `maintenance_paused = TRUE`         | queue-match | `QUEUE-007` を返す | Integration | `rejects queueing during maintenance`                   |
+| TC-QUEUE-105    | **保守とシーズンの独立**        | `maintenance_paused = TRUE` の状態でシーズン再開 | admin-resume-season → queue-match | `QUEUE-007` のまま | Integration | `keeps the maintenance pause after resuming a season`   |
+| TC-QUEUE-106    | **team_b 側での進行中判定**   | 当該チームが `team_b_id` の進行中試合を持つ        | queue-match | `QUEUE-002` を返す | Integration | `rejects queueing when the team is team_b in a match`   |
+| TC-QUEUE-107    | 判定順                   | 停止中かつ人数不足                           | queue-match | 停止のコードが返る       | Integration | `reports the pause before the member shortage`          |
+
+TC-QUEUE-105 は最重要である。`matchmaking_paused` を保守停止に流用した実装では、`admin-resume-season` が
+無条件に `FALSE` へ戻すため、**シーズン再開が保守停止を解除してしまう**（ADR-034 ⑤）。
+
+TC-QUEUE-106 は ADR-035 の要点である。**DBに制約は無く、アプリ層の判定だけが保証である。**
+旧 `ux_matches_active_team_a` / `_b` はこの状態を防げなかった。
+
+## 3.1.2 ペアの再マッチ抑止（ADR-034 ③）
+
+| ID           | 観点          | 前提条件                     | 操作         | 期待結果               | 種別          | テスト名                                                  |
+| ------------ | ----------- | ------------------------ | ---------- | ------------------ | ----------- | ----------------------------------------------------- |
+| TC-QUEUE-110 | 抑止中のペア      | 有効な `match_avoidance` あり | matchmaker | 当該ペアは成立しない         | Integration | `does not pair teams under an avoidance entry`        |
+| TC-QUEUE-111 | 方向によらない     | `(B,A)` の順で待機            | matchmaker | 同様に成立しない           | Integration | `applies avoidance regardless of pair order`          |
+| TC-QUEUE-112 | 他の相手とは成立    | 抑止対象でない第三のチームが待機         | matchmaker | そちらと成立する           | Integration | `still pairs with a team outside the avoidance`       |
+| TC-QUEUE-113 | 失効後         | `expires_at` を経過          | matchmaker | 再び成立する             | Integration | `pairs the teams again after expiry`                  |
+| TC-QUEUE-114 | 相手不在はエラーでない | 抑止により候補が尽きる              | queue-match | `matched: false` で正常応答 | Integration | `returns matched:false when avoidance exhausts候補`     |
+
 ## 3.2 キュー解除
 
 | ID           | 観点         | 前提条件      | 操作                 | 期待結果                      | 種別          | テスト名                                                |
