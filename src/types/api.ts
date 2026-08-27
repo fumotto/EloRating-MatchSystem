@@ -169,17 +169,119 @@ export interface ApproveMatchResponse {
   }[];
 }
 
-// --- reject-match（10.5）---
+// --- concede-match（21.1 / ADR-032 ①）---
+//
+// ★基本の経路である。承認を要さず即座に確定し、クールダウンを課さない。
+// ★winnerTeamId を送らない。投了するのは自チームであり、勝者は一意に定まる。
 
-export type RejectMatchRequest = {
+export type ConcedeMatchRequest = {
   matchId: string;
   version: number;
 };
 
-export interface RejectMatchResponse {
-  status: "PLAYING" | "DRAWN";
-  rejectCount: number;
-  reportDeadlineAt?: string;
+export type ConcedeMatchResponse = ApproveMatchResponse;
+
+// --- extend-match-deadline（21.4 / ADR-032 ⑦）---
+
+export type ExtendMatchDeadlineRequest = {
+  matchId: string;
+  version: number;
+};
+
+export interface ExtendMatchDeadlineResponse {
+  reportDeadlineAt: string;
+  extensionCount: number;
+  remainingExtensions: number;
+  version: number;
+}
+
+// --- request-no-contest / respond-no-contest（21.5 / ADR-032 ⑧ ＋ ADR-034 ②）---
+
+export type NoContestReasonCode = "CONNECTION" | "GAME_ISSUE" | "NO_RESPONSE" | "OTHER";
+
+export type RequestNoContestRequest = {
+  matchId: string;
+  reasonCode: NoContestReasonCode;
+  version: number;
+};
+
+export interface RequestNoContestResponse {
+  requestedByTeamId: string;
+  reasonCode: NoContestReasonCode;
+  requestCount: number;
+  version: number;
+}
+
+export type RespondNoContestRequest = {
+  matchId: string;
+  response: "ACCEPT" | "CONTINUE";
+  version: number;
+};
+
+export interface RespondNoContestResponse {
+  status: "DRAWN" | "PLAYING";
+  noContestReason?: "MUTUAL";
+  avoidanceRegistered?: boolean;
+  version: number;
+}
+
+// --- 通報（20章 / ADR-033）---
+//
+// ★勝敗フローから完全に独立している。試合の状態にもレートにも影響しない。
+
+export type AbuseReasonCode = "FALSE_REPORT" | "NO_SHOW" | "HARASSMENT" | "CHEATING" | "OTHER";
+
+// ★reporterTeamId を送らない。所属チームはサーバがJWTから導出する。
+//   送れてしまうと通報元チーム数を偽装でき、累積による判断が壊れる。
+export type CreateAbuseReportRequest = {
+  targetTeamId: string;
+  reasonCode: AbuseReasonCode;
+  detail: string;
+  matchId?: string;
+  evidenceUrls?: string[];
+};
+
+export interface CreateAbuseReportResponse {
+  reportId: string;
+  status: "OPEN";
+  createdAt: string;
+}
+
+export type WithdrawAbuseReportRequest = { reportId: string };
+
+export interface WithdrawAbuseReportResponse {
+  status: "WITHDRAWN";
+}
+
+export type AbuseReportStatus =
+  | "OPEN"
+  | "NO_ACTION"
+  | "WARNED"
+  | "COOLDOWN"
+  | "BANNED"
+  | "WITHDRAWN";
+
+export type AdminResolveAbuseReportRequest = {
+  reportId: string;
+  resolution: "NO_ACTION" | "WARNED" | "COOLDOWN" | "BANNED";
+  note?: string;
+  cooldownMinutes?: number;
+};
+
+export interface AdminResolveAbuseReportResponse {
+  reportId: string;
+  status: Exclude<AbuseReportStatus, "OPEN" | "WITHDRAWN">;
+  resolvedAt: string;
+}
+
+export type AdminVoidMatchesRequest = {
+  reason: string;
+  matchId?: string;
+  includeReported?: boolean;
+};
+
+export interface AdminVoidMatchesResponse {
+  voidedCount: number;
 }
 
 // --- Admin（12章）---
@@ -291,6 +393,14 @@ export interface TeamDetail {
   members: TeamMemberEntry[];
 }
 
+// DRAWN の理由（ADR-034 ①）。
+//
+// ★`DRAWN` を一律に「引き分け」として扱ってはならない。帰結が異なる。
+//   REPORT_TIMEOUT / CONFLICT … 両チームが不戦とクールダウンを負う
+//   NO_SHOW                  … 無応答側のみ
+//   MUTUAL / ADMIN_VOID      … 不利益なし。確定率にも計上しない
+export type NoContestReason = "REPORT_TIMEOUT" | "NO_SHOW" | "MUTUAL" | "CONFLICT" | "ADMIN_VOID";
+
 export interface MatchListEntry {
   id: string;
   teamAId: string;
@@ -303,6 +413,8 @@ export interface MatchListEntry {
   status: MatchStatus;
   startedAt: string;
   completedAt: string | null;
+  noContestReason: NoContestReason | null;
+  autoApproved: boolean;
 }
 
 export interface MatchDetail extends MatchListEntry {
@@ -312,12 +424,45 @@ export interface MatchDetail extends MatchListEntry {
   approvedById: string | null;
   approvedByName: string | null;
   approvedAt: string | null;
-  autoApproved: boolean;
   rejectCount: number;
   reportDeadlineAt: string;
   approveDeadlineAt: string | null;
+  // 反対申告（ADR-032 ⑩）。設定されている間は自動承認が止まる。
+  counterClaimTeamId: string | null;
+  counterClaimedAt: string | null;
+  reportExtensionCount: number;
+  // 保留中の不成立申請（ADR-032 ⑧）。
+  noContestRequestedByTeamId: string | null;
+  noContestRequestedAt: string | null;
+  noContestReasonCode: NoContestReasonCode | null;
+  noContestRequestCount: number;
   // 楽観ロック値。更新系はこれを送る（05_Frontend.md 9章）。
   version: number;
+}
+
+// 通報の一覧（管理画面と自分の通報）。
+export interface AbuseReportEntry {
+  id: string;
+  targetTeamId: string;
+  reporterTeamId: string | null;
+  matchId: string | null;
+  reasonCode: AbuseReasonCode;
+  detail: string;
+  evidenceUrls: string[];
+  status: AbuseReportStatus;
+  createdAt: string;
+}
+
+// 通報の累積（ADR-033 ④）。
+//
+// ★reporterTeamCount（m）が判断の主材料である。reportCount（n）は
+//   1チームから何度でも増やせるため、単独では信号にならない。
+export interface AbuseReportAggregate {
+  targetTeamId: string;
+  reportCount: number;
+  reporterTeamCount: number;
+  sanctionCount: number;
+  lastReportedAt: string;
 }
 
 export interface QueueStatus {

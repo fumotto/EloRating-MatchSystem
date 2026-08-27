@@ -4,6 +4,11 @@ import { Link } from "@tanstack/react-router";
 const SECTIONS = [
   { to: "/admin/teams", title: "チーム管理", description: "BANと解除を行います。" },
   { to: "/admin/settings", title: "システム設定", description: "K値・期限・上限を変更します。" },
+  {
+    to: "/admin/reports",
+    title: "通報",
+    description: "未処理の通報と累積を確認します。単発では措置しません。",
+  },
   { to: "/admin/audit", title: "監査ログ", description: "実行された操作の履歴を確認します。" },
   {
     to: "/admin/season",

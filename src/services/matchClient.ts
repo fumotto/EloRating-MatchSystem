@@ -14,10 +14,18 @@ import type {
   QueueMatchRequest,
   QueueMatchResponse,
   QueueStatus,
-  RejectMatchRequest,
-  RejectMatchResponse,
   ReportMatchRequest,
   ReportMatchResponse,
+  ConcedeMatchRequest,
+  ConcedeMatchResponse,
+  ExtendMatchDeadlineRequest,
+  ExtendMatchDeadlineResponse,
+  RequestNoContestRequest,
+  RequestNoContestResponse,
+  RespondNoContestRequest,
+  RespondNoContestResponse,
+  NoContestReason,
+  NoContestReasonCode,
 } from "../types/api";
 
 interface MatchListRow {
@@ -32,6 +40,8 @@ interface MatchListRow {
   status: MatchStatus;
   started_at: string;
   completed_at: string | null;
+  no_contest_reason: NoContestReason | null;
+  auto_approved: boolean;
 }
 
 interface MatchDetailRow extends MatchListRow {
@@ -41,10 +51,16 @@ interface MatchDetailRow extends MatchListRow {
   approved_by_id: string | null;
   approved_by_name: string | null;
   approved_at: string | null;
-  auto_approved: boolean;
   reject_count: number;
   report_deadline_at: string;
   approve_deadline_at: string | null;
+  counter_claim_team_id: string | null;
+  counter_claimed_at: string | null;
+  report_extension_count: number;
+  no_contest_requested_by_team_id: string | null;
+  no_contest_requested_at: string | null;
+  no_contest_reason_code: NoContestReasonCode | null;
+  no_contest_request_count: number;
   version: number;
 }
 
@@ -60,6 +76,8 @@ const toListEntry = (row: MatchListRow): MatchListEntry => ({
   status: row.status,
   startedAt: row.started_at,
   completedAt: row.completed_at,
+  noContestReason: row.no_contest_reason,
+  autoApproved: row.auto_approved,
 });
 
 export const matchClient = {
@@ -80,8 +98,25 @@ export const matchClient = {
     return invoke<ApproveMatchRequest, ApproveMatchResponse>("approve-match", request);
   },
 
-  rejectMatch(request: RejectMatchRequest): Promise<RejectMatchResponse> {
-    return invoke<RejectMatchRequest, RejectMatchResponse>("reject-match", request);
+  // ★投了は基本の経路である（ADR-032 ①）。winnerTeamId を送らない。
+  //   受け取れてしまうと、投了に見せかけて相手の敗北を登録できる。
+  concedeMatch(request: ConcedeMatchRequest): Promise<ConcedeMatchResponse> {
+    return invoke<ConcedeMatchRequest, ConcedeMatchResponse>("concede-match", request);
+  },
+
+  extendDeadline(request: ExtendMatchDeadlineRequest): Promise<ExtendMatchDeadlineResponse> {
+    return invoke<ExtendMatchDeadlineRequest, ExtendMatchDeadlineResponse>(
+      "extend-match-deadline",
+      request,
+    );
+  },
+
+  requestNoContest(request: RequestNoContestRequest): Promise<RequestNoContestResponse> {
+    return invoke<RequestNoContestRequest, RequestNoContestResponse>("request-no-contest", request);
+  },
+
+  respondNoContest(request: RespondNoContestRequest): Promise<RespondNoContestResponse> {
+    return invoke<RespondNoContestRequest, RespondNoContestResponse>("respond-no-contest", request);
   },
 
   // 戦績は COMPLETED / DRAWN が対象である（TC-MATCH-077）。
@@ -126,10 +161,16 @@ export const matchClient = {
       approvedById: row.approved_by_id,
       approvedByName: row.approved_by_name,
       approvedAt: row.approved_at,
-      autoApproved: row.auto_approved,
       rejectCount: row.reject_count,
       reportDeadlineAt: row.report_deadline_at,
       approveDeadlineAt: row.approve_deadline_at,
+      counterClaimTeamId: row.counter_claim_team_id,
+      counterClaimedAt: row.counter_claimed_at,
+      reportExtensionCount: row.report_extension_count,
+      noContestRequestedByTeamId: row.no_contest_requested_by_team_id,
+      noContestRequestedAt: row.no_contest_requested_at,
+      noContestReasonCode: row.no_contest_reason_code,
+      noContestRequestCount: row.no_contest_request_count,
       version: row.version,
     };
   },

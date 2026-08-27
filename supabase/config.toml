@@ -490,10 +490,34 @@ verify_jwt = false
 [functions.queue-match]
 verify_jwt = false
 
-[functions.reject-match]
+[functions.report-match]
 verify_jwt = false
 
-[functions.report-match]
+# 勝敗確定の再設計（ADR-032 / ADR-034）。
+# ★reject-match は廃止した。エントリを再追加してはならない。
+[functions.concede-match]
+verify_jwt = false
+
+[functions.extend-match-deadline]
+verify_jwt = false
+
+[functions.request-no-contest]
+verify_jwt = false
+
+[functions.respond-no-contest]
+verify_jwt = false
+
+# 通報（ADR-033）。勝敗フローから独立している。
+[functions.create-abuse-report]
+verify_jwt = false
+
+[functions.withdraw-abuse-report]
+verify_jwt = false
+
+[functions.admin-resolve-abuse-report]
+verify_jwt = false
+
+[functions.admin-void-matches]
 verify_jwt = false
 
 [functions.transfer-leader]

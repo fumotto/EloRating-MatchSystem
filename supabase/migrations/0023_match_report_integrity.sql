@@ -304,3 +304,75 @@ WHERE status <> 'WITHDRAWN'
 GROUP BY target_team_id;
 
 GRANT SELECT ON abuse_report_aggregate_view TO authenticated;
+
+-- =====================================================================
+-- 9. match_detail_view の再作成
+-- =====================================================================
+--
+-- 反対申告・不成立の申請・DRAWN の理由を画面へ渡す。
+-- ★DRAWN を一律に「引き分け」と表示してはならない。帰結が異なる（05_Frontend.md 14.7）。
+
+DROP VIEW IF EXISTS match_detail_view;
+
+CREATE VIEW match_detail_view
+WITH (security_invoker = true) AS
+SELECT
+    m.id,
+    m.team_a_id, ta.name AS team_a_name, ta.rating AS team_a_rating,
+    m.team_b_id, tb.name AS team_b_name, tb.rating AS team_b_rating,
+    m.winner_team_id,
+    m.status,
+    m.started_at,
+    m.completed_at,
+    m.created_at,
+    m.reported_by_profile_id AS reported_by_id,
+    rp.display_name          AS reported_by_name,
+    m.reported_at,
+    m.approved_by_profile_id AS approved_by_id,
+    ap.display_name          AS approved_by_name,
+    m.approved_at,
+    m.auto_approved,
+    m.reject_count,
+    m.report_deadline_at,
+    m.approve_deadline_at,
+    m.version,
+    m.no_contest_reason,
+    m.counter_claim_team_id,
+    m.counter_claimed_at,
+    m.report_extension_count,
+    m.no_contest_requested_by_team_id,
+    m.no_contest_requested_at,
+    m.no_contest_reason_code,
+    m.no_contest_request_count
+FROM matches m
+JOIN teams ta ON ta.id = m.team_a_id
+JOIN teams tb ON tb.id = m.team_b_id
+LEFT JOIN profiles rp ON rp.id = m.reported_by_profile_id
+LEFT JOIN profiles ap ON ap.id = m.approved_by_profile_id;
+
+REVOKE ALL ON match_detail_view FROM anon;
+GRANT SELECT ON match_detail_view TO authenticated;
+
+-- match_list_view にも DRAWN の理由と自動承認を渡す。一覧で区別できないと、
+-- 利用者は詳細を開くまで不利益の有無が分からない。
+DROP VIEW IF EXISTS match_list_view;
+
+CREATE VIEW match_list_view
+WITH (security_invoker = true) AS
+SELECT
+    m.id,
+    m.team_a_id, ta.name AS team_a_name, ta.rating AS team_a_rating,
+    m.team_b_id, tb.name AS team_b_name, tb.rating AS team_b_rating,
+    m.winner_team_id,
+    m.status,
+    m.started_at,
+    m.completed_at,
+    m.created_at,
+    m.no_contest_reason,
+    m.auto_approved
+FROM matches m
+JOIN teams ta ON ta.id = m.team_a_id
+JOIN teams tb ON tb.id = m.team_b_id;
+
+REVOKE ALL ON match_list_view FROM anon;
+GRANT SELECT ON match_list_view TO authenticated;
