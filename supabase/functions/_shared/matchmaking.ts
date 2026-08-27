@@ -115,8 +115,10 @@ export async function runMatchmaking(tx: Transaction): Promise<MatchmakingResult
     report_timeout_minutes: number;
     matchmaking_paused: boolean;
     maintenance_paused: boolean;
+    rematch_cooldown_hours: number;
   }>(
-    `SELECT match_rating_range, report_timeout_minutes, matchmaking_paused, maintenance_paused
+    `SELECT match_rating_range, report_timeout_minutes, matchmaking_paused, maintenance_paused,
+            rematch_cooldown_hours
        FROM system_settings LIMIT 1`,
   );
 
@@ -124,8 +126,13 @@ export async function runMatchmaking(tx: Transaction): Promise<MatchmakingResult
     throw new Error("system settings not found");
   }
 
-  const { match_rating_range, report_timeout_minutes, matchmaking_paused, maintenance_paused } =
-    settings.rows[0];
+  const {
+    match_rating_range,
+    report_timeout_minutes,
+    matchmaking_paused,
+    maintenance_paused,
+    rematch_cooldown_hours,
+  } = settings.rows[0];
 
   // ★シーズン終了の猶予中は新しい試合を組まない。組んでしまうと、
   //   進行中の試合が尽きるのを待つ猶予がいつまでも終わらない（Issue #9）。
@@ -168,6 +175,34 @@ export async function runMatchmaking(tx: Transaction): Promise<MatchmakingResult
   const avoided = new Set(
     avoidance.rows.map((a) => `${a.team_low_id}|${a.team_high_id}`),
   );
+
+  // ★ペア再戦の抑止（ADR-036 ①）。同じ2チームが短い間隔で繰り返し当たることを止める。
+  //   自作自演のブーストは反復でしか成立しないため、頻度に上限を課すことが対策になる。
+  //   相手が同一人物かどうかは判定しない。同定に依存しないため VPN や回線の使い分けで
+  //   回避できない。
+  //
+  // ★対象は COMPLETED のみである。DRAWN を含めてはならない。抑止の目的はレートが動く
+  //   試合の反復を止めることであり、レートが動かない不成立を数える理由が無い。加えて
+  //   ADR-034 は「落ち度の無い側に代償を負わせない」と定めている。回線相性による再戦は
+  //   別の仕組み（match_avoidance）が担う。
+  //
+  // ★0 は無効を意味する。検証環境ではこの値を 0 にして抑止を外す（ADR-036 ⑤）。
+  //   `'0 hours'::interval` は NOW() と等しく、確定済みの試合は必ず過去であるため
+  //   0 でも1件も返らないが、無効の意図を問い合わせの有無で表す。
+  if (rematch_cooldown_hours > 0) {
+    const rematch = await tx.queryObject<{ team_low_id: string; team_high_id: string }>(
+      `SELECT DISTINCT
+              LEAST(team_a_id, team_b_id)    AS team_low_id,
+              GREATEST(team_a_id, team_b_id) AS team_high_id
+         FROM matches
+        WHERE status = 'COMPLETED'
+          AND completed_at > NOW() - ($1 || ' hours')::interval`,
+      [String(rematch_cooldown_hours)],
+    );
+    for (const row of rematch.rows) {
+      avoided.add(`${row.team_low_id}|${row.team_high_id}`);
+    }
+  }
 
   const matches: CreatedMatch[] = [];
 

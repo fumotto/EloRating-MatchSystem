@@ -294,12 +294,25 @@ describe("admin-update-system-settings", () => {
     match_rating_range: 400,
     invite_expiration_hours: 24,
     report_timeout_minutes: 60,
-    approve_timeout_minutes: 10,
+    approve_timeout_minutes: 60,
     max_reject_count: 2,
+    queue_cooldown_minutes: 30,
+    report_extension_minutes: 60,
+    max_report_extensions: 3,
+    no_show_minutes: 30,
+    no_show_response_minutes: 30,
+    max_no_contest_requests: 2,
+    mutual_no_contest_daily_limit: 3,
+    avoidance_days: 30,
+    max_avoidance_entries: 5,
+    maintenance_paused: false,
+    rematch_cooldown_hours: 24,
+    ranking_min_opponents: 3,
   };
 
   const okStubs = (
-    after: Record<string, number | string | null> = { ...before, rating_k: 64 },
+    // 真偽値を含む（ADR-034 ⑤ の maintenance_paused）。
+    after: Record<string, number | string | boolean | null> = { ...before, rating_k: 64 },
   ): QueryStub[] => [
     ["SELECT team_max_members", [before]],
     ["UPDATE system_settings", [after]],
@@ -554,6 +567,208 @@ describe("admin-update-system-settings", () => {
       const res = await post(updateSettings, { ratingK: 64 });
       assertEquals(res.status, 403);
       assertEquals((await res.json()).error.code, "ADMIN-001");
+    } finally {
+      resetSettingsVerifier();
+      resetSettingsPool();
+    }
+  });
+
+  // サブアカウント対策の ON/OFF（ADR-036 ⑤）。
+  //
+  // ★0 が無効を表す。0 を弾いてしまうと、検証環境で複数アカウントを用いた確認ができない。
+  //   環境変数では切らないと決めた以上、ここが唯一の入り口である。
+  it("accepts zero for the rematch cooldown", async () => {
+    // TC-ADMIN-270
+    setSettingsVerifier(adminVerifier);
+    setSettingsBroadcaster(() => Promise.resolve());
+    const db = createMockDb(okStubs({ ...before, rematch_cooldown_hours: 0 }));
+    setSettingsPool(db.pool as never);
+
+    try {
+      const res = await post(updateSettings, { rematchCooldownHours: 0 });
+      assertEquals(res.status, 200);
+
+      const update = db.find("UPDATE system_settings")!;
+      assertStringIncludes(update.sql, "rematch_cooldown_hours = $1");
+      assertEquals(update.params, [0]);
+    } finally {
+      resetSettingsVerifier();
+      resetSettingsPool();
+      resetSettingsBroadcaster();
+    }
+  });
+
+  it("accepts zero for the ranking threshold", async () => {
+    // TC-ADMIN-271
+    setSettingsVerifier(adminVerifier);
+    setSettingsBroadcaster(() => Promise.resolve());
+    const db = createMockDb(okStubs({ ...before, ranking_min_opponents: 0 }));
+    setSettingsPool(db.pool as never);
+
+    try {
+      const res = await post(updateSettings, { rankingMinOpponents: 0 });
+      assertEquals(res.status, 200);
+
+      const update = db.find("UPDATE system_settings")!;
+      assertStringIncludes(update.sql, "ranking_min_opponents = $1");
+      assertEquals(update.params, [0]);
+    } finally {
+      resetSettingsVerifier();
+      resetSettingsPool();
+      resetSettingsBroadcaster();
+    }
+  });
+
+  // 勝敗報告の確定方式の設定（ADR-032 / ADR-034 / Migration 0023）。
+  //
+  // ★列だけ足してAPIへ配線し忘れると、設計書に載っている設定を運営が変更できない。
+  //   実際に ADR-032〜034 の10列がその状態だった（ADR-037 ①）。
+  it("updates the settings added for the report flow", async () => {
+    // TC-ADMIN-280
+    setSettingsVerifier(adminVerifier);
+    setSettingsBroadcaster(() => Promise.resolve());
+    const db = createMockDb(okStubs({ ...before, queue_cooldown_minutes: 45 }));
+    setSettingsPool(db.pool as never);
+
+    try {
+      const res = await post(updateSettings, { queueCooldownMinutes: 45 });
+      assertEquals(res.status, 200);
+
+      const update = db.find("UPDATE system_settings")!;
+      assertStringIncludes(update.sql, "queue_cooldown_minutes = $1");
+      assertEquals(update.params, [45]);
+    } finally {
+      resetSettingsVerifier();
+      resetSettingsPool();
+      resetSettingsBroadcaster();
+    }
+  });
+
+  // 保守による一時停止（ADR-034 ⑤）。
+  it("turns the maintenance pause on", async () => {
+    // TC-ADMIN-281
+    setSettingsVerifier(adminVerifier);
+    setSettingsBroadcaster(() => Promise.resolve());
+    const db = createMockDb(okStubs({ ...before, maintenance_paused: true }));
+    setSettingsPool(db.pool as never);
+
+    try {
+      const res = await post(updateSettings, { maintenancePaused: true });
+      assertEquals(res.status, 200);
+      assertEquals((await res.json()).data.settings.maintenance_paused, true);
+
+      const update = db.find("UPDATE system_settings")!;
+      assertStringIncludes(update.sql, "maintenance_paused = $1");
+      assertEquals(update.params, [true]);
+    } finally {
+      resetSettingsVerifier();
+      resetSettingsPool();
+      resetSettingsBroadcaster();
+    }
+  });
+
+  it("turns the maintenance pause off", async () => {
+    // TC-ADMIN-282 ★false を「未指定」と取り違えてはならない。解除できなくなる。
+    setSettingsVerifier(adminVerifier);
+    setSettingsBroadcaster(() => Promise.resolve());
+    const db = createMockDb(okStubs({ ...before, maintenance_paused: false }));
+    setSettingsPool(db.pool as never);
+
+    try {
+      const res = await post(updateSettings, { maintenancePaused: false });
+      assertEquals(res.status, 200);
+
+      const update = db.find("UPDATE system_settings")!;
+      assertStringIncludes(update.sql, "maintenance_paused = $1");
+      assertEquals(update.params, [false]);
+    } finally {
+      resetSettingsVerifier();
+      resetSettingsPool();
+      resetSettingsBroadcaster();
+    }
+  });
+
+  it("rejects a non-boolean maintenance pause", async () => {
+    // TC-ADMIN-283 文字列の "true" を受け取らない。
+    setSettingsVerifier(adminVerifier);
+    const db = createMockDb(okStubs());
+    setSettingsPool(db.pool as never);
+
+    try {
+      const res = await post(updateSettings, { maintenancePaused: "true" });
+      assertEquals(res.status, 400);
+      assertEquals((await res.json()).error.code, "ADMIN-002");
+      assertEquals(db.find("UPDATE system_settings"), undefined);
+    } finally {
+      resetSettingsVerifier();
+      resetSettingsPool();
+    }
+  });
+
+  // シーズンの状態は本APIから触れない（ADR-037 ②）。
+  //
+  // ★これを通すと、シーズン切替の途中で運営が状態を壊せる。加えて
+  //   `maintenance_paused` を別列にした意味（ADR-034 ⑤）が失われる。
+  it("never touches the season state columns", async () => {
+    // TC-ADMIN-284
+    setSettingsVerifier(adminVerifier);
+    const db = createMockDb(okStubs());
+    setSettingsPool(db.pool as never);
+
+    try {
+      for (const body of [
+        { matchmakingPaused: true },
+        { updatesLocked: true },
+        { currentSeason: 99 },
+      ]) {
+        const res = await post(updateSettings, body);
+        // 未知の項目しか無いため、更新対象が0件になり ADMIN-002 で返る。
+        assertEquals(res.status, 400);
+        assertEquals((await res.json()).error.code, "ADMIN-002");
+      }
+      assertEquals(db.find("UPDATE system_settings"), undefined);
+    } finally {
+      resetSettingsVerifier();
+      resetSettingsPool();
+    }
+  });
+
+  it("ignores a season state column mixed into a valid update", async () => {
+    // TC-ADMIN-285
+    // ★これが現実的な形である。有効な項目に紛れ込ませても列へ届いてはならない。
+    //   単独で送った場合だけを検証していると、この経路を見落とす。
+    setSettingsVerifier(adminVerifier);
+    setSettingsBroadcaster(() => Promise.resolve());
+    const db = createMockDb(okStubs());
+    setSettingsPool(db.pool as never);
+
+    try {
+      const res = await post(updateSettings, { ratingK: 64, matchmakingPaused: true });
+      assertEquals(res.status, 200);
+
+      const update = db.find("UPDATE system_settings")!;
+      assertStringIncludes(update.sql, "rating_k = $1");
+      assertEquals(/matchmaking_paused\s*=/.test(update.sql), false);
+      assertEquals(update.params, [64]);
+    } finally {
+      resetSettingsVerifier();
+      resetSettingsPool();
+      resetSettingsBroadcaster();
+    }
+  });
+
+  it("rejects a negative rematch cooldown", async () => {
+    // TC-ADMIN-272 範囲は system_settings の CHECK制約と一致させる。
+    // ここで通してDB側で落ちると、原因が ADMIN-002 ではなく SYSTEM-001 になる。
+    setSettingsVerifier(adminVerifier);
+    const db = createMockDb(okStubs());
+    setSettingsPool(db.pool as never);
+
+    try {
+      const res = await post(updateSettings, { rematchCooldownHours: -1 });
+      assertEquals(res.status, 400);
+      assertEquals((await res.json()).error.code, "ADMIN-002");
+      assertEquals(db.find("UPDATE system_settings"), undefined);
     } finally {
       resetSettingsVerifier();
       resetSettingsPool();

@@ -451,6 +451,10 @@ verify_jwt = false
 [functions.admin-cancel-season-end]
 verify_jwt = false
 
+# 管理者による対戦カードの作成（ADR-035 ⑤ / ADR-039）。ブラウザから直接呼ぶ。
+[functions.admin-create-match]
+verify_jwt = false
+
 [functions.admin-end-season]
 verify_jwt = false
 
