@@ -15,13 +15,18 @@ interface RankingRow {
   losses: number;
   matches: number;
   win_rate: number | null;
+  distinct_opponents: number;
 }
 
 export const rankingClient = {
   async fetchRanking(limit = 50, offset = 0): Promise<RankingEntry[]> {
+    // ★掲載条件を満たさないチームは rank が NULL である（ADR-036 ③ / Migration 0024）。
+    //   View から消さずに残してあるのは「なぜ載らないか」を画面から説明できるようにする
+    //   ためであり、一覧には出さない。ranking_min_opponents が 0 なら全チームが載る。
     const { data, error } = await supabase
       .from("team_ranking_view")
       .select("*")
+      .not("rank", "is", null)
       .order("rank", { ascending: true })
       .range(offset, offset + limit - 1);
 
@@ -36,6 +41,7 @@ export const rankingClient = {
       losses: row.losses,
       matches: row.matches,
       winRate: row.win_rate,
+      distinctOpponents: row.distinct_opponents,
     }));
   },
 };

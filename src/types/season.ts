@@ -8,6 +8,9 @@ export interface SeasonOperationState {
   graceUntil: string | null;
   matchmakingPaused: boolean;
   updatesLocked: boolean;
+  // 保守による一時停止（ADR-034 ⑤）。シーズンの停止とは別の列である。
+  // ★シーズンを再開しても解除されない。両方を見ないと、マッチングが受け付けられるか判定できない。
+  maintenancePaused: boolean;
 }
 
 export interface SeasonSummary {

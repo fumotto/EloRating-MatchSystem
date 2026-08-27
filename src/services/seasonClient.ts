@@ -19,7 +19,7 @@ export const seasonClient = {
   async fetchState(): Promise<SeasonOperationState | null> {
     const { data: settings, error } = await supabase
       .from("public_settings")
-      .select("current_season, matchmaking_paused, updates_locked")
+      .select("current_season, matchmaking_paused, updates_locked, maintenance_paused")
       .maybeSingle();
 
     if (error) throw error;
@@ -29,6 +29,7 @@ export const seasonClient = {
       current_season: number;
       matchmaking_paused: boolean;
       updates_locked: boolean;
+      maintenance_paused: boolean;
     };
 
     const { data: season, error: seasonError } = await supabase
@@ -50,6 +51,7 @@ export const seasonClient = {
       graceUntil: s?.grace_until ?? null,
       matchmakingPaused: row.matchmaking_paused,
       updatesLocked: row.updates_locked,
+      maintenancePaused: row.maintenance_paused,
     };
   },
 

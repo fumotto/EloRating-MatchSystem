@@ -26,6 +26,9 @@ const NO_CONTEST_LABELS: Record<NoContestReason, string> = {
     "双方が勝利を主張したまま期限を過ぎたため解散しました。レートは変わっていませんが、両チームがしばらく待機になります。",
   MUTUAL: "対戦不成立として合意しました。記録に影響せず、すぐ次の試合へ進めます。",
   ADMIN_VOID: "運営により無効となりました。不利益はありません。",
+  // ★ADMIN_VOID と同じ文言にしない（ADR-038 ①）。管理者が個別に無効化したのではなく、
+  //   シーズンの終了に伴って打ち切られた試合である。何が起きたのかを言い分ける。
+  SEASON_END: "シーズンの終了により打ち切られました。不利益はありません。",
 };
 
 export function noContestLabel(reason: NoContestReason | null): string {

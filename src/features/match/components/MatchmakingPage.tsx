@@ -1,5 +1,5 @@
 // Page（05_Frontend.md 3.2）。マッチング待機画面。
-import { useRouteContext } from "@tanstack/react-router";
+import { Link, useRouteContext } from "@tanstack/react-router";
 import { useMyTeam } from "../../team/hooks/useMyTeam";
 import { useTeamDetail } from "../../team/hooks/useTeamDetail";
 import { useSystemSettings } from "../../settings/hooks/useSystemSettings";
@@ -8,6 +8,7 @@ import { useQueueMatch } from "../hooks/useQueueMatch";
 import { useCancelQueue } from "../hooks/useCancelQueue";
 import { useMatchList } from "../hooks/useMatchList";
 import { EmptyState } from "../../../components/feedback/EmptyState";
+import { matchStatusLabel } from "./matchStatusLabel";
 import { ErrorNotice } from "../../../components/feedback/ErrorNotice";
 import { apiErrorCode } from "../../../utils/apiErrorCode";
 import { requestNotificationPermission } from "../../../utils/browserNotification";
@@ -21,8 +22,12 @@ export function MatchmakingPage() {
   const cancelQueue = useCancelQueue();
 
   // 進行中の試合があれば待機できない（QUEUE-002）。先にそちらを案内する。
+  //
+  // ★複数持ちうる（ADR-035 ⑤ / ADR-039 ⑧）。管理者が用意した試合は待機列を経由しないため、
+  //   1チームへ同時に複数割り当てられる。先頭の1件だけを案内すると、残りが画面から消える。
+  //   自動マッチングだけを使う運用では常に0件か1件であり、見た目は変わらない。
   const { data: activeMatches } = useMatchList({ status: ["PLAYING", "WINNER_REPORTED"] });
-  const myActiveMatch = activeMatches?.find(
+  const myActiveMatches = (activeMatches ?? []).filter(
     (m) => m.teamAId === team?.id || m.teamBId === team?.id,
   );
 
@@ -45,10 +50,15 @@ export function MatchmakingPage() {
       ? { current: memberCount, required: requiredMembers }
       : null;
 
-  // シーズン切替中はマッチングを受け付けない（Issue #9 / SEASON-002）。
+  // 停止中はマッチングを受け付けない（Issue #9 / SEASON-002・ADR-034 ⑤ / QUEUE-007）。
   // ★押してからエラーにしない。停止していることと、その理由を先に見せる。
+  //
+  // ★2つの停止を両方見る（ADR-038 ③）。シーズンの停止だけを見ていると、保守停止の間は
+  //   案内が出ないままボタンが押せてしまい、QUEUE-007 で弾かれる。上の原則に反する。
   const { data: seasonState } = useSeasonState();
-  const isPaused = seasonState?.matchmakingPaused === true;
+  const isSeasonPaused = seasonState?.matchmakingPaused === true;
+  const isMaintenancePaused = seasonState?.maintenancePaused === true;
+  const isPaused = isSeasonPaused || isMaintenancePaused;
 
   const canQueue = !isRosterLoading && shortfall === null && !isPaused;
 
@@ -69,11 +79,35 @@ export function MatchmakingPage() {
     <section className="space-y-6">
       <h1 className="text-xl font-semibold">マッチング</h1>
 
-      {myActiveMatch ? (
-        <EmptyState
-          title="進行中の試合があります"
-          description="試合が確定するまで新しいマッチングはできません。"
-        />
+      {myActiveMatches.length > 0 ? (
+        <div className="space-y-3">
+          <EmptyState
+            title={
+              myActiveMatches.length === 1
+                ? "進行中の試合があります"
+                : `進行中の試合が ${myActiveMatches.length} 件あります`
+            }
+            description="すべて確定するまで新しいマッチングはできません。"
+          />
+          {/* ★1件でも一覧として出す。件数で表示の形を変えると、
+              2件目が現れたときに画面の意味が変わってしまう。 */}
+          <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200 text-sm dark:divide-slate-800 dark:border-slate-800">
+            {myActiveMatches.map((match) => (
+              <li key={match.id} className="px-4 py-3">
+                <Link
+                  to="/matches/$matchId"
+                  params={{ matchId: match.id }}
+                  className="font-medium underline-offset-2 hover:underline"
+                >
+                  {match.teamAName} 対 {match.teamBName}
+                </Link>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  {matchStatusLabel(match.status)}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : queue ? (
         <div className="space-y-3">
           <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-800">
@@ -98,7 +132,14 @@ export function MatchmakingPage() {
           </p>
 
           {/* ★停止中はその旨を先に出す。不具合と区別できるようにする。 */}
-          {isPaused ? (
+          {/* ★理由ごとに文言を変える。どちらも「一時停止」だが、待つ相手が違う。
+              シーズンは運営の作業待ち、保守はゲーム側の復旧待ちである。 */}
+          {isMaintenancePaused ? (
+            <p role="status" className="text-sm text-amber-700 dark:text-amber-500">
+              メンテナンスのため、マッチングを一時停止しています。
+              復旧までお待ちください。進行中の試合はそのまま続けられます。
+            </p>
+          ) : isSeasonPaused ? (
             <p role="status" className="text-sm text-amber-700 dark:text-amber-500">
               シーズンの切り替え中のため、マッチングを一時停止しています。
               再開までお待ちください。進行中の試合はそのまま続けられます。

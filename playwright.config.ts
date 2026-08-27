@@ -10,6 +10,9 @@ const PORT = 5173;
 
 export default defineConfig({
   testDir: "./tests/e2e",
+  // サブアカウント対策を検証環境で切る（ADR-036 ⑤）。Seed の既定値は本番と同じであり、
+  // 差はここで付ける。詳細は tests/e2e/global-setup.ts を参照。
+  globalSetup: "./tests/e2e/global-setup.ts",
   // 状態を共有するシナリオがあるため直列で流す。並列にするとキューや所属が干渉する。
   fullyParallel: false,
   workers: 1,

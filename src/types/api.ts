@@ -71,6 +71,8 @@ export interface RankingEntry {
   losses: number;
   matches: number;
   winRate: number | null;
+  // 異なる対戦相手数（ADR-036 ③ / Migration 0024）。掲載の条件に使う。
+  distinctOpponents: number;
 }
 
 // --- create-team-invite（9.3）---
@@ -324,6 +326,22 @@ export type UpdateSystemSettingsRequest = {
   // お知らせ（Issue #7 / Migration 0019）。空文字なら帯を出さない。
   announcementText?: string;
   announcementLevel?: AnnouncementLevel;
+  // 勝敗報告の確定方式（ADR-032 / ADR-034 / Migration 0023）。
+  queueCooldownMinutes?: number;
+  reportExtensionMinutes?: number;
+  maxReportExtensions?: number;
+  noShowMinutes?: number;
+  noShowResponseMinutes?: number;
+  maxNoContestRequests?: number;
+  mutualNoContestDailyLimit?: number;
+  avoidanceDays?: number;
+  maxAvoidanceEntries?: number;
+  // 保守による一時停止（ADR-034 ⑤）。シーズンの停止（matchmaking_paused）とは別物であり、
+  // そちらは本APIから触れない（ADR-037 ②）。
+  maintenancePaused?: boolean;
+  // サブアカウント対策（ADR-036 / Migration 0024）。いずれも 0 で無効。
+  rematchCooldownHours?: number;
+  rankingMinOpponents?: number;
 };
 
 // public_settings ビューの列（Migration 0018）。未ログインでも取得できる。
@@ -362,8 +380,24 @@ export interface SystemSettings {
   invite_expiration_hours: number;
   report_timeout_minutes: number;
   approve_timeout_minutes: number;
+  // ★廃止した設定（ADR-032 ③）。値は誰も読まない。互換のために型へ残すが、
+  //   画面へ出してはならない（ADR-037 ③）。
   max_reject_count: number;
   season_grace_minutes: number;
+  // 勝敗報告の確定方式（ADR-032 / ADR-034 / Migration 0023）。
+  queue_cooldown_minutes: number;
+  report_extension_minutes: number;
+  max_report_extensions: number;
+  no_show_minutes: number;
+  no_show_response_minutes: number;
+  max_no_contest_requests: number;
+  mutual_no_contest_daily_limit: number;
+  avoidance_days: number;
+  max_avoidance_entries: number;
+  maintenance_paused: boolean;
+  // サブアカウント対策（ADR-036 / Migration 0024）。
+  rematch_cooldown_hours: number;
+  ranking_min_opponents: number;
 }
 
 export interface UpdateSystemSettingsResponse {
@@ -399,7 +433,14 @@ export interface TeamDetail {
 //   REPORT_TIMEOUT / CONFLICT … 両チームが不戦とクールダウンを負う
 //   NO_SHOW                  … 無応答側のみ
 //   MUTUAL / ADMIN_VOID      … 不利益なし。確定率にも計上しない
-export type NoContestReason = "REPORT_TIMEOUT" | "NO_SHOW" | "MUTUAL" | "CONFLICT" | "ADMIN_VOID";
+//   SEASON_END               … 同上（ADR-038 ②）。シーズン終了による打ち切り
+export type NoContestReason =
+  | "REPORT_TIMEOUT"
+  | "NO_SHOW"
+  | "MUTUAL"
+  | "CONFLICT"
+  | "ADMIN_VOID"
+  | "SEASON_END";
 
 export interface MatchListEntry {
   id: string;
@@ -463,6 +504,64 @@ export interface AbuseReportAggregate {
   reporterTeamCount: number;
   sanctionCount: number;
   lastReportedAt: string;
+}
+
+// --- 疑わしいペア（ADR-036 ④ / suspicious_pair_view）---
+//
+// ★これは疑いであって証拠ではない。自動の措置は一切結び付けない。管理者が読む材料である。
+export interface SuspiciousPair {
+  teamLowId: string;
+  teamHighId: string;
+  matchCount: number;
+  lowWins: number;
+  highWins: number;
+  concedeCount: number;
+  avgSettleMinutes: number | null;
+  lastCompletedAt: string;
+  // 0.5 が互角、1.0 は一度も逆向きの結果が出ていない。
+  oneSidedRatio: number;
+  // 両チームが同じ時刻に別々の試合へ出たことが一度も無い。
+  neverConcurrent: boolean;
+}
+
+// --- チーム単位の偏り（ADR-036 ④ / team_integrity_view）---
+export interface TeamIntegrity {
+  teamId: string;
+  settledMatches: number;
+  distinctOpponents: number;
+  gainedTotal: number;
+  topOpponentId: string;
+  topOpponentMatches: number;
+  topOpponentGained: number;
+  // 1.0 に近いほど、稼ぎが単一の相手から来ている。
+  topOpponentGainShare: number | null;
+}
+
+// --- admin-create-match（12.11 / ADR-035 ⑤ / ADR-039）---
+//
+// ★待機列を経由しない試合の生成である。レート差・再マッチ抑止・クールダウンには
+//   拘束されない。1チームへ複数の試合を同時に割り当てられる。
+export type AdminCreateMatchRequest = {
+  [key: string]: unknown;
+  teamAId: string;
+  teamBId: string;
+};
+
+export interface AdminCreateMatchResponse {
+  matchId: string;
+  teamAId: string;
+  teamBId: string;
+  reportDeadlineAt: string;
+}
+
+// 対戦カードを組むための候補。人数を出すのは、管理者が不揃いに気付けるようにするためである
+// （ADR-039 ④）。必須人数は要求しないため、画面が唯一の手がかりになる。
+export interface MatchCandidateTeam {
+  teamId: string;
+  teamName: string;
+  rating: number;
+  isBanned: boolean;
+  memberCount: number;
 }
 
 export interface QueueStatus {

@@ -5,9 +5,19 @@ const SECTIONS = [
   { to: "/admin/teams", title: "チーム管理", description: "BANと解除を行います。" },
   { to: "/admin/settings", title: "システム設定", description: "K値・期限・上限を変更します。" },
   {
+    to: "/admin/matches",
+    title: "対戦カードを用意する",
+    description: "大会・イベント用に、対戦する2チームを直接指定します。",
+  },
+  {
     to: "/admin/reports",
     title: "通報",
     description: "未処理の通報と累積を確認します。単発では措置しません。",
+  },
+  {
+    to: "/admin/integrity",
+    title: "対戦の偏り",
+    description: "繰り返し当たっている組み合わせと、稼ぎ先の偏りを確認します。",
   },
   { to: "/admin/audit", title: "監査ログ", description: "実行された操作の履歴を確認します。" },
   {

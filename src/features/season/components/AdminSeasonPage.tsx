@@ -74,7 +74,19 @@ export function AdminSeasonPage() {
 
       <dl className="grid grid-cols-2 gap-2 rounded-lg border border-slate-200 p-4 text-sm dark:border-slate-800">
         <dt className="text-slate-500 dark:text-slate-400">マッチング</dt>
-        <dd>{state.matchmakingPaused ? "停止中" : "受付中"}</dd>
+        {/* ★シーズンの停止だけを見て「受付中」と表示してはならない（ADR-038 ③）。
+            保守による停止（ADR-034 ⑤）は別の列であり、シーズンを再開しても解除されない。
+            片方だけを見ると、再開したのにマッチングが動かない状態を「受付中」と表示する。 */}
+        <dd>
+          {state.matchmakingPaused || state.maintenancePaused ? "停止中" : "受付中"}
+          {state.matchmakingPaused && state.maintenancePaused
+            ? "（シーズン・保守）"
+            : state.maintenancePaused
+              ? "（保守）"
+              : state.matchmakingPaused
+                ? "（シーズン）"
+                : null}
+        </dd>
         <dt className="text-slate-500 dark:text-slate-400">利用者の更新操作</dt>
         <dd>{state.updatesLocked ? "禁止中" : "許可"}</dd>
         {state.status === "ENDING" && state.graceUntil ? (
@@ -205,6 +217,14 @@ export function AdminSeasonPage() {
           <p className="text-sm text-slate-500 dark:text-slate-400">
             利用者の更新操作を解除し、マッチングを再開します。
           </p>
+          {/* ★保守停止が残っていると、再開してもマッチングは動かない（ADR-034 ⑤ / ADR-038 ③）。
+              押す前に伝える。押した後に「動かない」と気付く形にしてはならない。 */}
+          {state.maintenancePaused ? (
+            <p role="status" className="text-sm text-amber-700 dark:text-amber-500">
+              保守による停止が有効です。このまま戻しても、解除するまでマッチングは成立しません。
+              障害が続いているなら意図どおりです。復旧済みなら、システム設定から保守停止も解除してください。
+            </p>
+          ) : null}
           <button
             type="button"
             disabled={resume.isPending}

@@ -23,6 +23,8 @@ import { Route as PublicRulesRouteImport } from './routes/_public/rules'
 import { Route as PublicSeasonsRouteImport } from './routes/_public/seasons'
 import { Route as AdminAdminIndexRouteImport } from './routes/_admin/admin.index'
 import { Route as AdminAdminAuditRouteImport } from './routes/_admin/admin.audit'
+import { Route as AdminAdminIntegrityRouteImport } from './routes/_admin/admin.integrity'
+import { Route as AdminAdminMatchesRouteImport } from './routes/_admin/admin.matches'
 import { Route as AdminAdminReportsRouteImport } from './routes/_admin/admin.reports'
 import { Route as AdminAdminSeasonRouteImport } from './routes/_admin/admin.season'
 import { Route as AdminAdminSettingsRouteImport } from './routes/_admin/admin.settings'
@@ -99,6 +101,16 @@ const AdminAdminAuditRoute = AdminAdminAuditRouteImport.update({
   path: '/admin/audit',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminAdminIntegrityRoute = AdminAdminIntegrityRouteImport.update({
+  id: '/admin/integrity',
+  path: '/admin/integrity',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminAdminMatchesRoute = AdminAdminMatchesRouteImport.update({
+  id: '/admin/matches',
+  path: '/admin/matches',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminAdminReportsRoute = AdminAdminReportsRouteImport.update({
   id: '/admin/reports',
   path: '/admin/reports',
@@ -151,6 +163,8 @@ export interface FileRoutesByFullPath {
   '/rules': typeof PublicRulesRoute
   '/seasons': typeof PublicSeasonsRoute
   '/admin/audit': typeof AdminAdminAuditRoute
+  '/admin/integrity': typeof AdminAdminIntegrityRoute
+  '/admin/matches': typeof AdminAdminMatchesRoute
   '/admin/reports': typeof AdminAdminReportsRoute
   '/admin/season': typeof AdminAdminSeasonRoute
   '/admin/settings': typeof AdminAdminSettingsRoute
@@ -172,6 +186,8 @@ export interface FileRoutesByTo {
   '/rules': typeof PublicRulesRoute
   '/seasons': typeof PublicSeasonsRoute
   '/admin/audit': typeof AdminAdminAuditRoute
+  '/admin/integrity': typeof AdminAdminIntegrityRoute
+  '/admin/matches': typeof AdminAdminMatchesRoute
   '/admin/reports': typeof AdminAdminReportsRoute
   '/admin/season': typeof AdminAdminSeasonRoute
   '/admin/settings': typeof AdminAdminSettingsRoute
@@ -197,6 +213,8 @@ export interface FileRoutesById {
   '/_public/seasons': typeof PublicSeasonsRoute
   '/_public/': typeof PublicIndexRoute
   '/_admin/admin/audit': typeof AdminAdminAuditRoute
+  '/_admin/admin/integrity': typeof AdminAdminIntegrityRoute
+  '/_admin/admin/matches': typeof AdminAdminMatchesRoute
   '/_admin/admin/reports': typeof AdminAdminReportsRoute
   '/_admin/admin/season': typeof AdminAdminSeasonRoute
   '/_admin/admin/settings': typeof AdminAdminSettingsRoute
@@ -220,6 +238,8 @@ export interface FileRouteTypes {
     | '/rules'
     | '/seasons'
     | '/admin/audit'
+    | '/admin/integrity'
+    | '/admin/matches'
     | '/admin/reports'
     | '/admin/season'
     | '/admin/settings'
@@ -241,6 +261,8 @@ export interface FileRouteTypes {
     | '/rules'
     | '/seasons'
     | '/admin/audit'
+    | '/admin/integrity'
+    | '/admin/matches'
     | '/admin/reports'
     | '/admin/season'
     | '/admin/settings'
@@ -265,6 +287,8 @@ export interface FileRouteTypes {
     | '/_public/seasons'
     | '/_public/'
     | '/_admin/admin/audit'
+    | '/_admin/admin/integrity'
+    | '/_admin/admin/matches'
     | '/_admin/admin/reports'
     | '/_admin/admin/season'
     | '/_admin/admin/settings'
@@ -382,6 +406,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminAdminAuditRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/_admin/admin/integrity': {
+      id: '/_admin/admin/integrity'
+      path: '/admin/integrity'
+      fullPath: '/admin/integrity'
+      preLoaderRoute: typeof AdminAdminIntegrityRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/_admin/admin/matches': {
+      id: '/_admin/admin/matches'
+      path: '/admin/matches'
+      fullPath: '/admin/matches'
+      preLoaderRoute: typeof AdminAdminMatchesRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/_admin/admin/reports': {
       id: '/_admin/admin/reports'
       path: '/admin/reports'
@@ -443,6 +481,8 @@ declare module '@tanstack/react-router' {
 
 interface AdminRouteChildren {
   AdminAdminAuditRoute: typeof AdminAdminAuditRoute
+  AdminAdminIntegrityRoute: typeof AdminAdminIntegrityRoute
+  AdminAdminMatchesRoute: typeof AdminAdminMatchesRoute
   AdminAdminReportsRoute: typeof AdminAdminReportsRoute
   AdminAdminSeasonRoute: typeof AdminAdminSeasonRoute
   AdminAdminSettingsRoute: typeof AdminAdminSettingsRoute
@@ -452,6 +492,8 @@ interface AdminRouteChildren {
 
 const AdminRouteChildren: AdminRouteChildren = {
   AdminAdminAuditRoute: AdminAdminAuditRoute,
+  AdminAdminIntegrityRoute: AdminAdminIntegrityRoute,
+  AdminAdminMatchesRoute: AdminAdminMatchesRoute,
   AdminAdminReportsRoute: AdminAdminReportsRoute,
   AdminAdminSeasonRoute: AdminAdminSeasonRoute,
   AdminAdminSettingsRoute: AdminAdminSettingsRoute,

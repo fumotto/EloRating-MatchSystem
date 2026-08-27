@@ -3,3 +3,16 @@ export const auditKeys = {
   all: ["audit"] as const,
   list: () => [...auditKeys.all, "list"] as const,
 };
+
+// サブアカウント対策の信号（ADR-036 ④）。
+export const integrityKeys = {
+  all: ["integrity"] as const,
+  pairs: () => [...integrityKeys.all, "pairs"] as const,
+  teams: () => [...integrityKeys.all, "teams"] as const,
+};
+
+// 対戦カードの候補（ADR-039）。
+export const matchCandidateKeys = {
+  all: ["matchCandidates"] as const,
+  list: () => [...matchCandidateKeys.all, "list"] as const,
+};
