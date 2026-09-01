@@ -109,7 +109,14 @@ TC-SEC-018 は重要である。招待の参照を全認証ユーザーへ開放
 | TC-SEC-033 | 第三者による申告拒否   | 無関係チーム    | report-match   | `MATCH-005` を返す | Integration | `authorization: rejects a report from a third party`    |
 | TC-SEC-034 | 敗者による承認      | 敗者チームのメンバー | approve-match  | 成功する           | Integration | `authorization: allows the losing team to approve`      |
 | TC-SEC-035 | 第三者による承認拒否   | 無関係チーム    | approve-match  | `MATCH-005` を返す | Integration | `authorization: rejects an approval from a third party` |
-| TC-SEC-036 | 第三者による拒否の拒絶  | 無関係チーム    | reject-match   | `MATCH-005` を返す | Integration | `authorization: rejects a rejection from a third party` |
+| TC-SEC-036 | 第三者による投了の拒絶  | 無関係チーム    | concede-match  | `MATCH-005` を返す | Integration | `authorization: rejects a concession from a third party` |
+| TC-SEC-040 | 申告者自身による反対申告 | 申告したチーム   | report-match   | `MATCH-003` を返す | Integration | `authorization: rejects a self counter claim`           |
+| TC-SEC-041 | 申請者自身による応答   | 申請したチーム   | respond-no-contest | `MATCH-005` を返す | Integration | `authorization: rejects a self response`            |
+| TC-SEC-042 | **通報元チームの詐称** | body に別チームID | create-abuse-report | JWTから導出され無視される | Integration | `authorization: derives the reporter team from the JWT` |
+| TC-SEC-043 | 自チームへの通報     | 自チームを対象    | create-abuse-report | `ABUSE-002` を返す | Integration | `authorization: rejects a self report`                 |
+| TC-SEC-044 | **通報の非公開**    | 対象チームとして参照 | abuse_reports SELECT | 0件が返る    | Database    | `rls: hides reports from the reported team`            |
+| TC-SEC-045 | 他人の通報の取り下げ   | 別利用者の通報    | withdraw-abuse-report | `ABUSE-007` を返す | Integration | `authorization: rejects withdrawing another's report` |
+| TC-SEC-046 | **通報から結果への経路** | `COMPLETED` の関連試合 | 通報・措置 | 勝敗もレートも変わらない | Integration | `authorization: never lets a report alter a result`   |
 | TC-SEC-037 | 確定済み試合の更新拒否  | `COMPLETED` | 各操作           | `MATCH-002` を返す | Integration | `authorization: rejects changes to a completed match`   |
 | TC-SEC-038 | 履歴の改ざん防止     | 認証済み      | rating_history UPDATE | 拒否される     | Database    | `rls: blocks rating history modification`               |
 | TC-SEC-039 | 履歴の削除防止      | 認証済み      | rating_history DELETE | 拒否される     | Database    | `rls: blocks rating history deletion`                   |

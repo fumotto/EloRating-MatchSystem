@@ -105,8 +105,14 @@ DeltaLoser  = -DeltaWinner
 | TC-RATING-028 | K値の取得元         | －                       | approve-match   | `system_settings` から取得される（ハードコードでない）     | Integration | `reads the K factor from system settings`                   |
 | TC-RATING-029 | 自動承認時のレート更新    | 承認期限切れ                  | auto-resolve-matches | レートが更新され `rating_history` が2件作成される       | Integration | `updates ratings when the match is auto-approved`           |
 | TC-RATING-030 | DRAWNではレート更新なし | 申告期限切れ                  | auto-resolve-matches | レートが変化せず `rating_history` が作成されない        | Integration | `does not touch ratings when the match is drawn`            |
-| TC-RATING-031 | 拒否ではレート更新なし    | 勝者報告済み                  | reject-match    | レートが変化しない                                | Integration | `does not update ratings on rejection`                      |
+| TC-RATING-031 | **投了でのレート更新**   | 進行中                     | concede-match   | レートが更新され `rating_history` が2件作成される       | Integration | `updates ratings on concession`                             |
+| TC-RATING-033 | 反対申告ではレート更新なし  | 勝者報告済み                  | report-match（相手） | レートが変化しない                              | Integration | `does not update ratings on a counter claim`                |
+| TC-RATING-034 | 不成立ではレート更新なし   | 進行中                     | request/respond-no-contest | レートが変化しない                     | Integration | `does not update ratings on a no-contest`                   |
+| TC-RATING-035 | 無効化ではレート更新なし   | 進行中                     | admin-void-match | レートが変化しない                               | Integration | `does not update ratings when voiding`                      |
+| TC-RATING-036 | **確定後は変更不可**    | `COMPLETED`             | 通報・措置           | レートが変化しない                                | Integration | `never changes ratings after settlement`                    |
 | TC-RATING-032 | 申告ではレート更新なし    | 進行中                     | report-match    | レートが変化しない                                | Integration | `does not update ratings on report`                         |
+
+TC-RATING-036 は ADR-033 ① の検証である。**通報からレートへ至る経路は存在してはならない。**
 
 ## 3.6 トランザクション（Integration）
 

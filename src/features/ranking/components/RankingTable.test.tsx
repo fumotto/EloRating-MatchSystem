@@ -40,6 +40,7 @@ const entries: RankingEntry[] = [
     losses: 1,
     matches: 4,
     winRate: 0.75,
+    distinctOpponents: 3,
   },
 ];
 

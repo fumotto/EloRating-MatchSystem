@@ -19,6 +19,7 @@ const drawnTarget = {
   team_a_id: "team-a",
   team_b_id: "team-b",
   winner_team_id: null,
+  no_contest_requested_by_team_id: null,
   version: 1,
 };
 
@@ -27,16 +28,23 @@ const approveTarget = {
   team_a_id: "team-a",
   team_b_id: "team-b",
   winner_team_id: "team-a",
+  no_contest_requested_by_team_id: null,
   version: 2,
 };
 
 // 既定は「報告期限切れ1件・承認期限切れ1件」。
+//
+// ★抽出は4本ある（ADR-032 / ADR-034）。承認期限切れの2本は
+//   `counter_claim_team_id IS NULL` / `IS NOT NULL` でしか区別できないため、
+//   スタブも同じ条件で書き分ける。前方一致だけでは競合側まで拾ってしまう。
 const okStubs = (overrides: QueryStub[] = []): QueryStub[] => [
   ...overrides,
+  ["counter_claim_team_id IS NOT NULL", []],
   ["WHERE status = 'PLAYING' AND report_deadline_at < NOW()", [drawnTarget]],
   ["WHERE status = 'WINNER_REPORTED' AND approve_deadline_at < NOW()", [approveTarget]],
   ["UPDATE matches", [{ id: "match-drawn", completed_at: new Date("2026-08-08T11:00:00Z") }]],
   ["SELECT rating_k FROM system_settings", [{ rating_k: 32 }]],
+  ["SELECT queue_cooldown_minutes FROM system_settings", [{ queue_cooldown_minutes: 30 }]],
   ["SELECT id, rating FROM teams", [
     { id: "team-a", rating: 1500 },
     { id: "team-b", rating: 1500 },
@@ -88,8 +96,12 @@ describe("auto-resolve-matches", () => {
 
     try {
       await run();
-      assertEquals(db.find("UPDATE teams"), undefined);
+      // ★レートは変えない。ただし `UPDATE teams` 自体は行われる。
+      //   解散はクールダウン（queue_cooldown_until）を課すためである（ADR-032 ④）。
+      //   「teams を触らない」ではなく「rating を触らない」で判定する。
+      assertEquals(db.findAll("UPDATE teams SET rating").length, 0);
       assertEquals(db.find("INSERT INTO rating_history"), undefined);
+      assertEquals(db.findAll("queue_cooldown_until").length > 0, true);
     } finally {
       resetDbPool();
       resetBroadcaster();
@@ -170,7 +182,9 @@ describe("auto-resolve-matches", () => {
     try {
       await run();
       const actions = db.findAll("INSERT INTO audit_logs");
-      assertEquals(actions.some((q) => q.sql.includes("'MATCH_DRAWN'")), true);
+      // 解散の action はパラメータで渡す。理由ごとに値が変わるためである
+      // （MATCH_DRAWN / MATCH_NO_SHOW_DRAWN / MATCH_CONFLICT_DRAWN）。
+      assertEquals(actions.some((q) => q.params.includes("MATCH_DRAWN")), true);
       // 自動承認は MATCH_APPROVED ではなく MATCH_AUTO_APPROVED である（03 10.9）。
       assertEquals(actions.some((q) => q.params.includes("MATCH_AUTO_APPROVED")), true);
     } finally {

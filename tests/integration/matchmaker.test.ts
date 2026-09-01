@@ -26,7 +26,8 @@ const okStubs = (queue = twoTeams, overrides: QueryStub[] = []): QueryStub[] => 
   ...overrides,
   ["FROM matching_queue q", queue],
   ["SELECT match_rating_range, report_timeout_minutes", [
-    { match_rating_range: 400, report_timeout_minutes: 60 },
+    // ★既定を有効値にしておく。0 のままだと全テストが抑止の無い経路しか通らない。
+    { match_rating_range: 400, report_timeout_minutes: 60, rematch_cooldown_hours: 24 },
   ]],
   ["INSERT INTO matches", [{ id: "match-1" }]],
 ];
@@ -74,7 +75,7 @@ describe("matchmaker", () => {
     recordBroadcasts();
     const db = createMockDb(okStubs(twoTeams, [
       ["SELECT match_rating_range, report_timeout_minutes", [
-        { match_rating_range: 400, report_timeout_minutes: 90 },
+        { match_rating_range: 400, report_timeout_minutes: 90, rematch_cooldown_hours: 24 },
       ]],
     ]));
     setDbPool(db.pool as never);
@@ -297,6 +298,99 @@ describe("matchmaker", () => {
       assertEquals((await res.json()).error.code, "AUTH-004");
     } finally {
       resetDbPool();
+    }
+  });
+});
+
+// サブアカウント対策（ADR-036 ①）。
+//
+// ★ここで検証するのは「同じ2チームが短い間隔で繰り返し当たらないこと」である。
+//   同一人物かどうかは判定していない。判定していないからこそ、VPN でも回線の
+//   使い分けでも回避されない。
+describe("matchmaker — ペア再戦の抑止（ADR-036 ①）", () => {
+  const rematchStub = (rows: Record<string, unknown>[]): QueryStub =>
+    ["LEAST(team_a_id, team_b_id)", rows];
+
+  it("does not pair teams that already completed a match inside the cooldown", async () => {
+    // TC-QUEUE-060
+    recordBroadcasts();
+    const db = createMockDb(okStubs(twoTeams, [
+      rematchStub([{ team_low_id: "team-a", team_high_id: "team-b" }]),
+    ]));
+    setDbPool(db.pool as never);
+
+    try {
+      const res = await run();
+      assertEquals(res.status, 200);
+
+      // 相手が見つからないのはエラーではない。待機の継続である（09 12章）。
+      const data = await res.json();
+      assertEquals(data.data.matchedCount, 0);
+      assertEquals(db.find("INSERT INTO matches"), undefined);
+      // 待機列からも外さない。
+      assertEquals(db.find("DELETE FROM matching_queue"), undefined);
+    } finally {
+      resetDbPool();
+      resetBroadcaster();
+    }
+  });
+
+  it("still pairs teams whose previous match falls outside the cooldown", async () => {
+    // TC-QUEUE-061
+    recordBroadcasts();
+    const db = createMockDb(okStubs(twoTeams, [rematchStub([])]));
+    setDbPool(db.pool as never);
+
+    try {
+      const res = await run();
+      assertEquals((await res.json()).data.matchedCount, 1);
+    } finally {
+      resetDbPool();
+      resetBroadcaster();
+    }
+  });
+
+  it("looks only at completed matches inside the configured window", async () => {
+    // TC-QUEUE-062
+    // ★DRAWN を数えてはならない。レートが動かない不成立まで抑止すると、
+    //   落ち度の無いチームが待たされる（ADR-034 の原則）。
+    recordBroadcasts();
+    const db = createMockDb(okStubs());
+    setDbPool(db.pool as never);
+
+    try {
+      await run();
+      const lookup = db.find("LEAST(team_a_id, team_b_id)")!;
+      assertStringIncludes(lookup.sql, "status = 'COMPLETED'");
+      assertEquals(/DRAWN/.test(lookup.sql), false);
+      assertStringIncludes(lookup.sql, "hours')::interval");
+      assertEquals(lookup.params[0], "24");
+    } finally {
+      resetDbPool();
+      resetBroadcaster();
+    }
+  });
+
+  it("skips the lookup entirely when the cooldown is disabled", async () => {
+    // TC-QUEUE-063
+    // ★検証環境はこの状態で動かす。0 が無効を表す（ADR-036 ⑤）。
+    recordBroadcasts();
+    const db = createMockDb(okStubs(twoTeams, [
+      ["SELECT match_rating_range, report_timeout_minutes", [
+        { match_rating_range: 400, report_timeout_minutes: 60, rematch_cooldown_hours: 0 },
+      ]],
+      rematchStub([{ team_low_id: "team-a", team_high_id: "team-b" }]),
+    ]));
+    setDbPool(db.pool as never);
+
+    try {
+      const res = await run();
+      // 抑止に一致する行があっても、無効なら問い合わせ自体を行わない。
+      assertEquals(db.find("LEAST(team_a_id, team_b_id)"), undefined);
+      assertEquals((await res.json()).data.matchedCount, 1);
+    } finally {
+      resetDbPool();
+      resetBroadcaster();
     }
   });
 });

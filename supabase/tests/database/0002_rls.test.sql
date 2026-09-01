@@ -13,6 +13,42 @@ CREATE EXTENSION IF NOT EXISTS pgtap;
 
 SELECT plan(24);
 
+-- ★遮断の「仕組み」ではなく「保証」を検証する。
+--
+--   本ファイルはかつて `throws_ok(..., '42501')` で「GRANT が無いこと」を確かめていた。
+--   しかし Supabase の基盤イメージが更新され、`anon` / `authenticated` へ既定の
+--   テーブル GRANT が付くと、遮断は GRANT ではなく RLS が担うようになる。
+--   その場合は権限エラーが起きず、「0件が返る」「0行が更新される」に変わる。
+--
+--   守りたいのは「見えないこと」「書き換えられないこと」であって、どの層が止めるかではない。
+--   仕組みを固定すると、保証が保たれているのにテストだけが壊れる（実際に壊れた）。
+
+CREATE OR REPLACE FUNCTION pg_temp.is_hidden(query text) RETURNS boolean AS $fn$
+DECLARE
+  visible integer;
+BEGIN
+  EXECUTE 'SELECT count(*) FROM (' || query || ') s' INTO visible;
+  RETURN visible = 0;
+EXCEPTION
+  WHEN insufficient_privilege THEN
+    -- GRANT の段階で遮断された。見えないことに変わりはない。
+    RETURN true;
+END;
+$fn$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION pg_temp.is_blocked(statement text) RETURNS boolean AS $fn$
+DECLARE
+  affected integer;
+BEGIN
+  EXECUTE statement;
+  GET DIAGNOSTICS affected = ROW_COUNT;
+  RETURN affected = 0;
+EXCEPTION
+  WHEN insufficient_privilege THEN
+    RETURN true;
+END;
+$fn$ LANGUAGE plpgsql;
+
 INSERT INTO auth.users (id, instance_id, aud, role, email)
 VALUES
   ('11111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-000000000000',
@@ -73,22 +109,27 @@ SELECT ok(
 );
 
 -- TC-SEC-019 招待は未認証から見えない。
--- anon には GRANT 自体が無いため、空集合ではなく権限エラーになる（0013_rls.sql）。
--- RLSポリシー以前の段階で遮断されており、こちらの方が強い。
-SELECT throws_ok(
-  $$SELECT id FROM team_invites$$,
-  '42501', NULL, 'rls: hides invites from anonymous visitors'
+-- GRANT が無ければ権限エラー、あれば RLS が空集合にする。どちらでも見えない（0013_rls.sql）。
+SELECT ok(
+  pg_temp.is_hidden($$
+  SELECT id FROM team_invites
+  $$),
+  'rls: hides invites from anonymous visitors'
 );
 
 -- profiles は認証済み限定である。
-SELECT throws_ok(
-  $$SELECT id FROM profiles$$,
-  '42501', NULL, 'rls: hides profiles from anonymous visitors'
+SELECT ok(
+  pg_temp.is_hidden($$
+  SELECT id FROM profiles
+  $$),
+  'rls: hides profiles from anonymous visitors'
 );
 
-SELECT throws_ok(
-  $$INSERT INTO teams (name) VALUES ('Anon Team')$$,
-  '42501', NULL, 'rls: blocks team creation by anonymous visitors'
+SELECT ok(
+  pg_temp.is_blocked($$
+  INSERT INTO teams (name) VALUES ('Anon Team')
+  $$),
+  'rls: blocks team creation by anonymous visitors'
 );
 
 RESET ROLE;
@@ -120,12 +161,13 @@ SELECT is_empty(
 );
 
 -- TC-SEC-013 ★レートの改ざん。リーダーであっても teams を更新できない。
---   authenticated には UPDATE の GRANT が無いため権限エラーになる。
---   ポリシーだけでなく GRANT の段階でも塞がっていることを確かめる。
-SELECT throws_ok(
-  $$UPDATE teams SET rating = 9999
-     WHERE id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'$$,
-  '42501', NULL, 'rls: blocks a leader from editing the rating'
+--   GRANT が無ければ権限エラー、あれば RLS が 0 行に落とす。どちらでも書き換わらない。
+SELECT ok(
+  pg_temp.is_blocked($$
+  UPDATE teams SET rating = 9999
+  WHERE id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+  $$),
+  'rls: blocks a leader from editing the rating'
 );
 
 RESET ROLE;
@@ -141,49 +183,61 @@ SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claims = '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}';
 
 -- TC-SEC-014 直接作成の禁止
-SELECT throws_ok(
-  $$INSERT INTO teams (name) VALUES ('Direct Team')$$,
-  '42501', NULL, 'rls: blocks direct team creation'
+SELECT ok(
+  pg_temp.is_blocked($$
+  INSERT INTO teams (name) VALUES ('Direct Team')
+  $$),
+  'rls: blocks direct team creation'
 );
 
 -- TC-SEC-016 メンバーの直接操作
-SELECT throws_ok(
-  $$INSERT INTO team_members (team_id, profile_id, role)
-    VALUES ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
-            '11111111-1111-1111-1111-111111111111', 'MEMBER')$$,
-  '42501', NULL, 'rls: blocks direct membership changes'
+SELECT ok(
+  pg_temp.is_blocked($$
+  INSERT INTO team_members (team_id, profile_id, role)
+  VALUES ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+  '11111111-1111-1111-1111-111111111111', 'MEMBER')
+  $$),
+  'rls: blocks direct membership changes'
 );
 
 -- TC-QUEUE-047 待機の直接登録
-SELECT throws_ok(
-  $$INSERT INTO matching_queue (team_id)
-    VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')$$,
-  '42501', NULL, 'rls: rejects a direct insert from the client'
+SELECT ok(
+  pg_temp.is_blocked($$
+  INSERT INTO matching_queue (team_id)
+  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+  $$),
+  'rls: rejects a direct insert from the client'
 );
 
 -- 招待の直接作成
-SELECT throws_ok(
-  $$INSERT INTO team_invites (team_id, invite_code_hash, created_by_profile_id, expires_at)
-    VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'hash-x',
-            '11111111-1111-1111-1111-111111111111', NOW() + INTERVAL '1 day')$$,
-  '42501', NULL, 'rls: blocks direct invite creation'
+SELECT ok(
+  pg_temp.is_blocked($$
+  INSERT INTO team_invites (team_id, invite_code_hash, created_by_profile_id, expires_at)
+  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'hash-x',
+  '11111111-1111-1111-1111-111111111111', NOW() + INTERVAL '1 day')
+  $$),
+  'rls: blocks direct invite creation'
 );
 
 -- 試合の直接作成
-SELECT throws_ok(
-  $$INSERT INTO matches (team_a_id, team_b_id, report_deadline_at)
-    VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-            'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', NOW())$$,
-  '42501', NULL, 'rls: blocks direct match creation'
+SELECT ok(
+  pg_temp.is_blocked($$
+  INSERT INTO matches (team_a_id, team_b_id, report_deadline_at)
+  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+  'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', NOW())
+  $$),
+  'rls: blocks direct match creation'
 );
 
 -- レート履歴の直接作成
-SELECT throws_ok(
-  $$INSERT INTO rating_history
-      (match_id, team_id, before_rating, after_rating, rating_change, k_value, result, completed_at)
-    VALUES (gen_random_uuid(), 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-            1500, 1600, 100, 32, 'WIN', NOW())$$,
-  '42501', NULL, 'rls: blocks direct rating history creation'
+SELECT ok(
+  pg_temp.is_blocked($$
+  INSERT INTO rating_history
+  (match_id, team_id, before_rating, after_rating, rating_change, k_value, result, completed_at)
+  VALUES (gen_random_uuid(), 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+  1500, 1600, 100, 32, 'WIN', NOW())
+  $$),
+  'rls: blocks direct rating history creation'
 );
 
 -- TC-ADMIN-054 一般利用者は監査ログを参照できない。
@@ -200,9 +254,11 @@ SELECT ok(
 );
 
 -- 設定の直接変更は禁止。変更は admin-update-system-settings 経由だけである。
-SELECT throws_ok(
-  $$UPDATE system_settings SET rating_k = 128 WHERE id = 1$$,
-  '42501', NULL, 'rls: blocks a direct system settings update'
+SELECT ok(
+  pg_temp.is_blocked($$
+  UPDATE system_settings SET rating_k = 128 WHERE id = 1
+  $$),
+  'rls: blocks a direct system settings update'
 );
 
 RESET ROLE;
@@ -227,14 +283,18 @@ SELECT ok(
 
 -- TC-ADMIN-055 / TC-ADMIN-056 監査ログは追記専用である（ADR-017）。
 -- 管理者であっても書き換えられない。書き換えられる監査ログには証拠能力が無い。
-SELECT throws_ok(
-  $$UPDATE audit_logs SET action = 'TAMPERED'$$,
-  '42501', NULL, 'rls: rejects updates to the audit log'
+SELECT ok(
+  pg_temp.is_blocked($$
+  UPDATE audit_logs SET action = 'TAMPERED'
+  $$),
+  'rls: rejects updates to the audit log'
 );
 
-SELECT throws_ok(
-  $$DELETE FROM audit_logs$$,
-  '42501', NULL, 'rls: rejects deletes from the audit log'
+SELECT ok(
+  pg_temp.is_blocked($$
+  DELETE FROM audit_logs
+  $$),
+  'rls: rejects deletes from the audit log'
 );
 
 RESET ROLE;

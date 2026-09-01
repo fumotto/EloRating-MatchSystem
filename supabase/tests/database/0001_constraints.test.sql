@@ -171,13 +171,31 @@ SELECT throws_ok(
   '23514', NULL, 'rejects a match between a team and itself'
 );
 
--- TC-QUEUE-040 同一チームで2件目の試合（部分UNIQUEインデックス・最終防御）
-SELECT throws_ok(
+-- TC-QUEUE-040 同一チームで2件目の試合（ADR-035 ③ により DB は拒否しない）
+--
+-- ★かつて ux_matches_active_team_a / _b が「1チーム同時1試合」を保証しようとしていたが、
+--   2本の部分UNIQUEインデックスは列ごとに独立しており、「あるチームが片方の試合で
+--   team_a、別の試合で team_b」という状態を防げなかった。**意図した不変条件を
+--   保証していなかった。**
+--
+-- ★規則は「進行中の試合を持つチームは待機列に登録できない」であり、保証は
+--   アプリケーション層（queue-match / runMatchmaking）のみが行う。
+--   将来「管理者がマッチを用意する」運用では1チームに複数の試合を割り当てる。
+--
+-- 本テストは「DBが拒否しないこと」を明示的に固定する。再びDBへ制約を戻す変更が
+-- 入れば、ここが失敗して気付ける。
+SELECT lives_ok(
   $$INSERT INTO matches (team_a_id, team_b_id, report_deadline_at)
     VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
             'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', NOW())$$,
-  '23505', NULL, 'rejects a second active match for the same team'
+  'allows a second active match at the database level (guarded by the app layer)'
 );
+
+-- 後続のテストへ影響させないため、いま入れた行を戻す。
+DELETE FROM matches
+ WHERE team_a_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+   AND team_b_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
+   AND id <> 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 
 -- TC-MATCH-065 WINNER_REPORTED の必須項目
 SELECT throws_ok(

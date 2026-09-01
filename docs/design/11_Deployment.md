@@ -436,6 +436,57 @@ SELECT id, email, raw_app_meta_data ->> 'role' AS role
 
 ---
 
+# 11.5 ゲーム側の障害・メンテナンス時の運用（ADR-034 ⑥）
+
+本システムは対戦の場を提供せず、実際の対戦は外部のゲームで行われる（ADR-008）。
+ゲーム側が停止すると、進行中の試合は**当事者に落ち度が無いまま**期限へ向かう。
+
+## 手順
+
+```text
+1. maintenance_paused を立てる（新規マッチの成立を止める）
+     admin-update-system-settings から設定する
+2. お知らせを掲示する
+     system_settings.announcement_text（未認証にも表示される）
+3. 進行中の試合を無効化する
+     admin-void-matches（既定の対象は PLAYING のみ）
+4. 復旧後に maintenance_paused を解除する
+```
+
+**★手順1を先に行う。** 逆順にすると、無効化した直後に新しい試合が成立する。
+
+**★手順3の既定は `PLAYING` のみである。** `WINNER_REPORTED` を含めるかは `includeReported` で
+明示的に選ぶ。障害の前に成立していた申告を巻き込んで消さないためである。
+
+## 無効化した試合の扱い
+
+| 項目      | 扱い                       |
+| ------- | ------------------------ |
+| レート     | 変えない。`rating_history` も作らない |
+| 確定率     | **計上しない**                |
+| クールダウン  | **両チームとも課さない**           |
+| 監査ログ    | `MATCH_VOIDED`（理由を含む）    |
+
+**運営起因・外部起因の不成立は、当事者にいかなる不利益も伴わせない。**
+
+## maintenance_paused と matchmaking_paused を兼用しない
+
+| 列                    | 立てる契機          | 解除する契機                              |
+| -------------------- | -------------- | ----------------------------------- |
+| `matchmaking_paused` | シーズン終了の開始      | `admin-resume-season` / 終了の取りやめ     |
+| `maintenance_paused` | ゲーム側の障害・メンテナンス | `admin-update-system-settings` からの解除 |
+
+**★`admin-resume-season` は `matchmaking_paused` を無条件に `FALSE` へ戻す。**
+保守停止を同じ列で表すと、**シーズン再開が保守停止を解除してしまう**（`03_Database.md` 10.8）。
+
+## 当事者どうしで解決する場合
+
+運営が一括処理する前に、当事者が不成立の申請（ADR-034 ②）で解決していることがある。
+理由区分 `GAME_ISSUE` がこれにあたる。**両者は排他ではない。** 既に `DRAWN` となった試合は
+`admin-void-matches` の対象外である（終端状態のため）。
+
+---
+
 # 12. バックアップ
 
 | 対象 | 方法 |

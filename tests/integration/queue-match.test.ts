@@ -27,6 +27,8 @@ const leaderVerifier = () =>
 // 既定は「LEADER・BANなし・進行中の試合なし・未登録・必須人数を満たす・相手なし」。
 const okStubs = (overrides: QueryStub[] = []): QueryStub[] => [
   ...overrides,
+  ["SELECT maintenance_paused FROM system_settings", [{ maintenance_paused: false }]],
+  ["queue_cooldown_until AS until FROM teams", []],
   ["SELECT role FROM team_members", [{ role: "LEADER" }]],
   ["SELECT is_banned FROM teams", [{ is_banned: false }]],
   ["FROM matches", []],
@@ -299,6 +301,78 @@ describe("queue-match", () => {
       assertEquals(res.status, 401);
       assertEquals((await res.json()).error.code, "AUTH-001");
     } finally {
+      resetJwtVerifier();
+    }
+  });
+
+  it("rejects queueing while on cooldown", async () => {
+    // TC-QUEUE-101 ★誤魔化す経路の代償は時間で払わせる（ADR-032 ④）
+    setJwtVerifier(leaderVerifier);
+    const db = createMockDb(okStubs([
+      ["queue_cooldown_until AS until FROM teams", [{ until: new Date("2099-01-01") }]],
+    ]));
+    setDbPool(db.pool as never);
+
+    try {
+      const res = await post({ teamId: "team-1" });
+      assertEquals(res.status, 409);
+      assertEquals((await res.json()).error.code, "QUEUE-006");
+      assertEquals(db.find("INSERT INTO matching_queue"), undefined);
+    } finally {
+      resetDbPool();
+      resetJwtVerifier();
+    }
+  });
+
+  it("allows queueing when the cooldown has expired", async () => {
+    // TC-QUEUE-102 / TC-QUEUE-103 判定は > NOW() のみ。過去とNULLは同義
+    setJwtVerifier(leaderVerifier);
+    const db = createMockDb(okStubs());
+    setDbPool(db.pool as never);
+
+    try {
+      const res = await post({ teamId: "team-1" });
+      assertEquals(res.status, 200);
+      const q = db.find("queue_cooldown_until AS until FROM teams")!;
+      assertEquals(q.sql.includes("queue_cooldown_until > NOW()"), true);
+    } finally {
+      resetDbPool();
+      resetJwtVerifier();
+    }
+  });
+
+  it("rejects queueing during maintenance", async () => {
+    // TC-QUEUE-104 ★保守停止はシーズン停止とは別の列である（ADR-034 ⑤）
+    setJwtVerifier(leaderVerifier);
+    const db = createMockDb(okStubs([
+      ["SELECT maintenance_paused FROM system_settings", [{ maintenance_paused: true }]],
+    ]));
+    setDbPool(db.pool as never);
+
+    try {
+      const res = await post({ teamId: "team-1" });
+      assertEquals(res.status, 409);
+      assertEquals((await res.json()).error.code, "QUEUE-007");
+    } finally {
+      resetDbPool();
+      resetJwtVerifier();
+    }
+  });
+
+  it("rejects queueing when the team is team_b in a match", async () => {
+    // TC-QUEUE-106 ★DBに制約は無い。アプリ層の判定だけが保証である（ADR-035）
+    setJwtVerifier(leaderVerifier);
+    const db = createMockDb(okStubs([["FROM matches", [{ id: "match-1" }]]]));
+    setDbPool(db.pool as never);
+
+    try {
+      const res = await post({ teamId: "team-1" });
+      assertEquals(res.status, 409);
+      assertEquals((await res.json()).error.code, "QUEUE-002");
+      const q = db.find("FROM matches")!;
+      assertEquals(q.sql.includes("team_b_id = $1"), true);
+    } finally {
+      resetDbPool();
       resetJwtVerifier();
     }
   });

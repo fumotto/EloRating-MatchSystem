@@ -277,7 +277,7 @@ describe("approve-match", () => {
       const update = db.find("UPDATE matches")!;
       assertStringIncludes(
         update.sql,
-        "WHERE id = $3 AND version = $4 AND status = 'WINNER_REPORTED'",
+        "WHERE id = $3 AND version = $4 AND status = ANY($6)",
       );
       assertEquals(db.rolledBack(), true);
     } finally {

@@ -346,6 +346,70 @@ Realtime通知は必ず **COMMIT成功後** に送信する。
 
 申告は勝者チームのいずれのメンバーでも実行できる（ADR-009）。同一チーム内で同時に申告した場合、楽観ロックにより1件のみ成功する。
 
+**勝者申告は代替の経路である。** 基本の経路は投了（9.1）であり、勝者申告は敗者が投了しない場合に用いる（ADR-032 ①）。
+
+## 9.1 投了（基本の経路）
+
+### Function
+
+`concede-match`
+
+### シーケンス
+
+```text
+1. JWT検証
+2. BEGIN
+3. assertUpdatesAllowed（シーズン切替中でないこと）
+4. 試合取得
+5. 状態確認（PLAYING または WINNER_REPORTED）
+6. 呼び出しユーザーの所属チームを特定（＝敗者）。相手が勝者となる
+7. WINNER_REPORTED の場合、自チームが winner_team_id でないことを確認（MATCH-009）
+8. completeMatch()（_shared/match-completion.ts）
+     両チームの行を ID順に FOR UPDATE してから読む
+     Elo計算 → matches UPDATE（楽観ロック） → rating_history ×2 → teams ×2
+9. 更新件数が0件なら MATCH-008 を返して ROLLBACK
+10. audit_logs INSERT（MATCH_CONCEDED）
+11. COMMIT
+12. Realtime: MATCH_COMPLETED、RANKING_UPDATED
+```
+
+**承認を要さない。** 自分に不利な申告に虚偽の動機は無いためである。
+
+**クールダウンを課さない。** 投了は最短で次のキューへ入れる道である（ADR-032 ④）。
+
+**`winnerTeamId` を入力に取らない。** 受け取ると、投了に見せかけて相手の敗北を登録できる。
+
+## 9.2 反対申告
+
+### Function
+
+`report-match`（`WINNER_REPORTED` の試合に対する呼び出し）
+
+### シーケンス
+
+```text
+1. JWT検証
+2. BEGIN
+3. 試合取得
+4. 状態確認（WINNER_REPORTED であること）
+5. 呼び出しユーザーの所属チームが winner_team_id と異なることを確認（同じなら MATCH-003）
+6. counter_claim_team_id が未設定であることを確認（設定済みなら MATCH-003）
+7. matches UPDATE（楽観ロック）
+     counter_claim_team_id、counter_claimed_at
+     ★approve_deadline_at は変更しない
+     version = version + 1
+8. audit_logs INSERT（MATCH_COUNTER_CLAIMED）
+9. COMMIT
+10. Realtime: MATCH_COUNTER_CLAIMED
+```
+
+**★`approve_deadline_at` を延長してはならない。** 延長できると、反対申告が期限を引き延ばす道具になる。
+
+**★この時点から自動承認が止まる。** 競合はいずれかの**投了**でのみ解ける。解けないまま承認期限を過ぎると
+`DRAWN`（`CONFLICT`）となり、両チームがクールダウンと不戦を負う（12章）。
+
+**★競合の解消に専用の操作を設けない。** 相手の主張を認めることは投了と同義であり、9.1 を用いる。
+
 ---
 
 # 10. 承認
@@ -388,45 +452,93 @@ Realtime通知は必ず **COMMIT成功後** に送信する。
 
 ---
 
-# 11. 拒否
+# 11. 不成立の申請
+
+`reject-match`（拒否）は **ADR-032 ② により廃止した。** 敗者が単独で試合を消せる経路だったためである。
+本章はその位置に入る新しい機構である。
 
 ## Function
 
-`reject-match`
+`request-no-contest` / `respond-no-contest`
 
-## シーケンス
+## 11.1 申請
 
 ```text
 1. JWT検証
 2. BEGIN
-3. 試合取得
-4. 状態確認（WINNER_REPORTED であること）
-5. 呼び出しユーザーが敗者チームに所属していることを確認
-6. system_settings から max_reject_count・report_timeout_minutes を取得
-7. reject_count + 1 を算出
-8-A. 上限に達した場合
-     status = 'DRAWN'
-     completed_at = now()
-     reject_count = reject_count + 1
-     → レート更新・rating_history 作成は行わない
-     → audit_logs（MATCH_DRAWN）
-     → Realtime: MATCH_DRAWN
-8-B. 上限未満の場合
-     status = 'PLAYING'
-     winner_team_id = NULL
-     reported_by_profile_id = NULL
-     reported_at = NULL
-     approve_deadline_at = NULL
-     reject_count = reject_count + 1
-     report_deadline_at = now() + report_timeout_minutes  ← 再設定が必須
-     → audit_logs（MATCH_REJECTED）
-     → Realtime: MATCH_REJECTED
-9. COMMIT
+3. assertUpdatesAllowed
+4. 試合取得
+5. 状態確認（PLAYING であること。WINNER_REPORTED は不可）
+6. 参加チームのメンバーであることを確認
+7. 保留中の申請が無いことを確認（あれば MATCH-011）
+8. no_contest_request_count < max_no_contest_requests を確認（超なら MATCH-012）
+9. matches UPDATE（楽観ロック）
+     no_contest_requested_by_team_id、no_contest_requested_at、no_contest_reason_code
+     no_contest_request_count = no_contest_request_count + 1
+10. audit_logs INSERT（MATCH_NO_CONTEST_REQUESTED）
+11. COMMIT
+12. Realtime: MATCH_NO_CONTEST_REQUESTED
 ```
 
-**手順8-Bにおける `report_deadline_at` の再設定は必須である。**
+**申請はマッチ成立の直後から出せる。** 時間の制限は申請の可否ではなく、**沈黙が試合を終わらせる時刻**に置く
+（ADR-032 ⑧）。これにより、対戦できないと分かった時点で直ちに申請できる。
 
-再設定しない場合、当初の申告期限を既に過ぎていると、`PLAYING` へ戻した直後に自動解決バッチがドロー解散させてしまう。
+**`PLAYING` に限る**（ADR-034 ②）。`WINNER_REPORTED` から認めると、敗者が勝者へ取り消しを交渉する経路になる。
+
+## 11.2 応答：承諾（→ DRAWN / MUTUAL）
+
+```text
+1. JWT検証
+2. BEGIN
+3. 試合取得。申請者と異なるチームであることを確認（同じなら MATCH-005）
+4. matches UPDATE（楽観ロック）
+     status = 'DRAWN'、no_contest_reason = 'MUTUAL'
+     winner_team_id = NULL、completed_at = now()
+     no_contest_requested_* を NULL へ戻す
+5. ★レートを更新しない。rating_history も作らない
+6. ★両チームにクールダウンを課さない
+7. 当日の MUTUAL 件数が mutual_no_contest_daily_limit を超える場合のみクールダウンを課す
+8. no_contest_reason_code = 'CONNECTION' なら match_avoidance へ登録
+     team_low_id / team_high_id は UUID の大小で正規化する
+     チームあたり max_avoidance_entries を超える場合は最も古い行を失効させる
+9. audit_logs INSERT（MATCH_NO_CONTEST_ACCEPTED）
+10. COMMIT
+11. Realtime: MATCH_DRAWN
+```
+
+**承諾は即時に成立する。** 猶予（`no_show_response_minutes`）を待たない。
+
+**★`match_avoidance` への登録は承諾ブランチのみ。** `NO_SHOW` では登録しない。片方の操作で登録できると、
+強い相手を恒久的に回避する手段になる（ADR-034 ③）。
+
+## 11.3 応答：対戦継続（→ PLAYING のまま）
+
+```text
+1. JWT検証
+2. BEGIN
+3. 試合取得。申請者と異なるチームであることを確認
+4. matches UPDATE（楽観ロック）
+     no_contest_requested_by_team_id / _at / _reason_code を NULL へ戻す
+     ★report_deadline_at は変更しない
+5. audit_logs INSERT（MATCH_NO_CONTEST_DECLINED）
+6. COMMIT
+7. Realtime: MATCH_NO_CONTEST_DECLINED
+```
+
+**勝利申告・投了・延長も応答とみなす。** それぞれの処理の中で保留中の申請をクリアする。
+相手は1回の操作で申請を無効化できる。
+
+**★`report_deadline_at` を変更しない。** 申請と応答を繰り返して期限を伸ばせると、
+旧「拒否」と同じ引き延ばしが復活する。
+
+## 11.4 応答なし（→ DRAWN / NO_SHOW）
+
+`auto-resolve-matches` が処理する（12章）。`respond-no-contest` は関与しない。
+
+## Rollback条件
+
+* 楽観ロックの競合
+* `match_avoidance` の登録失敗（UNIQUE違反を含む）
 
 ---
 
@@ -479,6 +591,45 @@ Cron（1分間隔）
 `approved_by_profile_id` が NULL のまま `COMPLETED` となるのは自動承認のみである。`auto_approved = TRUE` によりCHECK制約を満たす（`03_Database.md` 10.6）。
 
 ---
+
+## 12.1 処理の4分類（ADR-032 / ADR-034）
+
+| 対象                                                                                    | 結末                         | クールダウン    |
+| ------------------------------------------------------------------------------------- | -------------------------- | --------- |
+| `PLAYING` かつ `report_deadline_at < NOW()`                                              | `DRAWN` / `REPORT_TIMEOUT` | 両チーム      |
+| `PLAYING` かつ保留中の申請があり満期を過ぎた                                                            | `DRAWN` / `NO_SHOW`        | 無応答側のみ    |
+| `WINNER_REPORTED` かつ期限切れ かつ `counter_claim_team_id IS NULL`                            | `COMPLETED`（自動承認）          | 放置した敗者側のみ |
+| `WINNER_REPORTED` かつ期限切れ かつ `counter_claim_team_id IS NOT NULL`                        | `DRAWN` / `CONFLICT`       | 両チーム      |
+
+**★自動承認の条件に `counter_claim_team_id IS NULL` を必ず含めること。** 含めないと、矛盾する2つの主張が
+あるにもかかわらず先に申告した側で確定してしまい、**早く嘘をついた側が勝つ。**
+
+## 12.2 無応答による解散の満期
+
+```sql
+WHERE status = 'PLAYING'
+  AND no_contest_requested_at IS NOT NULL
+  AND started_at + (no_show_minutes || ' minutes')::interval < NOW()
+  AND no_contest_requested_at + (no_show_response_minutes || ' minutes')::interval < NOW()
+```
+
+**2つの条件は AND である。** どちらか一方では、対戦直後の申請が相手の短い離席で成立してしまう。
+
+**★クールダウンは無応答側にのみ課す。** 申請側は妨害の被害者であり、代償を負う理由が無い。
+不戦の計上も無応答側のみである（ADR-032 ⑧）。
+
+## 12.3 CONFLICT への確定
+
+`winner_team_id` を NULL にする（`chk_matches_drawn` の要求）。
+**`reported_by_profile_id` / `reported_at` / `counter_claim_team_id` / `counter_claimed_at` は残す。**
+誰がどちらを主張したかは通報の判断材料になる（ADR-033 ④）。
+
+`counter_claim_team_id` が判れば、元の申告者はもう一方のチームであると一意に定まる。
+
+## 12.4 試合ごとに独立したトランザクション
+
+対象の抽出は1つのトランザクションで行い、確定は試合ごとに分ける。**1件の失敗が他の試合を巻き込まない。**
+`pg_advisory_xact_lock` により試合ごとに直列化する（既存方針を維持）。
 
 # 13. ランキング取得
 
@@ -569,7 +720,60 @@ K値の変更は進行中の試合にも影響する。レート計算は試合�
 
 ---
 
-# 15. Realtime通知の送信契機
+# 15. 通報（ADR-033）
+
+## Function
+
+`create-abuse-report` / `withdraw-abuse-report` / `admin-resolve-abuse-report`
+
+## シーケンス（登録）
+
+```text
+1. JWT検証（チーム所属は不要。無所属でも通報できる）
+2. BEGIN
+3. ★assertUpdatesAllowed を呼ばない
+     通報は勝敗にもレートにも影響しないため、シーズン切替中でも受け付ける
+4. 通報者の所属チームを team_members から取得（無所属なら NULL）
+     ★クライアントから reporterTeamId を受け取らない。詐称できるため
+5. 対象チームの存在確認（ABUSE-001）
+6. 自チーム宛でないことを確認（ABUSE-002）
+7. matchId 指定時 … 試合の存在確認 → 重複通報の確認（ABUSE-003）
+   matchId 未指定時 … 同一対象への24時間以内の通報が無いことを確認（ABUSE-004）
+8. abuse_reports INSERT（status = 'OPEN'）
+9. audit_logs INSERT（ABUSE_REPORTED / target_type = 'TEAM'）
+10. COMMIT
+11. ★Realtime通知を送らない。通報の発生を誰にも知らせない
+```
+
+**★試合を一切更新しない。** 通報は勝敗フローから完全に独立している（ADR-033 ②）。
+
+## シーケンス（措置）
+
+```text
+1. JWT検証 → 管理者確認
+2. BEGIN
+3. 通報取得。status = 'OPEN' を確認（ABUSE-006）
+4. resolution により分岐
+     NO_ACTION / WARNED … 記録のみ
+     COOLDOWN          … teams.queue_cooldown_until = now() + cooldownMinutes
+     BANNED            … チームBAN処理（_shared/team-sanction.ts。admin-ban-team と共用）
+5. abuse_reports UPDATE（status / resolved_by_profile_id / resolved_at / resolution_note）
+6. audit_logs INSERT（ABUSE_RESOLVED）
+7. COMMIT
+8. Realtime: TEAM_BANNED（BANNED の場合のみ）
+```
+
+**★確定した試合には触れない。** 勝敗もレートも変更しない（ADR-033 ①）。
+
+**★BAN処理を重複実装しない。** `admin-ban-team` の処理を `_shared` へ切り出して共用する。
+BANは待機列からの削除と進行中の試合の扱いを伴うため、二箇所に書くと必ずずれる（ADR-021 と同じ方針）。
+
+**★単発の通報で措置しない**（ADR-033 ④）。判断は異なるチームからの累積に基づく。
+この判断は管理者が画面上で行うものであり、Function は与えられた `resolution` を実行するだけである。
+
+---
+
+# 16. Realtime通知の送信契機
 
 イベント名の正本は `04_BackendInterface.md` 7章である。本表は送信契機のみを示す。
 
@@ -577,10 +781,13 @@ K値の変更は進行中の試合にも影響する。レート計算は試合�
 | ----------------------- | --------------------------------------------- |
 | MATCH_CREATED           | matchmaker（queue-match からの同期実行を含む）             |
 | WINNER_REPORTED         | report-match                                  |
-| MATCH_REJECTED          | reject-match（PLAYINGへ戻した場合）                   |
-| MATCH_DRAWN             | reject-match（上限到達）、auto-resolve-matches（報告期限切れ） |
-| MATCH_COMPLETED         | approve-match、auto-resolve-matches（自動承認）       |
-| RANKING_UPDATED         | approve-match、auto-resolve-matches、finalize-season、admin-purge-season-data |
+| MATCH_COUNTER_CLAIMED   | report-match（WINNER_REPORTED への呼び出し）          |
+| MATCH_EXTENDED          | extend-match-deadline                         |
+| MATCH_NO_CONTEST_REQUESTED | request-no-contest                         |
+| MATCH_NO_CONTEST_DECLINED  | respond-no-contest（対戦継続）                    |
+| MATCH_DRAWN             | respond-no-contest（承諾）、auto-resolve-matches（期限切れ・無応答・競合）、admin-void-match |
+| MATCH_COMPLETED         | concede-match、approve-match、auto-resolve-matches（自動承認） |
+| RANKING_UPDATED         | concede-match、approve-match、auto-resolve-matches、finalize-season、admin-purge-season-data |
 | TEAM_UPDATED            | admin-ban-team、admin-unban-team               |
 | TEAM_MEMBER_UPDATED     | accept-team-invite、leave-team、transfer-leader  |
 | SYSTEM_SETTINGS_UPDATED | admin-update-system-settings                  |
@@ -589,7 +796,7 @@ K値の変更は進行中の試合にも影響する。レート計算は試合�
 
 ---
 
-# 16. AI実装ルール
+# 17. AI実装ルール
 
 * 更新処理はEdge FunctionsからDB直結で行い、明示的にトランザクションを制御する。
 * DB直結はRLSを迂回するため、Edge Function内で認可を必ず確認する。
@@ -601,3 +808,5 @@ K値の変更は進行中の試合にも影響する。レート計算は試合�
 * すべてのレスポンスは `result` を含む共通形式に従う。
 * 状態遷移は `03_Database.md` 7.1 の遷移表以外を実装してはならない。
 * RESTパスを実装してはならない。Edge Function名で呼び出す。
+
+**`MATCH_REJECTED` は廃止した**（ADR-032 ②）。通報（15章）は Realtime を送らない。

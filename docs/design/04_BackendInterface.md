@@ -258,9 +258,16 @@ Postgres Changes（テーブル変更の自動購読）は使用しない。RLS�
 | ----------------- | ------------ | ------------------------------ |
 | MATCH_CREATED     | マッチ成立        | matchmaker                     |
 | WINNER_REPORTED   | 勝利申告         | report-match                   |
-| MATCH_REJECTED    | 拒否           | reject-match                   |
-| MATCH_COMPLETED   | 試合確定（手動・自動）  | approve-match / auto-resolve-matches |
-| MATCH_DRAWN       | ドロー解散        | reject-match / auto-resolve-matches |
+| MATCH_COUNTER_CLAIMED | 反対申告      | report-match（WINNER_REPORTED への呼び出し） |
+| MATCH_EXTENDED    | 報告期限の延長      | extend-match-deadline          |
+| MATCH_NO_CONTEST_REQUESTED | 不成立の申請 | request-no-contest            |
+| MATCH_NO_CONTEST_DECLINED  | 対戦継続の宣言 | respond-no-contest            |
+| MATCH_COMPLETED   | 試合確定（投了・承認・自動） | concede-match / approve-match / auto-resolve-matches |
+| MATCH_DRAWN       | ドロー解散        | respond-no-contest（承諾）/ auto-resolve-matches / admin-void-match |
+
+**`MATCH_REJECTED` は廃止した**（ADR-032 ②）。イベント名を再利用しない。
+
+**通報（20章）は Realtime を送らない。** 通報の発生を誰にも知らせない（ADR-033）。
 
 `MATCH_STARTED` は使用しない。マッチ成立と試合開始が同時であるため `MATCH_CREATED` に統合した（ADR-008）。
 
@@ -1082,7 +1089,14 @@ MATCH_COMPLETED、RANKING_UPDATED / MATCH_APPROVED
 
 ---
 
-## 10.5 reject-match
+## 10.5 reject-match（**廃止 / ADR-032 ②**）
+
+**本節は廃止した仕様の記録である。実装してはならない。** 現行の仕様は 21.3 を参照。
+
+拒否は敗者が単独で `DRAWN` へ到達できる経路であり、レート変動なし・記録なしで試合を消せた。
+承認が一度も合理的な選択肢にならないため廃止した。反論の手段は反対申告（21.2）に置き換わった。
+
+以下は当時の記述である。
 
 ### Purpose
 
@@ -1547,11 +1561,44 @@ interface UpdateSystemSettingsRequest {
     inviteExpirationHours?: number;
     reportTimeoutMinutes?: number;
     approveTimeoutMinutes?: number;
+    // ★廃止（ADR-032 ③）。値は誰も読まない。画面には出さない（ADR-037 ③）。
     maxRejectCount?: number;
+    seasonGraceMinutes?: number;
+    // 勝敗報告の確定方式（ADR-032 ④⑦⑧⑨ / ADR-034 ②③）。
+    queueCooldownMinutes?: number;
+    reportExtensionMinutes?: number;
+    maxReportExtensions?: number;
+    noShowMinutes?: number;
+    noShowResponseMinutes?: number;
+    maxNoContestRequests?: number;
+    mutualNoContestDailyLimit?: number;
+    avoidanceDays?: number;
+    maxAvoidanceEntries?: number;
+    // 保守による一時停止（ADR-034 ⑤）。
+    maintenancePaused?: boolean;
+    // 表示設定（Issue #8）・お知らせ（Issue #7）は文字列であるため別扱いとする。
+    // サブアカウント対策（ADR-036 ⑤）。どちらも 0 が無効を表す。
+    rematchCooldownHours?: number;
+    rankingMinOpponents?: number;
 }
 ```
 
 指定された項目のみ更新する。
+
+**★`matchmakingPaused` / `updatesLocked` / `currentSeason` を追加してはならない**（ADR-037 ②）。
+3列ともシーズン運用の Function だけが書き換える。本APIから触れると、シーズン切替の途中で
+運営が状態を壊せるうえ、ADR-034 ⑤ が `maintenance_paused` を別列にした意味が失われる。
+
+**★真偽値は JSON の真偽値のみを受け付ける。** 文字列の `"true"` は `ADMIN-002` とする。
+また `false` を「未指定」と取り違えない。判定は `value === undefined` で行う。
+取り違えると保守停止を解除できなくなる。
+
+**★サブアカウント対策の ON/OFF はここにしか無い。環境変数では切らない**（ADR-036 ⑤）。
+Edge Function の環境変数はテストから切り替えられず、E2E は同じ Supabase を共有する。
+設定値であれば本APIから操作でき、既存の管理画面と `audit_logs` にそのまま乗る。
+
+**★設定を追加するときは6箇所すべてを更新する**（ADR-037 ⑥。手順は `03_Database.md` 10.8）。
+Migration だけを足して終わりにすると、設計書に載っている設定を運営が変更できない状態になる。
 
 ### Output DTO
 
@@ -1603,6 +1650,94 @@ SYSTEM_SETTINGS_UPDATED / SETTINGS_UPDATED
 
 ---
 
+# 12.11 admin-create-match
+
+### Purpose
+
+管理者が対戦カードを直接作成する（ADR-035 ⑤ / ADR-039）。大会・イベントを想定する。
+**自動マッチングの代わりではない。**
+
+### Authentication / Authorization
+
+必須 / 管理者
+
+### Input DTO
+
+```typescript
+interface AdminCreateMatchRequest {
+    teamAId: string;
+    teamBId: string;
+}
+```
+
+### Output DTO
+
+```typescript
+interface AdminCreateMatchResponse {
+    matchId: string;
+    teamAId: string;
+    teamBId: string;
+    reportDeadlineAt: string;
+}
+```
+
+### 拘束されないもの（ADR-039 ②）
+
+| 対象                     | 理由                                     |
+| ---------------------- | -------------------------------------- |
+| `match_avoidance`      | 回線相性の抑止は自動マッチングのための仕組みである（ADR-034 ③）   |
+| `queue_cooldown_until` | 同上（ADR-032 ④）                          |
+| `match_rating_range`   | 実力の近い相手を探すための条件である。組み合わせは運営が決める        |
+| 進行中の試合の有無              | **1チームへの複数割り当てが本機能の目的である**（ADR-035 ⑤）  |
+
+**★これらを参照するコードを足してはならない。** 統合テストが問い合わせの有無で固定している。
+
+### 従うもの（ADR-039 ③④）
+
+| 条件                   | エラー          | 理由                                        |
+| -------------------- | ------------ | ----------------------------------------- |
+| `updates_locked`     | `SEASON-001` | 確定処理に巻き込まれ、直後に `SEASON_END` で打ち切られる（ADR-038 ①） |
+| `matchmaking_paused` | `SEASON-002` | 猶予中に作ると、進行中の試合が尽きるのを待つ猶予が終わらない            |
+| `maintenance_paused` | `QUEUE-007`  | ADR-034 ⑥ の手順（停止 → 無効化）と矛盾する              |
+| BANされたチーム            | `TEAM-006`   | BANは編成も対戦も凍結する（12.1）                      |
+| メンバー0人のチーム           | `TEAM-011`   | 誰も報告できず、相手を報告期限まで拘束する                     |
+| 同一チーム同士              | `VALIDATION-001` | DBの `chk_matches_teams_different` より前に弾く   |
+
+**★必須人数（`team_max_members`）は要求しない**（ADR-039 ④）。あれは待機列への入り口の条件であり、
+本APIは待機列を経由しない。人数の不揃いは画面が示す。
+
+### Processing Flow
+
+```text
+管理者確認
+  ↓
+停止フラグの確認（SEASON-001 / SEASON-002 / QUEUE-007）
+  ↓
+両チームを ID順に FOR UPDATE で読む（BAN・メンバー数）
+  ↓
+matches INSERT（PLAYING・report_deadline_at）
+  ↓
+audit_logs INSERT（MATCH_PREPARED・actor は管理者）
+  ↓
+Realtime: MATCH_CREATED
+```
+
+**★`report_deadline_at` を必ず設定する。** 無いと `auto-resolve-matches` が対象を判定できない。
+用意した試合も通常の確定フローに従う（ADR-035 ⑤）。
+
+**★`MATCH_PREPARED` と `MATCH_CREATED` を分ける**（ADR-039 ⑦）。同じ action にすると、
+後から「誰が用意した試合か」を数えられない。
+
+**★Realtime は `MATCH_CREATED` を流用する**（ADR-039 ⑨）。受け取る側は試合を再取得するだけであり、
+由来によって扱いを変えない。
+
+### Error Codes
+
+`AUTH-001`、`ADMIN-001`、`VALIDATION-001`、`TEAM-001`、`TEAM-006`、`TEAM-011`、
+`SEASON-001`、`SEASON-002`、`QUEUE-007`、`SYSTEM-001`
+
+---
+
 # 13. Query Interfaces
 
 読み取り専用インターフェース。クライアントはViewを参照し、複雑なJOINや集計を実装しない。
@@ -1630,10 +1765,16 @@ interface RankingItem {
     losses: number;
     matches: number;
     winRate: number | null;   // 試合数0のときnull
+    distinctOpponents: number; // 異なる対戦相手数（ADR-036 ③）
 }
 ```
 
 順位は View 側の `RANK()` により算出される。同率の場合は同順位となる。
+
+**★掲載条件を満たさないチームは `rank` が NULL で返る**（ADR-036 ③）。一覧を取得する側が
+`rank IS NOT NULL` で絞る。View から消していないのは、「自分がなぜ載らないのか」を画面から
+説明できるようにするためである。掲載の抑止であって隠蔽ではない。
+`ranking_min_opponents = 0` のときは全チームに `rank` が付く。
 
 Offsetページングはレート更新のタイミングによって行の重複・欠落が起こりうる。MVPでは許容し、ランキング更新時はページを先頭から再取得する。
 
@@ -1806,19 +1947,49 @@ interface QueueStatus {
 | Realtime | `SYSTEM_SETTINGS_UPDATED` |
 
 ```typescript
+// ★本DTOだけ列名がスネークケースのままである。他のQueryと異なり、変換層を置いていない。
+//   基表 `system_settings` を PostgREST から直接読み、そのまま画面へ渡す。
+//   `admin-update-system-settings` の応答（12.3）も同じ形を返す。
 interface SystemSettings {
-    teamMaxMembers: number;
-    initialRating: number;
-    ratingK: number;
-    matchRatingRange: number;
-    inviteExpirationHours: number;
-    reportTimeoutMinutes: number;
-    approveTimeoutMinutes: number;
-    maxRejectCount: number;
+    team_max_members: number;
+    initial_rating: number;
+    rating_k: number;
+    match_rating_range: number;
+    invite_expiration_hours: number;
+    report_timeout_minutes: number;
+    approve_timeout_minutes: number;
+    max_reject_count: number;      // 廃止（ADR-032 ③）。画面には出さない
+    season_grace_minutes: number;
+    queue_cooldown_minutes: number;
+    report_extension_minutes: number;
+    max_report_extensions: number;
+    no_show_minutes: number;
+    no_show_response_minutes: number;
+    max_no_contest_requests: number;
+    mutual_no_contest_daily_limit: number;
+    avoidance_days: number;
+    max_avoidance_entries: number;
+    maintenance_paused: boolean;
+    rematch_cooldown_hours: number;
+    ranking_min_opponents: number;
+    // 表示設定（Issue #8）とお知らせ（Issue #7）も同じ行から返る。
+    site_title: string;
+    background_image_path: string | null;
+    rules_markdown: string;
+    announcement_text: string;
+    announcement_level: "INFO" | "WARN" | "ALERT";
 }
 ```
 
+**★入力DTO（12.3 `UpdateSystemSettingsRequest`）はキャメルケースである。** 出力と入力で
+表記が異なるのは、入力が Edge Function の対応表を通り、出力が基表の行をそのまま返すためである。
+`admin-update-system-settings` の `SETTINGS` 対応表がこの変換の正本である（ADR-037 ⑥）。
+
 一般利用者もチーム人数上限や期限を画面表示するために参照する。
+`ranking_min_opponents` はランキング画面の掲載条件の案内に用いる（ADR-036 ③）。
+
+**★未認証では参照できない**（`03_Database.md` 15章）。ランキングは未認証でも見えるため、
+本設定を使う案内は認証済みのときだけ出す。
 
 ---
 
@@ -1860,6 +2031,29 @@ interface AuditLogItem {
     createdAt: string;
 }
 ```
+
+---
+
+## 13.12 Integrity Signals（ADR-036 ④）
+
+| 項目       | 内容                                              |
+| -------- | ----------------------------------------------- |
+| Source   | `suspicious_pair_view` / `team_integrity_view`   |
+| Purpose  | 繰り返し当たっている組み合わせと、稼ぎ先の偏りを管理者へ提示する            |
+| Filter   | ペアは確定2件以上（View側）                                |
+| Sort     | ペアは `one_sided_ratio DESC`, `match_count DESC`／チームは `top_opponent_gain_share DESC` |
+| RLS      | 管理者のみ。**View 自身の述語で閉じる**（`03_Database.md` 11.8） |
+| Realtime | 無し。管理者が開いたときに取得する                              |
+
+**★本APIは判定を返さない。材料を返す。** 措置の導線を画面に置かない。BAN とクールダウンは
+通報の画面とチーム管理から行う（ADR-033 ③）。ここに措置を結び付けると、機械の疑いが
+そのまま処分に化ける。
+
+**★Edge Function を経由しない。** PostgREST から直接読む。DB直結では `auth.jwt()` が NULL に
+なるため、Edge Function からは0件しか返らない。
+
+**★集計元は `matches` / `audit_logs` / `rating_history` のみである。** IPアドレスも端末情報も
+収集していない（ADR-036 ⑥）。
 
 ---
 
@@ -2005,7 +2199,7 @@ pg_cron。1分間隔（Migration 0022）。猶予の粒度が分であるため�
 
 猶予が切れていなければ何もせず戻る。切れている場合、1トランザクションで以下を行う。
 
-1. 残った試合を `DRAWN` にする（レートは動かさない）
+1. 残った試合を `DRAWN`（`no_contest_reason = 'SEASON_END'`）にする（レートは動かさない）
 2. `updates_locked = TRUE`
 3. `season_rankings` へ順位・勝敗・BAN状況を退避する
 4. `season_members` へチーム編成を退避する
@@ -2018,6 +2212,17 @@ pg_cron。1分間隔（Migration 0022）。猶予の粒度が分であるため�
 
 **★チームの削除はここで行わない。** `matches.team_a_id` は `ON DELETE RESTRICT` であり、
 戦績が残っている限りチームを消せない（12.8）。
+
+**★①は `no_contest_reason` を必ず設定する**（ADR-038 ①）。設定しないと
+`chk_matches_drawn_reason` に違反し、**シーズンが確定できない。** 実際に Migration 0023 の
+追加時にこの配線が漏れ、猶予切れの時点で進行中の試合が1件でも残っていると本Functionが
+失敗する状態になっていた。既定値（猶予10分・申告期限60分）では普通に踏む。
+
+**★`ADMIN_VOID` を流用しない。** あれは `admin-void-matches` の値であり、理由の入力と
+`MATCH_VOIDED` の監査ログを伴う（ADR-034 ④）。本Functionはどちらも持たない。
+
+**★`SEASON_END` は不戦にも確定率にも計上せず、クールダウンも課さない**（ADR-038 ②）。
+打ち切ったのは運営であり、当事者は対戦の最中でありえた。
 
 ---
 
@@ -2079,6 +2284,14 @@ rating_history → matches → audit_logs → team_members / team_invites → te
 **★確定直後に自動で戻さない。** 持ち出しと削除は管理者が任意の時間をかけて行う。
 その間に利用者がレートを動かすと、削除の対象が動いてしまう。
 
+**★`maintenance_paused` に触れてはならない**（ADR-034 ⑤ / ADR-038 ⑤）。保守による停止は
+シーズン運用とは独立しており、本Functionが解除すると、ゲーム側が復旧していないのに
+マッチングが動き出す。**これが両者を別の列にした理由そのものである。**「停止フラグを
+まとめてリセットする」という整理をしてはならない。テストで固定してある。
+
+**★再開しても、保守停止が残っていればマッチングは成立しない。** 画面はこれを
+押す前に伝える（`05_Frontend.md` 14.11）。
+
 ### Error Codes
 
 `AUTH-001`、`ADMIN-001`、`SEASON-003`、`SYSTEM-001`
@@ -2092,10 +2305,801 @@ rating_history → matches → audit_logs → team_members / team_invites → te
 
 `create-team`、`create-team-invite`、`accept-team-invite`、`leave-team`、
 `transfer-leader`、`queue-match`、`cancel-match-queue`、
-`report-match`、`approve-match`、`reject-match`
+`report-match`、`approve-match`、`concede-match`、`extend-match-deadline`、
+`request-no-contest`、`respond-no-contest`
+
+**★通報（20章）は対象外である。** 勝敗にもレートにも影響しないため、更新の凍結対象ではない。
 
 **★`ensure-profile` は対象外である。** ログインを妨げると、利用者は
 何が起きているのかを画面で確かめられない。
 
 `matchmaking_paused` が真の間は `queue-match` が `SEASON-002` を返し、
 `matchmaker`（cron）も試合を組まない。**画面側の関門だけでは塞げない。**
+
+---
+
+# 20. 通報（Abuse Report）Edge Functions
+
+ADR-033 に基づく。**通報は勝敗フローから完全に独立している。** 本章の Function はいずれも
+`matches` を更新せず、レートにも触れない。
+
+節番号を 20 とするのは、既存の章番号を振り直さないためである（本書は末尾へ追記する運用である）。
+
+**★命名。** 通報は `abuse-report` とし、`report` としない。勝敗の申告が `report-match` であり、
+同じ語が別の概念を指すと読み違えるためである（`03_Database.md` 10.10）。
+
+---
+
+## 20.1 create-abuse-report
+
+### Purpose
+
+チームに対する通報を登録する。試合の状態とレートには一切影響しない。
+
+### Authentication / Authorization
+
+必須 / **チーム所属は不要**（無所属の利用者も通報できる）
+
+### Input DTO
+
+```typescript
+interface CreateAbuseReportRequest {
+    targetTeamId: string;
+    reasonCode: "FALSE_REPORT" | "NO_SHOW" | "HARASSMENT" | "CHEATING" | "OTHER";
+    detail: string;
+    matchId?: string;
+    evidenceUrls?: string[];
+}
+```
+
+**★`reporterTeamId` を受け取らない。** `team_members` は `UNIQUE (profile_id)` を持つため
+（`03_Database.md` 10.3）、通報者の所属チームは JWT の `sub` から一意に定まる。
+クライアントから受け取ると詐称でき、ADR-033 ④ の「通報元チーム数」を偽装できる。
+
+**★`status` を受け取らない。** 登録時は常に `OPEN` である。
+
+### Output DTO
+
+```typescript
+interface CreateAbuseReportResponse {
+    reportId: string;
+    status: "OPEN";
+    createdAt: string;
+}
+```
+
+**通報の受理は「受け付けた」以上の意味を持たない。** 措置の予告や見込みを返さない。
+
+### Validation
+
+| 項目             | 規則                                                   | 違反時            |
+| -------------- | ---------------------------------------------------- | -------------- |
+| `targetTeamId` | 必須。実在するチームであること                                      | `ABUSE-001`    |
+| `targetTeamId` | 通報者の所属チームと異なること                                      | `ABUSE-002`    |
+| `reasonCode`   | 必須。定義された5値のいずれかであること                                 | `VALIDATION-001` |
+| `detail`       | 必須。10文字以上1000文字以下                                     | `VALIDATION-001` |
+| `matchId`      | 任意。指定時は実在する試合であること。**参加チームである必要は無い**                  | `MATCH-001`    |
+| `evidenceUrls` | 任意。最大3件。各要素は `https://` で始まり2048文字以下であること             | `VALIDATION-001` |
+| 重複             | `matchId` 指定時、同一チームから同一対象・同一試合への通報が存在しないこと            | `ABUSE-003`    |
+| 頻度             | `matchId` 未指定時、同一対象への通報が過去24時間に存在しないこと                | `ABUSE-004`    |
+
+**`detail` に下限（10文字）を設けるのは、意味のある記述を求めるためである。** 通報を無償・無制限とする代わりに、
+一言では出せないようにする。これが唯一の投稿時の摩擦であり、これ以上の制限は「証拠を持たない訴えを門前払いしない」
+という ADR-033 の方針に反する。
+
+**`evidenceUrls` は許可ドメインで絞らない。** 証拠の所在は Discord・画像共有・動画共有と多岐にわたり、
+許可リストで絞ると正当な提出が通らなくなる。`https://` のみを要求し、**画面では自動リンクせず、
+文字列として表示したうえで明示の操作で開かせる**（`05_Frontend.md`）。
+
+**`matchId` に参加チームの制限を課さない。** 第三者が観戦して気付いた事象も通報できる（ADR-033 ②）。
+
+### Processing Flow
+
+```text
+JWT検証
+  ↓
+通報者の所属チームを team_members から取得（無所属なら NULL）
+  ↓
+対象チームの存在確認
+  ↓
+自チーム宛でないことを確認
+  ↓
+matchId 指定時 … 試合の存在確認 → 重複通報の確認
+matchId 未指定時 … 同一対象への24時間以内の通報が無いことを確認
+  ↓
+abuse_reports へ INSERT（status = 'OPEN'）
+  ↓
+audit_logs へ ABUSE_REPORTED を記録
+```
+
+**シーズン切替中でも通報できる。** `assertUpdatesAllowed` を呼ばない。通報は勝敗にもレートにも
+影響しないため、更新の凍結対象ではない。
+
+### Transaction
+
+```text
+BEGIN → abuse_reports INSERT → audit_logs INSERT → COMMIT
+```
+
+### Updated Tables
+
+`abuse_reports`、`audit_logs`
+
+### Realtime / Audit Log
+
+なし / `ABUSE_REPORTED`
+
+**Realtime通知を送らない。** 通報の発生を他の利用者へ知らせない。対象チームにも知らせない。
+
+監査ログの `target_type` は `TEAM`、`target_id` は `target_team_id` とする。`payload` に `reportId` と
+`reasonCode` を格納する。**`audit_logs.target_type` の CHECK 制約を変更しない**ためである
+（`REPORT` を追加すると既存の制約を打ち消すMigrationが要る一方、通報の対象はチームであり `TEAM` で正しく表現できる）。
+
+### Error Codes
+
+`AUTH-001`、`VALIDATION-001`、`MATCH-001`、`ABUSE-001`、`ABUSE-002`、`ABUSE-003`、`ABUSE-004`、`SYSTEM-001`
+
+### Test Cases
+
+正常登録、無所属からの登録、自チーム宛の拒否、`detail` の下限・上限、`evidenceUrls` の件数超過と非https、
+存在しない対象チーム、存在しない試合、同一試合への重複、24時間以内の再通報、シーズン切替中でも登録できること
+
+---
+
+## 20.2 withdraw-abuse-report
+
+### Purpose
+
+通報者が自分の通報を取り下げる。
+
+誤って出した通報を自分で片付けられるようにする。ADR-033 ⑤ が虚偽の通報を措置の対象とする以上、
+**取り下げの経路が無いと、確信の持てない通報が萎縮する。**
+
+### Authentication / Authorization
+
+必須 / 通報者本人
+
+### Input DTO
+
+```typescript
+interface WithdrawAbuseReportRequest {
+    reportId: string;
+}
+```
+
+### Output DTO
+
+```typescript
+interface WithdrawAbuseReportResponse {
+    status: "WITHDRAWN";
+}
+```
+
+### Validation
+
+* 通報が存在すること（`ABUSE-005`）
+* 呼び出しユーザーが `reporter_profile_id` と一致すること（`ABUSE-007`）
+* 状態が `OPEN` であること（`ABUSE-006`）
+
+### Processing Flow
+
+```text
+JWT検証 → 通報の取得 → 本人確認 → OPEN確認
+  ↓
+status = 'WITHDRAWN'、resolved_at = NOW() へ UPDATE
+（resolved_by_profile_id は NULL のままとする。管理者の措置ではないため）
+```
+
+### Transaction
+
+```text
+BEGIN → abuse_reports UPDATE → audit_logs INSERT → COMMIT
+```
+
+### Updated Tables
+
+`abuse_reports`、`audit_logs`
+
+### Realtime / Audit Log
+
+なし / `ABUSE_WITHDRAWN`
+
+### Error Codes
+
+`AUTH-001`、`VALIDATION-001`、`ABUSE-005`、`ABUSE-006`、`ABUSE-007`、`SYSTEM-001`
+
+### Test Cases
+
+正常取り下げ、他人の通報、処理済みの通報、取り下げ後の再通報が通ること（`ux_abuse_reports_dup` の除外）
+
+---
+
+## 20.3 admin-resolve-abuse-report
+
+### Purpose
+
+管理者が通報を処理して閉じる。**措置はクールダウンとBANに限る**（ADR-033 ③）。
+試合の勝敗とレートには触れない。
+
+### Authentication / Authorization
+
+必須 / 管理者
+
+### Input DTO
+
+```typescript
+interface AdminResolveAbuseReportRequest {
+    reportId: string;
+    resolution: "NO_ACTION" | "WARNED" | "COOLDOWN" | "BANNED";
+    note?: string;
+    cooldownMinutes?: number;
+}
+```
+
+### Output DTO
+
+```typescript
+interface AdminResolveAbuseReportResponse {
+    reportId: string;
+    status: "NO_ACTION" | "WARNED" | "COOLDOWN" | "BANNED";
+    resolvedAt: string;
+}
+```
+
+### Validation
+
+* 通報が存在すること（`ABUSE-005`）
+* 状態が `OPEN` であること（`ABUSE-006`）
+* `resolution` が定義された4値のいずれかであること（`VALIDATION-001`）
+* `resolution = 'COOLDOWN'` のとき `cooldownMinutes` が 1 以上であること（`VALIDATION-001`）
+* `note` は指定時 1000文字以下（`VALIDATION-001`）
+
+### Processing Flow
+
+```text
+管理者確認 → 通報の取得 → OPEN確認
+  ↓
+resolution により分岐
+  NO_ACTION / WARNED … 記録のみ
+  COOLDOWN          … teams.queue_cooldown_until = NOW() + cooldownMinutes
+  BANNED            … チームBAN処理を実行（_shared へ切り出して admin-ban-team と共用する）
+  ↓
+abuse_reports を UPDATE（status / resolved_by_profile_id / resolved_at / resolution_note）
+  ↓
+audit_logs へ ABUSE_RESOLVED を記録
+```
+
+**BAN処理を重複実装してはならない。** `admin-ban-team` の処理を `_shared/team-sanction.ts` へ切り出し、
+本Functionと共用する（レート更新を `_shared/match-completion.ts` へ寄せたのと同じ方針 / ADR-021）。
+BANは待機列からの削除と進行中の試合の扱いを伴うため、二箇所に書くと必ずずれる。
+
+**`WARNED` はシステム上の効果を持たない。** 警告の伝達は運営が Discord で行う。本システムは通知手段を持たない。
+
+### Transaction
+
+```text
+BEGIN → (teams UPDATE) → abuse_reports UPDATE → audit_logs INSERT → COMMIT
+```
+
+### Updated Tables
+
+`abuse_reports`、`audit_logs`、（措置により）`teams`、`matching_queue`
+
+### Realtime / Audit Log
+
+`team` チャンネルへ `TEAM_BANNED`（`BANNED` の場合のみ） / `ABUSE_RESOLVED`
+
+### Error Codes
+
+`AUTH-001`、`AUTH-004`、`VALIDATION-001`、`ABUSE-005`、`ABUSE-006`、`SYSTEM-001`
+
+### Test Cases
+
+4種の措置それぞれ、処理済みの通報、非管理者、`COOLDOWN` の分数欠落、`BANNED` 時にBAN処理が実行されること
+
+---
+
+## 20.4 Query: Abuse Reports（管理者）
+
+### Purpose
+
+管理画面の未処理一覧と、対象チームごとの累積を参照する。
+
+### Output DTO
+
+```typescript
+interface AbuseReportSummary {
+    reportId: string;
+    targetTeam: TeamSummary;
+    reporterTeam: TeamSummary | null;   // 無所属の通報者では null
+    reasonCode: string;
+    detail: string;
+    evidenceUrls: string[];
+    matchId: string | null;
+    status: string;
+    createdAt: string;
+}
+
+interface AbuseReportAggregate {
+    targetTeam: TeamSummary;
+    reportCount: number;        // n : 通報件数
+    reporterTeamCount: number;  // m : 通報元チーム数（無所属は数えない）
+    sanctionCount: number;      // k : 措置件数（COOLDOWN / BANNED）
+}
+```
+
+**`reporterTeamCount` が判断の主材料である**（ADR-033 ④）。`reportCount` は1チームから何度でも増やせるため、
+単独では信号にならない。画面では `m` を先に、`n` を後に表示する。
+
+### 参照方法
+
+`abuse_reports` を PostgREST から直接参照する。RLS により管理者と通報者本人にのみ返る
+（`03_Database.md` 10.10）。集計は View（`abuse_report_aggregate_view`）を用いる。
+
+**本Viewを `team_ranking_view` および `team_detail_view` へ結合してはならない**（ADR-032 ⑥）。
+
+---
+---
+
+# 21. 勝敗確定 Edge Functions（ADR-032 / ADR-034）
+
+10章（Match Edge Functions）の改訂と追加である。節番号を21とするのは既存の章番号を振り直さないためである。
+
+**運用の原則は「負けたチームが投了する」である。** 勝者申告は敗者が投了しない場合の代替経路であり、
+画面でも副次に置く（ADR-032 ①）。
+
+---
+
+## 21.1 concede-match（新設・基本の経路）
+
+### Purpose
+
+敗者チームが自チームの敗北を申告する。**承認を要さず即座に確定し、レートを更新する。**
+
+自分に不利な申告に虚偽の動機は無いため、確認の相手を必要としない。
+
+### Authentication / Authorization
+
+必須 / **敗者チーム（＝自チーム）のいずれのメンバーでも可**（ADR-009）
+
+### Input DTO
+
+```typescript
+interface ConcedeMatchRequest {
+    matchId: string;
+    version: number;
+}
+```
+
+**`winnerTeamId` を受け取らない。** 投了するチームは呼び出しユーザーの所属チームであり、勝者は
+`matches` のもう一方として一意に定まる。受け取ると、投了に見せかけて相手の敗北を登録できてしまう。
+
+### Output DTO
+
+`approve-match` と同じ `CompletionResult` を返す（レート変動を含む）。
+
+### Validation
+
+* 試合が存在すること（`MATCH-001`）
+* 状態が `PLAYING` または `WINNER_REPORTED` であること（`MATCH-002`）
+* 呼び出しユーザーが当該試合の参加チームのメンバーであること（`MATCH-005`）
+* `WINNER_REPORTED` の場合、自チームが `winner_team_id` **でない**こと（`MATCH-009`）
+  自分が勝利を申告した試合に投了するのは撤回であり、投了ではない
+* `version` が一致すること（`MATCH-008`）
+
+### Processing Flow
+
+```text
+JWT検証 → シーズン切替中でないこと（assertUpdatesAllowed）
+  ↓
+試合と自チームの取得（自チーム＝敗者、相手＝勝者）
+  ↓
+状態確認（PLAYING / WINNER_REPORTED のいずれか）
+  ↓
+反対申告の競合中であっても投了できる（ADR-032 ⑩：競合はいずれかの投了で解ける）
+  ↓
+completeMatch()（_shared/match-completion.ts）でレート確定
+  ↓
+クールダウンは課さない（ADR-032 ④：最短で次のキューへ入れる）
+```
+
+**★`WINNER_REPORTED` からの投了は「承認」と同じ結果になる。** 専用の承認操作を別に持つ必要は無いが、
+`approve-match` は互換のため残す。画面では状況に応じて一方だけを表示する（`05_Frontend.md`）。
+
+### Transaction
+
+```text
+BEGIN → matches UPDATE → rating_history INSERT ×2 → teams UPDATE ×2 → audit_logs INSERT → COMMIT
+```
+
+### Updated Tables
+
+`matches`、`rating_history`、`teams`、`audit_logs`
+
+### Realtime / Audit Log
+
+`MATCH_COMPLETED`、`RANKING_UPDATED` / `MATCH_CONCEDED`
+
+### Error Codes
+
+`AUTH-001`、`VALIDATION-001`、`MATCH-001`、`MATCH-002`、`MATCH-005`、`MATCH-008`、`MATCH-009`、`SEASON-001`、`SYSTEM-001`
+
+### Test Cases
+
+`PLAYING` からの投了、`WINNER_REPORTED` からの投了、反対申告の競合中の投了、
+自チームが申告した勝利への投了の拒否、非参加チーム、version不一致、確定後のクールダウンが無いこと
+
+---
+
+## 21.2 report-match（改訂・反対申告の追加）
+
+### 変更点
+
+`WINNER_REPORTED` の試合に対する呼び出しを、**反対申告**として受け付ける（ADR-032 ⑩）。
+
+従来は `MATCH-003`（勝者は既に報告されています）で一律に拒否していた。
+
+### 追加の処理
+
+```text
+状態が WINNER_REPORTED の場合
+  ↓
+呼び出しユーザーの所属チームが winner_team_id と異なることを確認
+  （同じなら MATCH-003。自分の申告を二重に出しているだけである）
+  ↓
+counter_claim_team_id が未設定であることを確認（設定済みなら MATCH-003）
+  ↓
+counter_claim_team_id / counter_claimed_at を設定
+  ↓
+approve_deadline_at は変更しない
+```
+
+**★`approve_deadline_at` を延長してはならない。** 延長できると、反対申告が期限を引き延ばす道具になり、
+ADR-032 が塞いだ「時間で相手を縛る」経路が復活する。
+
+**★自動承認が止まる。** `counter_claim_team_id IS NOT NULL` の間、`auto-resolve-matches` は
+自動承認を行わない（21.6）。競合はいずれかの投了でのみ解け、解けなければ承認期限の経過で
+`DRAWN`（`CONFLICT`）となる。
+
+### Realtime / Audit Log
+
+`WINNER_REPORTED`（新規申告）／ `MATCH_COUNTER_CLAIMED`（反対申告） / `MATCH_REPORTED` ・ `MATCH_COUNTER_CLAIMED`
+
+### Test Cases
+
+新規申告、相手からの反対申告、自チームからの二重申告の拒否、二度目の反対申告の拒否、
+反対申告で `approve_deadline_at` が変わらないこと
+
+---
+
+## 21.3 reject-match（廃止）
+
+**ADR-032 ② により廃止する。** Edge Function・画面の導線・Backend Client・DTO を削除する。
+
+エラーコード `MATCH-007`（拒否回数が上限に達したため試合は解散されました）は発生しなくなる。
+**欠番として残し、再利用しない**（`06_ErrorCode.md` 11章）。
+
+反論の手段は 21.2 の反対申告に置き換わった。不正の申し立ては 20章の通報で扱う。
+
+---
+
+## 21.4 extend-match-deadline（新設）
+
+### Purpose
+
+「まだ対戦中である」と宣言して報告期限を延長する（ADR-032 ⑦）。
+
+`report_timeout_minutes` の固定値を延ばす案は採らない。**固定値を延ばすと妨害の効果時間がそのまま延びる。**
+長い対戦は当事者の宣言で扱い、沈黙は短い期限で打ち切る。
+
+### Authentication / Authorization
+
+必須 / **いずれかの参加チームのメンバー**
+
+### Input DTO
+
+```typescript
+interface ExtendMatchDeadlineRequest {
+    matchId: string;
+    version: number;
+}
+```
+
+### Output DTO
+
+```typescript
+interface ExtendMatchDeadlineResponse {
+    reportDeadlineAt: string;
+    extensionCount: number;
+    remainingExtensions: number;
+}
+```
+
+### Validation
+
+* 状態が `PLAYING` であること（`MATCH-002` / `MATCH-003`）
+* 参加チームのメンバーであること（`MATCH-005`）
+* `report_extension_count < max_report_extensions` であること（`MATCH-010`）
+* `version` が一致すること（`MATCH-008`）
+
+### Processing Flow
+
+```text
+report_deadline_at = report_deadline_at + report_extension_minutes
+report_extension_count += 1
+```
+
+**★現在時刻からではなく、既存の期限から加算する。** 現在時刻を起点にすると、期限の直前に延長するのと
+直後に延長するのとで得られる猶予が変わり、期限際の駆け引きを生む。
+
+延長は相手チームへ通知し、実施チームを `audit_logs` に残す。
+
+### Realtime / Audit Log
+
+`MATCH_EXTENDED` / `MATCH_EXTENDED`
+
+### Error Codes
+
+`AUTH-001`、`VALIDATION-001`、`MATCH-001`、`MATCH-002`、`MATCH-003`、`MATCH-005`、`MATCH-008`、`MATCH-010`、`SEASON-001`、`SYSTEM-001`
+
+### Test Cases
+
+正常延長、上限到達、`WINNER_REPORTED` での拒否、期限を起点に加算されること、相手チームからの延長
+
+---
+
+## 21.5 request-no-contest / respond-no-contest（新設）
+
+### Purpose
+
+「この試合は成立しなかった」と申請する（ADR-032 ⑧ ＋ ADR-034 ②）。
+
+**結末は相手の応答で決まる。** 申請そのものは結末を決めない。
+
+| 相手の応答                       | 結末                                       |
+| --------------------------- | ---------------------------------------- |
+| 承諾                          | `DRAWN` / `MUTUAL`。双方に代償なし               |
+| 対戦継続の宣言／勝利申告／投了／延長          | 申請は消え、試合は継続する。報告期限は変えない                  |
+| 無応答                         | `DRAWN` / `NO_SHOW`。**無応答側のみ**が代償を負う     |
+
+### Authentication / Authorization
+
+必須 / いずれかの参加チームのメンバー（`respond-no-contest` は申請を受けた側のみ）
+
+### Input DTO
+
+```typescript
+interface RequestNoContestRequest {
+    matchId: string;
+    reasonCode: "CONNECTION" | "GAME_ISSUE" | "NO_RESPONSE" | "OTHER";
+    version: number;
+}
+
+interface RespondNoContestRequest {
+    matchId: string;
+    response: "ACCEPT" | "CONTINUE";
+    version: number;
+}
+```
+
+**`reasonCode` は結末を左右しない。** 結末を決めるのは相手の応答である。理由は `match_avoidance` の
+登録（ADR-034 ③）と運営の観測にのみ用いる。申請者の一方的な自己申告であるため、それ以上の重みを持たせない。
+
+### Validation
+
+| 項目          | 規則                                              | 違反時         |
+| ----------- | ----------------------------------------------- | ----------- |
+| 状態          | `PLAYING` であること                                 | `MATCH-002` / `MATCH-003` |
+| 権限          | 参加チームのメンバーであること                                 | `MATCH-005` |
+| 保留中の申請      | 既に保留中の申請が無いこと                                   | `MATCH-011` |
+| 申請回数        | `no_contest_request_count < max_no_contest_requests` | `MATCH-012` |
+| 応答の権限       | `respond-no-contest` は申請者と**異なる**チームであること       | `MATCH-005` |
+
+**★`PLAYING` に限る**（ADR-034 ②）。`WINNER_REPORTED` から認めると、敗者が勝者へ「無かったことにしてほしい」と
+交渉する経路になる。対戦が成立しなかったのであれば勝利の申告は生じない。
+
+### 時間の扱い（ADR-032 ⑧）
+
+```text
+申請できる時刻 …………… マッチ成立の直後から。制限を設けない
+承諾による成立 …………… 即時。猶予を待たない
+無応答による成立 ………… マッチ成立から no_show_minutes を経過し、
+                       かつ 申請から no_show_response_minutes を経過した後
+```
+
+**★時間の壁を「申請できる時刻」ではなく「沈黙が試合を終わらせる時刻」に置く。**
+これにより、対戦できないと分かった時点で直ちに申請でき、かつ劣勢の側が対戦直後に申請して
+相手の一時離席に賭ける使い方を防げる。
+
+### 承諾時の追加処理（ADR-034 ②③）
+
+```text
+DRAWN / MUTUAL で確定
+  ↓
+両チームにクールダウンを課さない
+  ↓
+確定率に計上しない
+  ↓
+reasonCode = 'CONNECTION' なら match_avoidance へ登録
+   （team_low_id / team_high_id は UUID の大小で正規化）
+   （チームあたり max_avoidance_entries を超える場合は最も古い行を失効させる）
+  ↓
+当日の MUTUAL 件数が mutual_no_contest_daily_limit を超える場合のみクールダウンを課す
+```
+
+**★`match_avoidance` への登録は承諾ブランチのみ。** `NO_SHOW` では登録しない。
+片方の操作で登録できると、強い相手を恒久的に回避する手段になる。
+
+### 無応答による成立
+
+`auto-resolve-matches` が処理する（21.6）。`respond-no-contest` は関与しない。
+
+### Realtime / Audit Log
+
+`MATCH_NO_CONTEST_REQUESTED` / `MATCH_DRAWN` / `MATCH_NO_CONTEST_DECLINED`
+ / `MATCH_NO_CONTEST_REQUESTED`・`MATCH_NO_CONTEST_ACCEPTED`・`MATCH_NO_CONTEST_DECLINED`
+
+### Error Codes
+
+`AUTH-001`、`VALIDATION-001`、`MATCH-001`、`MATCH-002`、`MATCH-003`、`MATCH-005`、`MATCH-008`、`MATCH-011`、`MATCH-012`、`SEASON-001`、`SYSTEM-001`
+
+### Test Cases
+
+即時申請、承諾による即時成立、対戦継続の宣言、勝利申告・投了・延長による打ち消し、
+無応答の満期前後、申請回数の上限、`WINNER_REPORTED` での拒否、
+`CONNECTION` での `match_avoidance` 登録、`NO_SHOW` で登録されないこと、
+`mutual_no_contest_daily_limit` 超過時のクールダウン
+
+---
+
+## 21.6 auto-resolve-matches（改訂）
+
+### 変更点
+
+処理を4種類に増やす。いずれも試合ごとに独立したトランザクションで確定する（既存方針を維持）。
+
+| 対象                                                                   | 結末                          | クールダウン    |
+| -------------------------------------------------------------------- | --------------------------- | --------- |
+| `PLAYING` かつ `report_deadline_at < NOW()`                             | `DRAWN` / `REPORT_TIMEOUT`  | 両チーム      |
+| `PLAYING` かつ保留中の申請があり、満期を過ぎた                                          | `DRAWN` / `NO_SHOW`         | 無応答側のみ    |
+| `WINNER_REPORTED` かつ `approve_deadline_at < NOW()` かつ `counter_claim_team_id IS NULL` | `COMPLETED`（自動承認）           | 放置した敗者側のみ |
+| `WINNER_REPORTED` かつ `approve_deadline_at < NOW()` かつ `counter_claim_team_id IS NOT NULL` | `DRAWN` / `CONFLICT`        | 両チーム      |
+
+**★自動承認の条件に `counter_claim_team_id IS NULL` を必ず含めること。** 含めないと、矛盾する2つの主張が
+あるにもかかわらず先に申告した側の主張で確定してしまい、**早く嘘をついた側が勝つ**。
+
+### 無応答による解散の満期
+
+```sql
+WHERE status = 'PLAYING'
+  AND no_contest_requested_at IS NOT NULL
+  AND started_at + (no_show_minutes || ' minutes')::interval < NOW()
+  AND no_contest_requested_at + (no_show_response_minutes || ' minutes')::interval < NOW()
+```
+
+**2つの条件は AND である。** どちらか一方では、対戦直後の申請が相手の短い離席で成立してしまう。
+
+### CONFLICT への確定
+
+`winner_team_id` を NULL にする（`chk_matches_drawn` の要求）。
+**`reported_by_profile_id` / `reported_at` / `counter_claim_team_id` / `counter_claimed_at` は残す。**
+誰がどちらを主張したかは通報の判断材料になる（ADR-033 ④）。
+
+### Realtime / Audit Log
+
+`MATCH_DRAWN` / `MATCH_COMPLETED` / `RANKING_UPDATED`
+ / `MATCH_DRAWN`・`MATCH_AUTO_APPROVED`・`MATCH_CONFLICT_DRAWN`・`MATCH_NO_SHOW_DRAWN`
+
+---
+
+## 21.7 admin-void-match / admin-void-matches（新設）
+
+### Purpose
+
+ゲーム側の障害・メンテナンスのように、運営が把握できる外部要因で試合を無効化する（ADR-034 ④）。
+
+### Authentication / Authorization
+
+必須 / 管理者
+
+### Input DTO
+
+```typescript
+interface AdminVoidMatchRequest {
+    matchId: string;
+    reason: string;
+}
+
+interface AdminVoidMatchesRequest {
+    reason: string;
+    includeReported?: boolean;   // 既定 false
+}
+```
+
+### 一括版の既定の対象
+
+**既定は `PLAYING` のみ。** `WINNER_REPORTED` を含めるかは `includeReported` で管理者が明示的に選ぶ。
+障害の前に成立していた申告を巻き込んで消さないためである。
+
+### 処理
+
+```text
+対象を DRAWN / ADMIN_VOID へ確定
+  ↓
+レートは変動させない。rating_history も作らない
+  ↓
+両チームにクールダウンを課さない
+  ↓
+確定率に計上しない
+  ↓
+audit_logs へ MATCH_VOIDED（reason を payload に含める）
+```
+
+**運営起因・外部起因の不成立は、当事者にいかなる不利益も伴わせない。**
+
+`reason` の入力を必須とする。理由の無い一括無効化は事故と区別できない。
+
+### Error Codes
+
+`AUTH-001`、`AUTH-004`、`VALIDATION-001`、`MATCH-001`、`MATCH-002`、`SYSTEM-001`
+
+---
+
+## 21.8 queue-match（改訂）
+
+### 追加する関門
+
+既存の `QUEUE-002`（進行中の試合）に加えて2つを追加する。判定順は以下とする。
+
+```text
+1. assertUpdatesAllowed  … シーズン切替中           → SEASON-001
+2. assertMatchmakingAllowed … シーズン終了の猶予中      → SEASON-002
+3. maintenance_paused    … 保守による一時停止（ADR-034 ⑤） → QUEUE-007
+4. LEADER確認 / BAN確認
+5. 進行中の試合（ADR-035 ①）                          → QUEUE-002
+6. queue_cooldown_until > NOW()（ADR-032 ④）        → QUEUE-006
+7. 重複登録 / 人数
+```
+
+**★`maintenance_paused` と `matchmaking_paused` を兼用しない**（`03_Database.md` 10.8）。
+`admin-resume-season` が後者を無条件に解除するため、保守停止を同じ列で表すとシーズン再開が
+保守停止を解除してしまう。
+
+### 同時参加の判定（ADR-035）
+
+規則は「1チーム同時1試合」ではなく「**進行中の試合を持つチームは待機列に登録できない**」である。
+**DBに制約は無い。** 本Functionと `runMatchmaking` の2箇所が唯一の保証である。
+
+```sql
+SELECT 1 FROM matches
+ WHERE (team_a_id = :team_id OR team_b_id = :team_id)
+   AND status NOT IN ('COMPLETED','DRAWN')
+```
+
+### Error Codes
+
+既存に `QUEUE-006`、`QUEUE-007` を追加
+
+---
+
+## 21.9 runMatchmaking（改訂）
+
+### 追加する除外条件
+
+```sql
+AND NOT EXISTS (
+  SELECT 1 FROM match_avoidance a
+   WHERE a.expires_at > NOW()
+     AND a.team_low_id  = LEAST(q.team_id, c.team_id)
+     AND a.team_high_id = GREATEST(q.team_id, c.team_id)
+)
+```
+
+`match_avoidance` は**ペアの条件**であるため、待機列の絞り込み（単独チームの条件）では表現できない。
+候補の選択（`selectOpponent`）の段階で判定する。
+
+`queue_cooldown_until > NOW()` のチームも待機列から除外する。`queue-match` が入り口で弾くが、
+クールダウンは登録後にも課されうる（通報への措置）。**入り口の判定だけでは塞げない。**
+
+---
+

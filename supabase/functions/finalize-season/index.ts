@@ -51,12 +51,24 @@ export async function handler(_req: Request): Promise<Response> {
 
       // ---- ① 残った試合を引き分けで終わらせる ----
       //
-      // ★猶予を過ぎても決着していない試合は、当事者が戻ってこないものとみなす。
+      // ★猶予を過ぎても決着していない試合は、シーズンの終了により打ち切る。
       //   レートは動かさない。片方だけ有利にする根拠が無い（08 4章）。
+      //
+      // ★`no_contest_reason` を必ず設定する（ADR-038 ①）。設定しないと
+      //   `chk_matches_drawn_reason`（Migration 0023）に違反し、**シーズンが確定できない。**
+      //   実際にこの取りこぼしで、猶予切れの時点で進行中の試合が1件でも残っていると
+      //   本関数が落ちる状態になっていた。
+      //
+      // ★ADMIN_VOID を流用しない。あれは `admin-void-matches` の値であり、理由の入力と
+      //   `MATCH_VOIDED` の監査ログを伴う（ADR-034 ④）。ここはどちらも持たない。
+      //
+      // ★SEASON_END は不戦にも確定率にも計上しない（ADR-038 ②）。打ち切ったのは運営であり、
+      //   当事者は対戦の最中でありえた。運営起因の不成立に不利益を伴わせない。
       const drawn = await tx.queryObject<{ id: string }>(
         `UPDATE matches
             SET status = 'DRAWN',
                 winner_team_id = NULL,
+                no_contest_reason = 'SEASON_END',
                 completed_at = NOW(),
                 version = version + 1
           WHERE status NOT IN ('COMPLETED', 'DRAWN')

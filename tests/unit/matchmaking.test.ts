@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  avoidanceKey,
   pairTeams,
   selectOpponent,
   type QueuedTeam,
@@ -128,5 +129,42 @@ describe("_shared/matchmaking — 組み合わせ", () => {
     // 相手が見つからないのはエラーではない。待機を継続させる。
     const teams = [team("a", 1500, T0), team("b", 2500, T1), team("c", 3500, T2)];
     expect(pairTeams(teams, 400)).toEqual([]);
+  });
+});
+
+const queued = (id: string, rating: number): QueuedTeam => ({
+  team_id: id,
+  rating,
+  queued_at: "2026-08-27T00:00:00Z",
+});
+
+describe("match avoidance (ADR-034 ③)", () => {
+  it("normalises the pair key regardless of order", () => {
+    // (A,B) と (B,A) が別扱いになると、除外が片方向にしか効かない
+    expect(avoidanceKey("b", "a")).toBe(avoidanceKey("a", "b"));
+  });
+
+  it("does not pair teams under an avoidance entry", () => {
+    // TC-QUEUE-110 / TC-QUEUE-111
+    const avoided = new Set([avoidanceKey("t1", "t2")]);
+    expect(selectOpponent(queued("t1", 1500), [queued("t2", 1500)], 400, avoided)).toBeNull();
+  });
+
+  it("still pairs with a team outside the avoidance", () => {
+    // TC-QUEUE-112
+    const avoided = new Set([avoidanceKey("t1", "t2")]);
+    const picked = selectOpponent(
+      queued("t1", 1500),
+      [queued("t2", 1500), queued("t3", 1490)],
+      400,
+      avoided,
+    );
+    expect(picked?.team_id).toBe("t3");
+  });
+
+  it("returns no pair when avoidance exhausts the candidates", () => {
+    // TC-QUEUE-114 相手が見つからないのはエラーではない
+    const avoided = new Set([avoidanceKey("t1", "t2")]);
+    expect(pairTeams([queued("t1", 1500), queued("t2", 1500)], 400, avoided)).toEqual([]);
   });
 });

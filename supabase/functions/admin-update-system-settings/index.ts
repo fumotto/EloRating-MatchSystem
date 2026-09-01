@@ -18,9 +18,26 @@ const SETTINGS: Record<string, { column: string; min: number; max?: number }> = 
   inviteExpirationHours: { column: "invite_expiration_hours", min: 1 },
   reportTimeoutMinutes: { column: "report_timeout_minutes", min: 1 },
   approveTimeoutMinutes: { column: "approve_timeout_minutes", min: 1 },
+  // ★廃止した設定（ADR-032 ③）。値は誰も読まない。列とAPIは互換のために残すが、
+  //   管理画面には出さない。操作できる場所へ置くと、効かない設定を運営が調整してしまう。
   maxRejectCount: { column: "max_reject_count", min: 0 },
   // シーズン終了の猶予（Issue #9 / Migration 0021）。上限はDBのCHECKと一致させる。
   seasonGraceMinutes: { column: "season_grace_minutes", min: 1, max: 1440 },
+  // 勝敗報告の確定方式（ADR-032 ④⑦⑧⑨ / ADR-034 ②③ / Migration 0023）。
+  queueCooldownMinutes: { column: "queue_cooldown_minutes", min: 1 },
+  reportExtensionMinutes: { column: "report_extension_minutes", min: 1 },
+  maxReportExtensions: { column: "max_report_extensions", min: 0 },
+  noShowMinutes: { column: "no_show_minutes", min: 1 },
+  noShowResponseMinutes: { column: "no_show_response_minutes", min: 1 },
+  maxNoContestRequests: { column: "max_no_contest_requests", min: 0 },
+  mutualNoContestDailyLimit: { column: "mutual_no_contest_daily_limit", min: 0 },
+  avoidanceDays: { column: "avoidance_days", min: 1 },
+  maxAvoidanceEntries: { column: "max_avoidance_entries", min: 0 },
+  // サブアカウント対策（ADR-036 / Migration 0024）。いずれも 0 で無効になる。
+  // ★検証環境で複数アカウントを扱うための ON/OFF はこの2つである。環境変数では切らない。
+  //   Edge Function の環境変数はテストから切り替えられず、E2E は同じ Supabase を共有する。
+  rematchCooldownHours: { column: "rematch_cooldown_hours", min: 0 },
+  rankingMinOpponents: { column: "ranking_min_opponents", min: 0 },
 };
 
 // 表示設定（Issue #8 / Migration 0018）。文字列であるため数値とは検証が異なる。
@@ -62,10 +79,22 @@ const ENUM_SETTINGS: Record<string, { column: string; values: readonly string[] 
   },
 };
 
+// 真偽値の設定。
+//
+// ★ここへ `matchmaking_paused` / `updates_locked` / `current_season` を足してはならない
+//   （ADR-034 ⑤ / ADR-037 ②）。3つともシーズン運用の Function だけが書き換える列であり、
+//   本APIから触れると、シーズン切替の途中で運営が状態を壊せてしまう。
+//   `maintenance_paused` を別列にした意味も失われる。
+const BOOLEAN_SETTINGS: Record<string, { column: string }> = {
+  // 保守による一時停止（ADR-034 ⑤ / Migration 0023）。シーズンの停止とは別の列である。
+  maintenancePaused: { column: "maintenance_paused" },
+};
+
 const ALL_COLUMNS = [
   ...Object.values(SETTINGS).map((s) => s.column),
   ...Object.values(TEXT_SETTINGS).map((s) => s.column),
   ...Object.values(ENUM_SETTINGS).map((s) => s.column),
+  ...Object.values(BOOLEAN_SETTINGS).map((s) => s.column),
 ].join(", ");
 
 export async function handler(req: Request): Promise<Response> {
@@ -81,7 +110,7 @@ export async function handler(req: Request): Promise<Response> {
     const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 
     // 指定された項目のみ更新する（12.3）。
-    const updates: { column: string; value: number | string | null }[] = [];
+    const updates: { column: string; value: number | string | boolean | null }[] = [];
 
     for (const [key, spec] of Object.entries(SETTINGS)) {
       const value = body[key];
@@ -141,14 +170,29 @@ export async function handler(req: Request): Promise<Response> {
       updates.push({ column: spec.column, value });
     }
 
+    // 真偽値の設定（ADR-034 ⑤）。
+    //
+    // ★文字列の "true" を受け取らない。JSON の真偽値だけを認める。
+    //   曖昧に受けると、意図せず保守停止を立てたり解除したりできてしまう。
+    for (const [key, spec] of Object.entries(BOOLEAN_SETTINGS)) {
+      const value = body[key];
+      if (value === undefined) continue;
+
+      if (typeof value !== "boolean") {
+        return businessError("ADMIN-002", "Invalid system settings.", 400);
+      }
+
+      updates.push({ column: spec.column, value });
+    }
+
     if (updates.length === 0) {
       return businessError("ADMIN-002", "Invalid system settings.", 400);
     }
 
     const settings = await withTransaction(async (tx) => {
       // 変更前の値を監査ログへ残すため、更新前に読む。
-      // 数値と文字列が混在する（Issue #8 で表示設定を追加した）。
-      const before = await tx.queryObject<Record<string, number | string | null>>(
+      // 数値・文字列・真偽値が混在する（Issue #8 の表示設定と ADR-034 ⑤ の保守停止）。
+      const before = await tx.queryObject<Record<string, number | string | boolean | null>>(
         `SELECT ${ALL_COLUMNS} FROM system_settings WHERE id = 1`,
       );
 
@@ -161,7 +205,7 @@ export async function handler(req: Request): Promise<Response> {
         .map((u, index) => `${u.column} = $${index + 1}`)
         .join(", ");
 
-      const after = await tx.queryObject<Record<string, number | string | null>>(
+      const after = await tx.queryObject<Record<string, number | string | boolean | null>>(
         `UPDATE system_settings SET ${assignments} WHERE id = 1 RETURNING ${ALL_COLUMNS}`,
         updates.map((u) => u.value),
       );

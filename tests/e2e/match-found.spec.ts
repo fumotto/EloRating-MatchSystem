@@ -48,7 +48,10 @@ test.describe("match settled", () => {
   test("shows the rating change after the match is confirmed", async ({ page, browser }) => {
     // TC-E2E-048 確定時のレート変動表示（Issue #6）。
     //
-    // ★申告 → 承認まで通し、実際に確定させてから確認する。
+    // ★**投了**で確定させる。運用の原則は「負けたチームが投了する」であり、
+    //   勝者申告はその代替である（ADR-032 ①）。基本の経路を通す。
+    // ★投了は二段階のUIである。確認ダイアログを経ないと確定しない
+    //   （05_Frontend.md 14.6 / TC-UI-201）。ここでその経路も通す。
     //   rating_history は確定時にしか作られないため、経路を省略できない。
     const nameA = await createFullTeam(page, browser, "SettleA");
 
@@ -62,17 +65,21 @@ test.describe("match settled", () => {
     await pageB.goto("/matchmaking");
     await pageB.getByRole("button", { name: "マッチングを開始" }).click();
 
-    // B が勝利を申告する
     const overlay = pageB.getByRole("dialog", { name: "対戦相手が決まりました" });
     await expect(overlay).toBeVisible({ timeout: 15_000 });
     await overlay.getByRole("button", { name: "試合へ進む" }).click();
     await expect(pageB).toHaveURL(/\/matches\/[0-9a-f-]+$/);
     const matchUrl = pageB.url();
-    await pageB.getByRole("button", { name: "自チームの勝利を申告" }).click();
 
-    // A（敗者）が承認する
+    // A（敗者）が投了する。承認は要らない。
     await page.goto(new URL(matchUrl).pathname);
-    await page.getByRole("button", { name: "承認する" }).click();
+    await page.getByRole("button", { name: "投了する（負けを認める）" }).click();
+
+    // ★確認ダイアログが挟まる。相手チーム名が出ていること。
+    const confirm = page.getByRole("dialog", { name: "投了しますか？" });
+    await expect(confirm).toBeVisible();
+    await expect(confirm).toContainText("取り消せません");
+    await confirm.getByRole("button", { name: "確定する" }).click();
 
     // 敗者側にレート減少が出る
     await expect(page.getByText("敗北")).toBeVisible({ timeout: 15_000 });

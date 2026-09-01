@@ -135,15 +135,18 @@ export async function waitForProfile(page: Page, userId: string): Promise<void> 
 export const test = base;
 export { expect };
 
-// お知らせの設定（Issue #7）。
+// システム設定の更新（04_BackendInterface.md 12.3）。
 //
 // ★service_role では更新できない。0013_rls.sql は system_settings の書き込みを
 //   どのクライアントロールへも与えておらず、更新は Edge Functions がDB直結で行う
 //   （ADR-016）。したがってテストも管理者として実経路を通す。
 //
 //   管理者を都度作るのは冗長に見えるが、権限まわりを迂回しない利点の方が大きい。
-export async function setAnnouncement(text: string, level: "INFO" | "WARN" | "ALERT") {
-  const user = await createTestUser("AnnouncementAdmin");
+export async function updateSystemSettings(
+  label: string,
+  body: Record<string, unknown>,
+): Promise<void> {
+  const user = await createTestUser(label);
   await makeAdmin(user.id);
 
   // 管理者付与の後にサインインする。role は発行時のJWTへ載る（ADR-020）。
@@ -179,12 +182,20 @@ export async function setAnnouncement(text: string, level: "INFO" | "WARN" | "AL
       Authorization: `Bearer ${data.session.access_token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ announcementText: text, announcementLevel: level }),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {
-    throw new Error(`お知らせを設定できない: ${res.status} ${await res.text()}`);
+    throw new Error(`システム設定を更新できない: ${res.status} ${await res.text()}`);
   }
+}
+
+// お知らせの設定（Issue #7）。
+export async function setAnnouncement(text: string, level: "INFO" | "WARN" | "ALERT") {
+  await updateSystemSettings("AnnouncementAdmin", {
+    announcementText: text,
+    announcementLevel: level,
+  });
 }
 
 // ---- 画面操作の共通手順 ----

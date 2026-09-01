@@ -2,7 +2,7 @@
 //
 // ★取り消せない操作を含む。順序と安全弁を固定する。
 import { describe, it } from "jsr:@std/testing/bdd";
-import { assertEquals } from "jsr:@std/assert";
+import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import {
   handler as endSeason,
   setDbPool as setEndPool,
@@ -44,6 +44,15 @@ import {
   setBroadcaster as setCancelBroadcaster,
   resetBroadcaster as resetCancelBroadcaster,
 } from "../../supabase/functions/admin-cancel-season-end/index.ts";
+import {
+  handler as resumeSeason,
+  setDbPool as setResumePool,
+  resetDbPool as resetResumePool,
+  setJwtVerifier as setResumeVerifier,
+  resetJwtVerifier as resetResumeVerifier,
+  setBroadcaster as setResumeBroadcaster,
+  resetBroadcaster as resetResumeBroadcaster,
+} from "../../supabase/functions/admin-resume-season/index.ts";
 import {
   handler as leaveTeam,
   setDbPool as setLeavePool,
@@ -199,7 +208,12 @@ describe("season", () => {
       assertEquals(body.data.nextSeason, 4);
 
       // 残った試合を引き分けにする
-      assertEquals(db.find("SET status = 'DRAWN'") !== undefined, true);
+      const cutoff = db.find("SET status = 'DRAWN'")!;
+      // ★理由を必ず設定する（ADR-038 ①）。設定しないと chk_matches_drawn_reason に
+      //   違反し、シーズンが確定できない。実際にその状態だった。
+      assertStringIncludes(cutoff.sql, "no_contest_reason = 'SEASON_END'");
+      // ★ADMIN_VOID を流用しない。管理者が個別に無効化したのではない。
+      assertEquals(/ADMIN_VOID/.test(cutoff.sql), false);
       // 退避する前に更新を止める
       assertEquals(db.find("updates_locked = TRUE") !== undefined, true);
       // ランキングと編成を退避する
@@ -453,6 +467,120 @@ describe("season", () => {
       resetCancelPool();
       resetCancelVerifier();
       resetCancelBroadcaster();
+    }
+  });
+});
+
+// 通常営業への復帰（Issue #9 / ADR-034 ⑤ / ADR-038 ③）。
+//
+// ★本Functionにはテストが1件も無かった。「再開が保守停止を解除しない」という
+//   ADR-034 ⑤ の存在理由そのものが未検証で、誰かが「停止フラグをまとめてリセット」と
+//   整理すれば黙って壊れる状態だった。
+describe("admin-resume-season", () => {
+  const readyStubs: QueryStub[] = [
+    ["SELECT current_season FROM system_settings", [{ current_season: 4 }]],
+    ["SELECT status FROM seasons", [{ status: "ACTIVE" }]],
+  ];
+
+  it("clears the season pause and the update lock together", async () => {
+    // TC-SEASON-020
+    // ★片方だけ戻すと、編成は変えられるのに対戦できない状態が残る。
+    const db = createMockDb(readyStubs);
+    setResumePool(db.pool as never);
+    setResumeVerifier(adminVerifier);
+    setResumeBroadcaster(() => Promise.resolve());
+    try {
+      const res = await resumeSeason(post());
+      assertEquals(res.status, 200);
+      assertEquals((await res.json()).data.season, 4);
+
+      const update = db.find("UPDATE system_settings SET matchmaking_paused")!;
+      assertStringIncludes(update.sql, "matchmaking_paused = FALSE");
+      assertStringIncludes(update.sql, "updates_locked = FALSE");
+      assertEquals(db.committed(), true);
+    } finally {
+      resetResumePool();
+      resetResumeVerifier();
+      resetResumeBroadcaster();
+    }
+  });
+
+  it("never clears the maintenance pause", async () => {
+    // TC-SEASON-021
+    // ★これが maintenance_paused を別列にした理由そのものである（ADR-034 ⑤）。
+    //   兼用していれば、シーズンの再開が障害対応の停止を解除してしまう。
+    //   ゲーム側が復旧していないのにマッチングが動き出す。
+    const db = createMockDb(readyStubs);
+    setResumePool(db.pool as never);
+    setResumeVerifier(adminVerifier);
+    setResumeBroadcaster(() => Promise.resolve());
+    try {
+      await resumeSeason(post());
+
+      for (const query of db.executed) {
+        assertEquals(/maintenance_paused/.test(query.sql), false);
+      }
+    } finally {
+      resetResumePool();
+      resetResumeVerifier();
+      resetResumeBroadcaster();
+    }
+  });
+
+  it("records the resume in the audit log", async () => {
+    // TC-SEASON-022
+    const db = createMockDb(readyStubs);
+    setResumePool(db.pool as never);
+    setResumeVerifier(adminVerifier);
+    setResumeBroadcaster(() => Promise.resolve());
+    try {
+      await resumeSeason(post());
+      const audit = db.find("INSERT INTO audit_logs")!;
+      assertStringIncludes(audit.sql, "'SEASON_RESUMED'");
+      assertEquals(audit.params[0], "admin-1");
+    } finally {
+      resetResumePool();
+      resetResumeVerifier();
+      resetResumeBroadcaster();
+    }
+  });
+
+  it("refuses to resume while the season is still ending", async () => {
+    // TC-SEASON-023
+    // ★猶予中に解除すると、止めたはずのマッチングが動き出す。
+    const db = createMockDb([
+      ["SELECT current_season FROM system_settings", [{ current_season: 4 }]],
+      ["SELECT status FROM seasons", [{ status: "ENDING" }]],
+    ]);
+    setResumePool(db.pool as never);
+    setResumeVerifier(adminVerifier);
+    setResumeBroadcaster(() => Promise.resolve());
+    try {
+      const res = await resumeSeason(post());
+      assertEquals(res.status, 409);
+      assertEquals((await res.json()).error.code, "SEASON-003");
+      assertEquals(db.find("UPDATE system_settings"), undefined);
+      assertEquals(db.rolledBack(), true);
+    } finally {
+      resetResumePool();
+      resetResumeVerifier();
+      resetResumeBroadcaster();
+    }
+  });
+
+  it("rejects a non-administrator", async () => {
+    // TC-SEASON-024
+    const db = createMockDb(readyStubs);
+    setResumePool(db.pool as never);
+    setResumeVerifier(userVerifier);
+    try {
+      const res = await resumeSeason(post());
+      assertEquals(res.status, 403);
+      assertEquals((await res.json()).error.code, "ADMIN-001");
+      assertEquals(db.executed.length, 0);
+    } finally {
+      resetResumePool();
+      resetResumeVerifier();
     }
   });
 });
