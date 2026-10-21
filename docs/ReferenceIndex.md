@@ -83,8 +83,13 @@ Project Constitution 第9条に定める優先順位を唯一の基準とする�
 | status/ProjectStatus.md             | 現在の状態         | **現在のフェーズ・スライス、作業中タスク、ブロッカー**  |
 | status/Changelog.md                 | 変更履歴          | **リリース単位の変更履歴**               |
 | SetupRunbook.md                     | 人手作業の手順書      | **外部サービス（Discord・GitHub・Supabaseクラウド）における人手設定の手順** |
+| AcceptanceTestScenario.md           | 受入テストシナリオ     | **人手による挙動確認の実施手順・体制・記録様式** |
 
 `SetupRunbook.md` は手順のみを持ち、値の定義を持たない。環境変数は `11_Deployment.md` 4章、完了条件は `Milestones.md` と `ImplementationRoadmap.md` が正本である。
+
+`AcceptanceTestScenario.md` は仕様の正本ではない。期限・回数などの値は `03_Database.md` 17章が正本であり、
+本書はそれを人手で確認する手順へ翻訳したものである。テストIDの正本でもない。自動テストの正本は
+`10_TestSpecification.md`（`TC-` 接頭辞）であり、本書は `UAT-` 接頭辞を用いて別系統とする。
 
 ---
 
@@ -140,6 +145,7 @@ Project Constitution 第9条に定める優先順位を唯一の基準とする�
 | 用語・命名            | 14_Glossary.md                       |
 | なぜその設計なのか        | 15_DecisionLog.md                    |
 | 人手でしかできない設定作業の手順  | project/SetupRunbook.md              |
+| 人手で挙動を確認する手順       | project/AcceptanceTestScenario.md    |
 
 ---
 
