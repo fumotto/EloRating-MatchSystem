@@ -30,7 +30,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # gitleaks は履歴を走査する。浅いクローンでは過去のコミットを見られない。
           fetch-depth: 0
@@ -61,7 +61,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # フロントエンドと Unit Test は Bun（11_Deployment.md 11.3）。
       - name: Setup Bun
@@ -78,7 +78,7 @@ jobs:
       # Database Test と E2E は Supabase Local（Docker）を使う。
       # 本番環境に対してテストを実行してはならない（11.3）。
       - name: Setup Supabase CLI
-        uses: supabase/setup-cli@v1
+        uses: supabase/setup-cli@v3
         with:
           version: latest
 
@@ -159,7 +159,7 @@ jobs:
 
       - name: Upload Playwright report
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: playwright-report/

@@ -33,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # SUPABASE_DB_URL は Pooler（Session mode / 5432）の接続文字列である。
       # 直接接続は IPv6 でしか解決されず、ランナーから到達できない。
